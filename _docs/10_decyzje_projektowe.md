@@ -61,3 +61,19 @@
 - Region: DigitalOcean (przydzielony przez Aiven)
 - Connection limit: 20
 **Status:** Baza aktywna, pgvector 0.8.1 zainstalowany. Port 22367 otwarty na VPS divezone.pl (whitelist IP: 159.223.235.232). Połączenie przetestowane z Maca (psql) i VPS.
+
+
+---
+
+### ADR-010: Zewnętrzne źródła wiedzy eksperckiej (2026-02-19)
+**Status:** Zaplanowane (post-MVP)
+**Kontekst:** Blogi sklepów nurkowych i instruktorów, kanały YouTube z recenzjami i poradami stanowią bogate źródło wiedzy eksperckiej, które może znacząco wzbogacić bazę wiedzy czatu. Aktualnie baza wiedzy (divechat_knowledge) zawiera 30 ręcznie napisanych wpisów Q&A. Docelowo chcemy ją rozbudować o treści z zewnętrznych źródeł.
+**Decyzja:** W wersji post-MVP wdrożymy pipeline pozyskiwania wiedzy z zewnętrznych źródeł:
+- Blogi sklepów nurkowych (nautica.pl, divefactory24.pl, nurkowo.pl, szpejownia.com i inne)
+- Blogi instruktorów i portale (nurekamator.pl, nurkomania.pl, jollydiver.pl)
+- Fora nurkowe (forum-nuras.com, scubaboard.com)
+- Kanały YouTube z recenzjami sprzętu i poradami nurkowymi
+- Tavily API (web search) jako narzędzie do wyszukiwania i ekstrakcji treści
+**Implementacja:** Tavily ($5/mies plan Dev, klucz już w .env) do crawlowania i ekstrakcji tekstu z URL. Chunking + embedding tych treści do divechat_knowledge z odpowiednim chunk_type ('blog', 'video_transcript', 'forum_post') i source_url. Opcjonalnie: transkrypcja YouTube przez Whisper API lub youtube-transcript-api (Python).
+**Priorytety źródeł:** Blogi producentów i sklepów > poradniki instruktorów > fora > YouTube.
+**Uwaga:** Wyłącznie do wewnętrznej bazy wiedzy AI, nie do reprodukcji treści klientom. Szanujemy prawa autorskie.

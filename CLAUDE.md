@@ -9,7 +9,11 @@ Czat AI ze wyszukiwaniem semantycznym dla sklepu nurkowego divezone.pl (PrestaSh
 - [x] Baza PostgreSQL na Aiven (pgvector 0.8.1 zainstalowany)
 - [x] Port 22367 otwarty na VPS divezone.pl
 - [x] Dokumentacja i workflow gotowe
-- [ ] Tabele PostgreSQL (do stworzenia)
+- [x] Git init + .gitignore
+- [x] Projekt Claude.ai z instrukcją
+- [x] MCP servers (postgresql, sequential-thinking) w .mcp.json
+- [x] Pytania testowe (_docs/08_testy_i_ewaluacja.md, 28 pytań + 12 do uzupełnienia)
+- [ ] **AKTUALNY: TASK-001** Tabele PostgreSQL + pierwszy test embeddingów
 - [ ] Pipeline embeddingów (Python)
 - [ ] Test embeddingów (small vs large)
 - [ ] Moduł PrestaShop
@@ -49,15 +53,15 @@ OS: starszy system (PG max 10, brak upgrade bez migracji serwera)
 - `10_decyzje_projektowe.md` - log decyzji (ADR)
 - `11_workflow_i_organizacja.md` - workflow, instancje, narzędzia
 
+- `08_testy_i_ewaluacja.md` - pytania testowe, metryki oceny
+
 Pliki zarezerwowane (do stworzenia):
 - `01_specyfikacja_api.md` - definicje narzędzi i endpointów
 - `03_system_prompt.md` - system prompt
 - `05_frontend_spec.md` - widget czatu UI/UX
 - `06_pipeline_embeddingow.md` - pipeline Python
 - `07_bezpieczenstwo_rodo.md` - autoryzacja, RODO
-- `08_testy_i_ewaluacja.md` - scenariusze testowe
 - `09_deployment.md` - instrukcja wdrożenia
-- `CONVENTIONS.md` - konwencje kodu
 
 ## Instancje Claude Code
 4 instancje w `_instances/`: backend, embeddings, frontend, integration.
