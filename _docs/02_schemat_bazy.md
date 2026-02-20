@@ -1,18 +1,19 @@
-# Schemat bazy danych PostgreSQL (Aiven + pgvector)
-# Wersja: 1.0 | Data: 2026-02-19
+# Schemat bazy danych PostgreSQL (Railway + pgvector)
+# Wersja: 1.2 | Data: 2026-02-20
+# Zmiana 1.2: Migracja Aiven → Railway (ADR-019). PG 18.2, pgvector 0.8.1.
+# Zmiana 1.1: vector(3072) -> vector(1536), model text-embedding-3-large@1536 (ADR-011, ADR-012)
 
 ## Połączenie
 
 ```
-Host: <AIVEN_HOST_REDACTED>
-Port: 22367
-Database: defaultdb
-User: avnadmin
-SSL: require
+Host: switchback.proxy.rlwy.net
+Port: 14368
+Database: railway
+User: postgres
+Password: (w .env)
 pgvector: 0.8.1
-PostgreSQL: 17.8
-Connection limit: 20
-Provider: Aiven Developer ($5/mies, pokryty kredytami $300)
+PostgreSQL: 18.2
+Provider: Railway Hobby ($5/mies z $5 kredytów)
 ```
 
 ## Tabele
@@ -35,7 +36,7 @@ CREATE TABLE divechat_product_embeddings (
     product_url TEXT,
     image_url TEXT,
     document_text TEXT NOT NULL,
-    embedding vector(3072),
+    embedding vector(1536),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -57,8 +58,9 @@ CREATE INDEX idx_product_price
     ON divechat_product_embeddings (price);
 ```
 
-Uwaga: vector(3072) zakłada model text-embedding-3-large. Jeśli test wykaże że
-text-embedding-3-small (1536 dim) wystarczy, zmienić na vector(1536).
+Uwaga: vector(1536) wymuszony limitem HNSW na pgvector 0.8.1 (max 2000 dim).
+Model: Google Gemini embedding-001 z output_dimensionality=1536.
+Task types: RETRIEVAL_DOCUMENT (dokumenty), RETRIEVAL_QUERY (zapytania).
 
 ### divechat_knowledge
 Baza wiedzy eksperckiej (Q&A, artykuły, FAQ).
@@ -70,7 +72,7 @@ CREATE TABLE divechat_knowledge (
     question TEXT,
     content TEXT NOT NULL,
     category VARCHAR(100),
-    embedding vector(3072),
+    embedding vector(1536),
     is_direct_answer BOOLEAN DEFAULT false,
     source_url TEXT,
     active BOOLEAN DEFAULT true,

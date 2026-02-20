@@ -1,0 +1,147 @@
+<?php
+
+declare(strict_types=1);
+
+namespace DiveChat\Chat;
+
+use DiveChat\AI\AIProviderInterface;
+use DiveChat\AI\AIResponse;
+use DiveChat\Tools\ToolRegistry;
+
+/**
+ * Orkiestrator czatu.
+ * Obsługuje tool loop: AI -> narzędzia -> AI -> ... -> odpowiedź.
+ */
+final class ChatService
+{
+    private const MAX_TOOL_ITERATIONS = 5;
+
+    public function __construct(
+        private readonly AIProviderInterface $aiProvider,
+        private readonly ToolRegistry $toolRegistry,
+        private readonly ConversationStore $conversationStore,
+    ) {}
+
+    /**
+     * Główna metoda - obsługuje wiadomość klienta.
+     *
+     * @return array{response: string, session_id: string, tools_used: string[], products: array, usage: array}
+     */
+    public function handle(string $sessionId, string $message, ?int $customerId): array
+    {
+        // 1. Wczytaj lub utwórz sesję
+        $history = $this->conversationStore->startOrResume($sessionId, $customerId);
+
+        // 2. Zbuduj listę wiadomości
+        $messages = [
+            ['role' => 'system', 'content' => SystemPrompt::build()],
+        ];
+
+        // Dodaj historię (bez systemu - jest na początku)
+        foreach ($history as $msg) {
+            if ($msg['role'] !== 'system') {
+                $messages[] = $msg;
+            }
+        }
+
+        // Dodaj nową wiadomość użytkownika
+        $messages[] = ['role' => 'user', 'content' => $message];
+
+        // 3. Przygotuj definicje narzędzi
+        $toolDefinitions = $this->toolRegistry->getToolDefinitions();
+
+        // 4. Tool loop
+        $toolsUsed = [];
+        $products = [];
+        $totalUsage = ['input_tokens' => 0, 'output_tokens' => 0];
+
+        for ($i = 0; $i < self::MAX_TOOL_ITERATIONS; $i++) {
+            $response = $this->aiProvider->chat($messages, $toolDefinitions);
+            $totalUsage['input_tokens'] += $response->usage['input_tokens'];
+            $totalUsage['output_tokens'] += $response->usage['output_tokens'];
+
+            // Jeśli brak tool calls - mamy finalną odpowiedź
+            if (!$response->hasToolCalls()) {
+                break;
+            }
+
+            // Dodaj odpowiedź asystenta z tool calls do historii
+            $messages[] = [
+                'role' => 'assistant',
+                'content' => $response->content,
+                'tool_calls' => $response->toolCalls,
+            ];
+
+            // Wykonaj każde narzędzie
+            foreach ($response->toolCalls as $toolCall) {
+                $toolsUsed[] = $toolCall->name;
+
+                $result = $this->executeTool($toolCall->name, $toolCall->arguments);
+
+                // Zbieraj produkty z wyników search_products
+                if ($toolCall->name === 'search_products' && !empty($result['products'])) {
+                    $products = array_merge($products, $result['products']);
+                }
+
+                // Dodaj wynik narzędzia do wiadomości
+                $messages[] = [
+                    'role' => 'tool_result',
+                    'tool_call_id' => $toolCall->id,
+                    'name' => $toolCall->name,
+                    'content' => json_encode($result, JSON_UNESCAPED_UNICODE),
+                ];
+            }
+        }
+
+        $finalContent = $response->content ?? 'Przepraszam, nie udało się wygenerować odpowiedzi.';
+
+        // 5. Zapisz historię (bez system prompta)
+        $historyToSave = array_values(array_filter(
+            $messages,
+            fn(array $m) => $m['role'] !== 'system',
+        ));
+
+        // Serializuj tool_calls do zapisu (ToolCall -> array)
+        $historyToSave = array_map(function (array $m) {
+            if (!empty($m['tool_calls'])) {
+                $m['tool_calls'] = array_map(fn($tc) => [
+                    'id' => $tc->id,
+                    'name' => $tc->name,
+                    'arguments' => $tc->arguments,
+                ], $m['tool_calls']);
+            }
+            return $m;
+        }, $historyToSave);
+
+        // Dodaj odpowiedź asystenta na końcu (jeśli nie ma tool calls)
+        if (!$response->hasToolCalls()) {
+            $historyToSave[] = ['role' => 'assistant', 'content' => $finalContent];
+        }
+
+        $this->conversationStore->save($sessionId, $historyToSave, array_unique($toolsUsed), $totalUsage);
+
+        return [
+            'response' => $finalContent,
+            'session_id' => $sessionId,
+            'tools_used' => array_values(array_unique($toolsUsed)),
+            'products' => $products,
+            'usage' => $totalUsage,
+        ];
+    }
+
+    /**
+     * Wykonuje narzędzie, obsługuje błędy.
+     */
+    private function executeTool(string $name, array $arguments): array
+    {
+        try {
+            if (!$this->toolRegistry->has($name)) {
+                return ['error' => "Nieznane narzędzie: {$name}"];
+            }
+
+            return $this->toolRegistry->get($name)->execute($arguments);
+        } catch (\Throwable $e) {
+            return ['error' => "Błąd narzędzia {$name}: {$e->getMessage()}"];
+        }
+    }
+}

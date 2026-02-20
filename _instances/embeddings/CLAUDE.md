@@ -4,37 +4,38 @@
 ### Odpowiedzialność
 - Pipeline generowania embeddingów z produktów PrestaShop
 - Skrypt cron do aktualizacji embeddingów
-- Migracje SQL (tabele PostgreSQL + pgvector)
-- Import bazy Q&A do tabeli divechat_knowledge
+- Import/aktualizacja bazy wiedzy Q&A
 - Testy jakości wyszukiwania semantycznego
 
-### Zależności
-- Czytaj: _docs/02_schemat_bazy.md (schemat tabel, gotowy)
-- Czytaj: _docs/06_pipeline_embeddingow.md (specyfikacja pipeline)
-- Czytaj: _docs/04_qa_baza_wiedzy.md (dane Q&A do zaimportowania)
+### Status
+- TASK-001: Tabele PG + test embeddingów ✅
+- TASK-002: OpenAI embeddings, test A/B (large@1536 vs small) ✅ → large wygrywa
+- TASK-003: Nowe Q&A + retest ✅ (37 wpisów)
+- TASK-004: Pipeline produktów ✅ (2670 produktów z embeddingami)
+- TASK-005: Czyszczenie Q&A z nazw marek — uruchomiony
+
+### Model embeddingów (ADR-012)
+OpenAI text-embedding-3-large, dimensions=1536
 
 ### Połączenie z bazami
 
-PostgreSQL (Aiven, pgvector):
+PostgreSQL (Railway, pgvector) — NOWE:
 ```
-Host: <AIVEN_HOST_REDACTED>
-Port: 22367
-Database: defaultdb
-User: avnadmin
-SSL: require
-```
-
-MySQL (PrestaShop, read-only):
-```
-Host: localhost (na VPS divezone.pl)
-Prefix tabel: pr_
-Tabele: pr_product, pr_product_lang, pr_feature_value_lang, pr_category_lang, pr_manufacturer
+Host: switchback.proxy.rlwy.net
+Port: 14368
+Database: railway
+User: postgres
+pgvector: 0.8.1 | PG: 18.2
 ```
 
-### Wymagania techniczne
-- Python 3.x, biblioteki: openai, psycopg2-binary, pymysql
-- Model embeddingów: OpenAI text-embedding-3-large (3072 dim) lub small (1536 dim)
-  Decyzja po teście, patrz _docs/10_decyzje_projektowe.md ADR-007
+MySQL (PrestaShop, read-only, przez SSH tunel):
+```
+SSH: ssh -i ~/.ssh/id_ed25519 -p 5739 -L 33060:localhost:3306 divezone@divezonededyk.smarthost.pl
+Host: localhost:33060 (przez tunel)
+DB: divezone_2025, prefix: pr_
+```
 
-### Po zakończeniu pracy
-Zapisz handoff w _instances/embeddings/handoff/ z informacją o gotowych tabelach i wynikach testu embeddingów dla instancji BACKEND.
+### Zależności
+- _docs/02_schemat_bazy.md
+- _docs/04_qa_baza_wiedzy.md
+- _docs/14_architektura_bazy_wiedzy.md (przyszła migracja do hierarchii)

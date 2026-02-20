@@ -1,0 +1,170 @@
+<?php
+
+declare(strict_types=1);
+
+namespace DiveChat\AI;
+
+use DiveChat\Config;
+use GuzzleHttp\Client;
+
+/**
+ * Provider OpenAI API (GPT-4o, GPT-4.1).
+ *
+ * Konwertuje ujednolicony format wiadomości na natywny format OpenAI:
+ * - system jako wiadomość z role 'system'
+ * - tool_calls w wiadomości assistant
+ * - tool results jako wiadomość z role 'tool'
+ */
+final class OpenAIProvider implements AIProviderInterface
+{
+    private readonly Client $http;
+    private readonly string $apiKey;
+    private readonly string $model;
+    private readonly float $temperature;
+    private readonly int $maxTokens;
+
+    public function __construct()
+    {
+        $this->apiKey = Config::getRequired('OPENAI_API_KEY');
+        $this->model = Config::get('OPENAI_CHAT_MODEL', 'gpt-4o');
+        $this->temperature = (float) Config::get('OPENAI_CHAT_TEMPERATURE', '0.4');
+        $this->maxTokens = (int) Config::get('AI_MAX_TOKENS', '4096');
+        $this->http = new Client([
+            'base_uri' => 'https://api.openai.com/',
+            'timeout' => 30,
+        ]);
+    }
+
+    public function chat(array $messages, array $tools = []): AIResponse
+    {
+        $openaiMessages = [];
+
+        foreach ($messages as $msg) {
+            match ($msg['role']) {
+                'system' => $openaiMessages[] = [
+                    'role' => 'system',
+                    'content' => $msg['content'],
+                ],
+                'user' => $openaiMessages[] = [
+                    'role' => 'user',
+                    'content' => $msg['content'],
+                ],
+                'assistant' => $openaiMessages[] = $this->formatAssistantMessage($msg),
+                'tool_result' => $openaiMessages[] = [
+                    'role' => 'tool',
+                    'tool_call_id' => $msg['tool_call_id'],
+                    'content' => $msg['content'],
+                ],
+                default => null,
+            };
+        }
+
+        $body = [
+            'model' => $this->model,
+            'messages' => $openaiMessages,
+            'temperature' => $this->temperature,
+            'max_completion_tokens' => $this->maxTokens,
+        ];
+
+        if (!empty($tools)) {
+            $body['tools'] = $this->formatTools($tools);
+        }
+
+        $response = $this->http->post('v1/chat/completions', [
+            'headers' => [
+                'Authorization' => "Bearer {$this->apiKey}",
+                'Content-Type' => 'application/json',
+            ],
+            'json' => $body,
+        ]);
+
+        $data = json_decode($response->getBody()->getContents(), true);
+        return $this->parseResponse($data);
+    }
+
+    public function getEmbedding(string $text): array
+    {
+        $response = $this->http->post('v1/embeddings', [
+            'headers' => [
+                'Authorization' => "Bearer {$this->apiKey}",
+                'Content-Type' => 'application/json',
+            ],
+            'json' => [
+                'model' => 'text-embedding-3-large',
+                'input' => $text,
+                'dimensions' => 1536,
+            ],
+        ]);
+
+        $data = json_decode($response->getBody()->getContents(), true);
+        return $data['data'][0]['embedding'];
+    }
+
+    /**
+     * Konwertuje ujednolicony format narzędzi na format OpenAI functions.
+     */
+    private function formatTools(array $tools): array
+    {
+        return array_map(fn(array $tool) => [
+            'type' => 'function',
+            'function' => [
+                'name' => $tool['name'],
+                'description' => $tool['description'],
+                'parameters' => $tool['parameters'],
+            ],
+        ], $tools);
+    }
+
+    /**
+     * Formatuje wiadomość asystenta z tool_calls na format OpenAI.
+     */
+    private function formatAssistantMessage(array $msg): array
+    {
+        $result = [
+            'role' => 'assistant',
+            'content' => $msg['content'] ?? null,
+        ];
+
+        if (!empty($msg['tool_calls'])) {
+            $result['tool_calls'] = array_map(fn(ToolCall $tc) => [
+                'id' => $tc->id,
+                'type' => 'function',
+                'function' => [
+                    'name' => $tc->name,
+                    'arguments' => json_encode($tc->arguments),
+                ],
+            ], $msg['tool_calls']);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Parsuje odpowiedź OpenAI na ujednolicony AIResponse.
+     */
+    private function parseResponse(array $data): AIResponse
+    {
+        $choice = $data['choices'][0] ?? [];
+        $message = $choice['message'] ?? [];
+
+        $content = $message['content'] ?? null;
+        $toolCalls = [];
+
+        foreach ($message['tool_calls'] ?? [] as $tc) {
+            $toolCalls[] = new ToolCall(
+                id: $tc['id'],
+                name: $tc['function']['name'],
+                arguments: json_decode($tc['function']['arguments'] ?? '{}', true) ?: [],
+            );
+        }
+
+        return new AIResponse(
+            content: $content,
+            toolCalls: $toolCalls,
+            usage: [
+                'input_tokens' => $data['usage']['prompt_tokens'] ?? 0,
+                'output_tokens' => $data['usage']['completion_tokens'] ?? 0,
+            ],
+        );
+    }
+}

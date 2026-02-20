@@ -10,6 +10,10 @@ __pycache__/
 venv/
 .venv/
 
+# PHP
+vendor/
+composer.phar
+
 # Node
 node_modules/
 
@@ -18,6 +22,7 @@ node_modules/
 .idea/
 *.swp
 .DS_Store
+.claude/
 
 # Cache
 cache/

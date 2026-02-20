@@ -1,0 +1,16 @@
+{
+    "name": "divezone/chat-api",
+    "description": "AI Chat API for divezone.pl",
+    "type": "project",
+    "require": {
+        "php": ">=8.2",
+        "guzzlehttp/guzzle": "^7.0",
+        "vlucas/phpdotenv": "^5.0",
+        "monolog/monolog": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "DiveChat\\": "src/"
+        }
+    }
+}
