@@ -23,7 +23,7 @@ final class Response
         self::json(['error' => $message], $status);
     }
 
-    private static function setCorsHeaders(): void
+    public static function setCorsHeaders(): void
     {
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
         $allowed = ['https://divezone.pl', 'https://www.divezone.pl', 'https://dev.divezone.pl', 'https://chat.divezone.pl', 'http://localhost:3000'];

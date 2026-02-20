@@ -248,6 +248,13 @@ html, body {
     width: fit-content;
 }
 
+.typing-indicator__status {
+    font-size: 12px;
+    color: #888;
+    margin-left: 8px;
+    animation: fadeIn 0.3s ease;
+}
+
 .typing-indicator__dot {
     width: 8px;
     height: 8px;

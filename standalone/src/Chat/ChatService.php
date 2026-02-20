@@ -31,11 +31,15 @@ final class ChatService
     /**
      * Główna metoda - obsługuje wiadomość klienta.
      *
+     * @param ?callable(string): void $onStatus Callback emitujący status SSE
      * @return array{response: string, session_id: string, tools_used: string[], products: array, usage: array, diagnostics: array}
      */
-    public function handle(string $sessionId, string $message, ?int $customerId): array
+    public function handle(string $sessionId, string $message, ?int $customerId, ?callable $onStatus = null): array
     {
         $startTime = microtime(true);
+        $emit = $onStatus ?? static function (string $text): void {};
+
+        $emit('Analizuję Twoje pytanie...');
 
         // Wczytaj ustawienia z bazy (fallback na .env/defaults)
         $settings = $this->loadSettings();
@@ -97,6 +101,11 @@ final class ChatService
         }
 
         for ($i = 0; $i < self::MAX_TOOL_ITERATIONS; $i++) {
+            // Status przed wywołaniem AI
+            if ($i > 0) {
+                $emit('Przygotowuję odpowiedź...');
+            }
+
             $aiStart = microtime(true);
             $response = $this->aiProvider->chat($messages, $toolDefinitions, $aiOptions);
             $timings['ai_ms'] += (microtime(true) - $aiStart) * 1000;
@@ -108,6 +117,9 @@ final class ChatService
             if (!$response->hasToolCalls()) {
                 break;
             }
+
+            // Status: wyszukiwanie
+            $emit('Przeszukuję ofertę nurkową — chwilka...');
 
             // Dodaj odpowiedź asystenta z tool calls do historii
             $messages[] = [
@@ -185,7 +197,11 @@ final class ChatService
 
         // Dodaj odpowiedź asystenta na końcu (jeśli nie ma tool calls)
         if (!$response->hasToolCalls()) {
-            $historyToSave[] = ['role' => 'assistant', 'content' => $finalContent];
+            $assistantMsg = ['role' => 'assistant', 'content' => $finalContent];
+            if (!empty($products)) {
+                $assistantMsg['products'] = $products;
+            }
+            $historyToSave[] = $assistantMsg;
         }
 
         $roundedTimings = array_map(fn($v) => round((float) $v, 1), $timings);

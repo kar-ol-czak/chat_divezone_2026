@@ -175,7 +175,7 @@
             if (msg.role === 'user') {
                 chatMessages.appendChild(createMessageEl(msg.content, 'user', true));
             } else if (msg.role === 'assistant' && msg.content) {
-                var el = createMessageEl(msg.content, 'ai', true);
+                var el = createMessageEl(msg.content, 'ai', true, msg.products || null);
                 // Dodaj przycisk "Pokaz szczegoly"
                 var detailsData = {
                     model: data.model_used,
@@ -205,13 +205,18 @@
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
-    function createMessageEl(content, role, readonly) {
+    function createMessageEl(content, role, readonly, products) {
         var el = document.createElement('div');
         el.className = 'message message--' + role + (readonly ? ' message--readonly' : '');
 
         var bubble = document.createElement('div');
         bubble.className = 'message__bubble';
-        bubble.textContent = content;
+
+        if (role === 'ai' && window.DiveChat && window.DiveChat.formatAiResponse) {
+            bubble.innerHTML = window.DiveChat.formatAiResponse(content, products);
+        } else {
+            bubble.textContent = content;
+        }
         el.appendChild(bubble);
 
         return el;

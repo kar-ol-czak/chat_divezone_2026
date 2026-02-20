@@ -25,6 +25,7 @@ return static function (Router $router, ChatService $chatService): void {
     // Chat
     $chatController = new ChatController($chatService);
     $router->post('/api/chat', $chatController->handle(...));
+    $router->post('/api/chat/stream', $chatController->stream(...));
 
     // Admin: Conversations
     $convController = new ConversationsController(new ConversationStore());

@@ -29,7 +29,7 @@ final class OpenAIProvider implements AIProviderInterface
     public function __construct()
     {
         $this->apiKey = Config::getRequired('OPENAI_API_KEY');
-        $this->model = Config::get('OPENAI_CHAT_MODEL', 'gpt-4o');
+        $this->model = Config::get('OPENAI_CHAT_MODEL', 'gpt-4.1');
         $this->temperature = (float) Config::get('OPENAI_CHAT_TEMPERATURE', '0.4');
         $this->maxTokens = (int) Config::get('AI_MAX_TOKENS', '4096');
         $this->http = new Client([

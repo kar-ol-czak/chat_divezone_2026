@@ -89,53 +89,10 @@
         // Zablokuj input
         setSending(true);
 
-        // Pobierz token i wyslij
+        // Pobierz token i wyslij przez SSE stream
         getAuthToken()
             .then(function (auth) {
-                return fetch('/api/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-DiveChat-Token': auth.token,
-                        'X-DiveChat-Customer': String(auth.customer_id),
-                        'X-DiveChat-Time': String(auth.timestamp),
-                    },
-                    body: JSON.stringify({
-                        message: text,
-                        session_id: sessionId,
-                    }),
-                });
-            })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                removeTyping(typingEl);
-
-                if (data.error) {
-                    appendMessage('Blad: ' + data.error, 'ai');
-                    if (window.DiveChat.Console) {
-                        window.DiveChat.Console.log('Blad API: ' + data.error, 'error');
-                    }
-                    return;
-                }
-
-                // Aktualizuj session_id z odpowiedzi
-                if (data.session_id) {
-                    sessionId = data.session_id;
-                    chatHeaderLabel.textContent = 'Rozmowa #' + sessionId.substring(0, 8);
-                }
-
-                // Renderuj odpowiedz AI (z produktami do linkowania)
-                appendMessage(data.response, 'ai', data.products);
-
-                // Karty produktow
-                if (data.products && data.products.length > 0) {
-                    appendProductCards(data.products);
-                }
-
-                // Loguj diagnostyke
-                if (window.DiveChat.Console) {
-                    window.DiveChat.Console.logResponse(data);
-                }
+                return sendWithStream(auth, text, typingEl);
             })
             .catch(function (err) {
                 removeTyping(typingEl);
@@ -148,6 +105,161 @@
                 setSending(false);
                 chatInput.focus();
             });
+    }
+
+    /**
+     * Wysyla wiadomosc przez SSE stream (POST /api/chat/stream).
+     * Parsuje eventy status/done/error z ReadableStream.
+     * Przy bledzie streamu fallback na klasyczny fetch.
+     */
+    function sendWithStream(auth, text, typingEl) {
+        var headers = {
+            'Content-Type': 'application/json',
+            'X-DiveChat-Token': auth.token,
+            'X-DiveChat-Customer': String(auth.customer_id),
+            'X-DiveChat-Time': String(auth.timestamp),
+        };
+        var body = JSON.stringify({ message: text, session_id: sessionId });
+
+        return fetch('/api/chat/stream', {
+            method: 'POST',
+            headers: headers,
+            body: body,
+        }).then(function (response) {
+            // Jesli nie SSE — fallback na klasyczny endpoint
+            var ct = response.headers.get('content-type') || '';
+            if (!ct.includes('text/event-stream')) {
+                return response.json().then(function (data) {
+                    handleChatResponse(data, typingEl);
+                });
+            }
+
+            return readSSEStream(response.body, typingEl);
+        }).catch(function () {
+            // Fallback: klasyczny fetch
+            return sendClassic(auth, text, typingEl);
+        });
+    }
+
+    /**
+     * Czyta SSE stream z ReadableStream i obsluguje eventy.
+     */
+    function readSSEStream(body, typingEl) {
+        var reader = body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = '';
+        var statusEl = typingEl ? typingEl.querySelector('.typing-indicator__status') : null;
+
+        function processChunk(result) {
+            if (result.done) return;
+
+            buffer += decoder.decode(result.value, { stream: true });
+
+            // Parsuj kompletne eventy SSE (rozdzielone \n\n)
+            var parts = buffer.split('\n\n');
+            buffer = parts.pop(); // ostatni fragment moze byc niekompletny
+
+            parts.forEach(function (block) {
+                if (!block.trim()) return;
+
+                var eventType = 'message';
+                var dataLine = '';
+
+                block.split('\n').forEach(function (line) {
+                    if (line.indexOf('event: ') === 0) {
+                        eventType = line.substring(7).trim();
+                    } else if (line.indexOf('data: ') === 0) {
+                        dataLine = line.substring(6);
+                    }
+                });
+
+                if (!dataLine) return;
+
+                try {
+                    var data = JSON.parse(dataLine);
+                } catch (e) {
+                    return;
+                }
+
+                if (eventType === 'status') {
+                    // Zatrzymaj timer fake statusow przy pierwszym SSE
+                    if (typingEl && typingEl._statusInterval) {
+                        clearInterval(typingEl._statusInterval);
+                        typingEl._statusInterval = null;
+                    }
+                    // Aktualizuj tekst statusu w typing indicator
+                    if (statusEl) {
+                        statusEl.textContent = data.text || '';
+                    }
+                } else if (eventType === 'done') {
+                    handleChatResponse(data, typingEl);
+                } else if (eventType === 'error') {
+                    removeTyping(typingEl);
+                    appendMessage('Blad: ' + (data.error || 'Nieznany blad'), 'ai');
+                    if (window.DiveChat.Console) {
+                        window.DiveChat.Console.log('SSE error: ' + (data.error || ''), 'error');
+                    }
+                }
+            });
+
+            return reader.read().then(processChunk);
+        }
+
+        return reader.read().then(processChunk);
+    }
+
+    /**
+     * Fallback: klasyczny fetch na /api/chat (bez streamu).
+     */
+    function sendClassic(auth, text, typingEl) {
+        return fetch('/api/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-DiveChat-Token': auth.token,
+                'X-DiveChat-Customer': String(auth.customer_id),
+                'X-DiveChat-Time': String(auth.timestamp),
+            },
+            body: JSON.stringify({ message: text, session_id: sessionId }),
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            handleChatResponse(data, typingEl);
+        });
+    }
+
+    /**
+     * Obsluguje odpowiedz czatu (wspolna dla SSE i klasycznego fetch).
+     */
+    function handleChatResponse(data, typingEl) {
+        removeTyping(typingEl);
+
+        if (data.error) {
+            appendMessage('Blad: ' + data.error, 'ai');
+            if (window.DiveChat.Console) {
+                window.DiveChat.Console.log('Blad API: ' + data.error, 'error');
+            }
+            return;
+        }
+
+        // Aktualizuj session_id z odpowiedzi
+        if (data.session_id) {
+            sessionId = data.session_id;
+            chatHeaderLabel.textContent = 'Rozmowa #' + sessionId.substring(0, 8);
+        }
+
+        // Renderuj odpowiedz AI (z produktami do linkowania)
+        appendMessage(data.response, 'ai', data.products);
+
+        // Karty produktow
+        if (data.products && data.products.length > 0) {
+            appendProductCards(data.products);
+        }
+
+        // Loguj diagnostyke
+        if (window.DiveChat.Console) {
+            window.DiveChat.Console.logResponse(data);
+        }
     }
 
     function appendMessage(content, role, products) {
@@ -191,11 +303,27 @@
         if (products && products.length > 0) {
             products.forEach(function (p) {
                 if (!p.name || !p.url) return;
+                var url = p.url || p.product_url;
+                if (!url) return;
+
+                // Próbuj dopasować pełną nazwę lub skróconą (3+ słów od początku)
                 var nameEsc = escHtml(p.name);
-                var nameRegex = new RegExp(escRegex(nameEsc), 'g');
-                html = html.replace(nameRegex,
-                    '<a href="' + escAttr(p.url) + '" target="_blank" rel="noopener" class="product-link">' + nameEsc + '</a>'
-                );
+                var matched = tryLinkProduct(html, nameEsc, url);
+                if (matched) {
+                    html = matched;
+                    return;
+                }
+
+                // Fallback: szukaj po kluczowych słowach (marka + model, min 3 słowa)
+                var words = p.name.split(/\s+/);
+                for (var len = Math.min(words.length, 5); len >= 3; len--) {
+                    var partial = escHtml(words.slice(0, len).join(' '));
+                    matched = tryLinkProduct(html, partial, url);
+                    if (matched) {
+                        html = matched;
+                        return;
+                    }
+                }
             });
         }
 
@@ -204,6 +332,19 @@
 
     function escRegex(s) {
         return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    /**
+     * Próbuje znaleźć fragment w HTML i zamienić na link.
+     * Zwraca zmieniony HTML lub null jeśli nie znaleziono.
+     * Pomija fragmenty już wewnątrz tagów <a>.
+     */
+    function tryLinkProduct(html, needle, url) {
+        var regex = new RegExp('(?![^<]*<\\/a>)' + escRegex(needle), 'i');
+        if (!regex.test(html)) return null;
+        return html.replace(regex,
+            '<a href="' + escAttr(url) + '" target="_blank" rel="noopener" class="product-link">$&</a>'
+        );
     }
 
     function appendProductCards(products) {
@@ -244,15 +385,35 @@
         el.innerHTML =
             '<span class="typing-indicator__dot"></span>' +
             '<span class="typing-indicator__dot"></span>' +
-            '<span class="typing-indicator__dot"></span>';
+            '<span class="typing-indicator__dot"></span>' +
+            '<span class="typing-indicator__status"></span>';
+
+        var statusEl = el.querySelector('.typing-indicator__status');
+        var messages = [
+            'Analizuję pytanie...',
+            'Przeszukuję ofertę...',
+            'Dobieram produkty...',
+            'Przygotowuję odpowiedź...',
+        ];
+        var idx = 0;
+        statusEl.textContent = messages[0];
+
+        el._statusInterval = setInterval(function () {
+            idx++;
+            if (idx < messages.length) {
+                statusEl.textContent = messages[idx];
+            }
+        }, 4000);
+
         chatMessages.appendChild(el);
         scrollToBottom();
         return el;
     }
 
     function removeTyping(el) {
-        if (el && el.parentNode) {
-            el.parentNode.removeChild(el);
+        if (el) {
+            clearInterval(el._statusInterval);
+            if (el.parentNode) el.parentNode.removeChild(el);
         }
     }
 
@@ -332,4 +493,8 @@
     function escAttr(s) {
         return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
+
+    // Udostępnij formatowanie globalnie (dla history.js)
+    window.DiveChat = window.DiveChat || {};
+    window.DiveChat.formatAiResponse = formatAiResponse;
 })();
