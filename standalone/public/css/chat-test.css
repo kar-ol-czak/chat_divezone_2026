@@ -101,6 +101,7 @@ html, body {
     background: var(--bg-chat);
     border-right: 1px solid var(--border);
     min-width: 0;
+    overflow: hidden;
 }
 
 .chat-header {
@@ -199,6 +200,27 @@ html, body {
     border: 1px solid var(--border-light);
     color: #333;
     border-bottom-left-radius: 2px;
+}
+
+.message__bubble .product-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.message__bubble .product-link:hover {
+    text-decoration: underline;
+}
+
+.message__bubble .ai-separator {
+    border: none;
+    border-top: 1px solid var(--border-light);
+    margin: 8px 0;
+}
+
+.message__bubble strong {
+    font-weight: 600;
+    color: #1a1a2e;
 }
 
 .message__meta {
@@ -451,12 +473,44 @@ html, body {
     display: flex;
     flex-direction: column;
     background: var(--bg-panel);
-    overflow-y: auto;
-    scrollbar-width: thin;
+    overflow: hidden;
 }
 
 .panel-section {
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+/* Konsola: ograniczona wysokość, scrollowalna */
+.panel-console {
+    flex-shrink: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-console .panel-section__body {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Historia: wypełnia resztę, scrollowalna */
+.panel-history {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel-history .panel-section__body {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
 }
 
 .panel-section__header {
@@ -611,7 +665,7 @@ html, body {
     font-size: 11px;
     line-height: 1.6;
     padding: 8px 12px;
-    max-height: 300px;
+    flex: 1;
     overflow-y: auto;
     scrollbar-width: thin;
 }
@@ -730,7 +784,7 @@ html, body {
 }
 
 .history-list {
-    max-height: 400px;
+    flex: 1;
     overflow-y: auto;
     scrollbar-width: thin;
 }

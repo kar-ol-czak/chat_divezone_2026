@@ -124,8 +124,8 @@
                     chatHeaderLabel.textContent = 'Rozmowa #' + sessionId.substring(0, 8);
                 }
 
-                // Renderuj odpowiedz AI
-                appendMessage(data.response, 'ai');
+                // Renderuj odpowiedz AI (z produktami do linkowania)
+                appendMessage(data.response, 'ai', data.products);
 
                 // Karty produktow
                 if (data.products && data.products.length > 0) {
@@ -150,13 +150,18 @@
             });
     }
 
-    function appendMessage(content, role) {
+    function appendMessage(content, role, products) {
         var el = document.createElement('div');
         el.className = 'message message--' + role;
 
         var bubble = document.createElement('div');
         bubble.className = 'message__bubble';
-        bubble.textContent = content;
+
+        if (role === 'ai') {
+            bubble.innerHTML = formatAiResponse(content, products);
+        } else {
+            bubble.textContent = content;
+        }
         el.appendChild(bubble);
 
         var meta = document.createElement('div');
@@ -167,6 +172,38 @@
 
         chatMessages.appendChild(el);
         scrollToBottom();
+    }
+
+    /**
+     * Formatuje odpowiedź AI: bold, separatory, linkuje produkty.
+     */
+    function formatAiResponse(text, products) {
+        var html = escHtml(text);
+
+        // Markdown bold **text** i __text__
+        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+
+        // Separatory ---
+        html = html.replace(/^-{3,}$/gm, '<hr class="ai-separator">');
+
+        // Linkuj nazwy produktów jeśli mamy dane
+        if (products && products.length > 0) {
+            products.forEach(function (p) {
+                if (!p.name || !p.url) return;
+                var nameEsc = escHtml(p.name);
+                var nameRegex = new RegExp(escRegex(nameEsc), 'g');
+                html = html.replace(nameRegex,
+                    '<a href="' + escAttr(p.url) + '" target="_blank" rel="noopener" class="product-link">' + nameEsc + '</a>'
+                );
+            });
+        }
+
+        return html;
+    }
+
+    function escRegex(s) {
+        return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
     function appendProductCards(products) {

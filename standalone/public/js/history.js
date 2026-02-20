@@ -109,7 +109,7 @@
         var model = conv.model_used || '';
         var msgs = conv.message_count || 0;
         var cost = conv.estimated_cost != null ? '$' + conv.estimated_cost.toFixed(3) : '';
-        var tools = (conv.tools_used || []).join(', ');
+        var tools = Array.isArray(conv.tools_used) ? conv.tools_used.join(', ') : Object.values(conv.tools_used || {}).join(', ');
 
         var badges = '';
         if (model) badges += '<span class="history-item__badge badge--model">' + escHtml(model) + '</span>';

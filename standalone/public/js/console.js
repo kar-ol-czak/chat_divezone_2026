@@ -197,8 +197,8 @@
     function estimateCost(inTokens, outTokens, model) {
         const prices = {
             'gpt-4.1':               { in: 2.0, out: 8.0 },
-            'gpt-5-mini':            { in: 1.0, out: 4.0 },
-            'gpt-5.2':              { in: 10.0, out: 40.0 },
+            'gpt-5-mini':            { in: 0.25, out: 2.0 },
+            'gpt-5.2':              { in: 1.75, out: 14.0 },
             'claude-sonnet-4-6':     { in: 3.0, out: 15.0 },
             'claude-haiku-4-5':      { in: 0.8, out: 4.0 },
             'claude-opus-4-6':       { in: 15.0, out: 75.0 },

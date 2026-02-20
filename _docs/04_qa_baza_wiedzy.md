@@ -313,6 +313,31 @@
 
 ---
 
+## KATEGORIA: DOBÓR PŁETW
+
+### QA-038
+- **Status:** DRAFT
+- **direct_answer:** false
+- **category:** dobor_sprzetu
+- **Pytanie:** Jakie są rodzaje płetw nurkowych i do czego się nadają?
+- **Odpowiedź:** Płetwy nurkowe dzielą się na dwa główne typy według mocowania: paskowe (z regulowanym paskiem na piętę, noszone z butami nurkowymi) i kaloszowe (z wbudowanym butem, noszone na bosą stopę lub cienką skarpetkę). Płetwy paskowe to standard w nurkowaniu z aparatem (scuba). Wymagają butów nurkowych, które chronią stopy i dają ciepło. Są sztywniejsze, generują większą siłę napędową potrzebną do poruszania się z ciężkim sprzętem (butla, jacket/skrzydło, balast). Nadają się do nurkowania rekreacyjnego, technicznego i zawodowego. Płetwy kaloszowe są lżejsze, wygodniejsze do zakładania, idealne do snorkelingu, pływania na basenie i freedivingu na ciepłych wodach. Nie nadają się do nurkowania ze sprzętem (scuba), ponieważ nie zapewniają wystarczającej siły napędowej, nie chronią stóp przed zimnem i nie współpracują z butami nurkowymi. Klient pytający o płetwy do nurkowania ze sprzętem powinien dostawać WYŁĄCZNIE propozycje płetw paskowych.
+
+### QA-039
+- **Status:** DRAFT
+- **direct_answer:** false
+- **category:** dobor_sprzetu
+- **Pytanie:** Jak dobrać płetwy do nurkowania ze sprzętem?
+- **Odpowiedź:** Do nurkowania ze sprzętem (scuba) potrzebne są płetwy paskowe, noszone z butami nurkowymi. Kluczowe kryteria doboru: 1) Rozmiar: płetwy dobiera się do rozmiaru butów nurkowych, nie stopy. Trzeba najpierw mieć lub znać rozmiar butów. 2) Sztywność: początkujący powinni wybierać płetwy o średniej sztywności (mniejsze obciążenie nóg), zaawansowani mogą preferować sztywniejsze (lepsza kontrola, techniki kopnięć frog kick i back kick). 3) Typ łopatki: klasyczne płaskie (uniwersalne, tańsze), splitfiny/rozcięte (mniejszy wysiłek, gorsze do technik kopnięć), kanałowe/żebrowane (dobry kompromis siły i wygody). 4) Nurkowanie techniczne wymaga krótszych, sztywnych płetw umożliwiających frog kick i helicopter turn w ograniczonej przestrzeni (jaskinie, wraki). 5) Zimne wody (Polska, Bałtyk): grubsze buty nurkowe (7mm), płetwy muszą mieć odpowiednio duży kieszeń na stopę i regulowany pasek.
+
+### QA-040
+- **Status:** DRAFT
+- **direct_answer:** false
+- **category:** dobor_sprzetu
+- **Pytanie:** Jakie płetwy do freedivingu i snorkelingu?
+- **Odpowiedź:** Do freedivingu i snorkelingu stosuje się płetwy kaloszowe (z wbudowanym butem). Różnice między nimi: Płetwy do snorkelingu są krótsze (40-60 cm łopatki), kompaktowe, łatwe w transporcie. Nadają się do pływania na powierzchni i płytkich zanurzeń. Płetwy do freedivingu mają długie łopatki (60-85 cm), są zaprojektowane do efektywnego napędu w pionie (zanurzenia). Łopatki mogą być plastikowe (budżetowe), kompozytowe (fiberglass, lepszy stosunek sztywności do wagi) lub karbonowe (najlżejsze, najwydajniejsze, drogie). Sztywność łopatki do freedivingu dobiera się do wagi nurka i poziomu zaawansowania: miękkie dla lekkich/początkujących, średnie dla większości, twarde dla ciężkich/zaawansowanych. Płetwy freedivingowe NIE nadają się do nurkowania ze sprzętem, a płetwy do scuba NIE nadają się do freedivingu (za ciężkie, za krótkie łopatki, nieefektywne hydrodynamicznie).
+
+---
+
 ## NOTATKI DO ROZBUDOWY
 
 Tematy do dodania w kolejnych iteracjach (na podstawie realnych rozmów z klientami):
@@ -322,6 +347,7 @@ Tematy do dodania w kolejnych iteracjach (na podstawie realnych rozmów z klient
 - [ ] Różnice między certyfikacjami (PADI, SSI, CMAS)
 - [ ] Ubezpieczenie nurkowe (DAN, DiveAssure)
 - [ ] Sprzęt do freedivingu vs sprzęt do nurkowania aparatowego
+- [x] Dobór płetw: typy, zastosowania, kryteria (QA-038, QA-039, QA-040)
 - [x] Przeciwwskazania zdrowotne (QA-031, QA-032)
 - [x] Nitrox / gazy nurkowe (QA-033, QA-034)
 - [x] Pielęgnacja sprzętu (QA-035, QA-036, QA-037)

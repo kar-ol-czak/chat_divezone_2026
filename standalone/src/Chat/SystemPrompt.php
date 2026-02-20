@@ -53,7 +53,8 @@ final class SystemPrompt
 
             FORMAT ODPOWIEDZI:
             - Produkty prezentuj z nazwą, ceną i dostępnością
-            - Nie używaj Markdown — odpowiadaj zwykłym tekstem
+            - Nazwy produktów wyróżniaj pogrubieniem: **Nazwa produktu**
+            - Nie używaj nagłówków (#), list numerowanych ani Markdown poza pogrubieniem
             - Bądź konkretny, unikaj ogólników{$emojiRule}
             PROMPT;
     }

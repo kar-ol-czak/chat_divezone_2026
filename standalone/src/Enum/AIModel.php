@@ -11,7 +11,7 @@ namespace DiveChat\Enum;
 enum AIModel: string
 {
     // OpenAI primary
-    case GPT_52_MINI = 'gpt-5.2-mini';
+    case GPT_5_MINI = 'gpt-5-mini';
     case GPT_41 = 'gpt-4.1';
 
     // OpenAI escalation
@@ -43,12 +43,20 @@ enum AIModel: string
     public function label(): string
     {
         return match ($this) {
-            self::GPT_52_MINI => 'GPT-5.2 Mini',
+            self::GPT_5_MINI => 'GPT-5 Mini',
             self::GPT_41 => 'GPT-4.1',
             self::GPT_52 => 'GPT-5.2',
             self::CLAUDE_SONNET_46 => 'Claude Sonnet 4.6',
             self::CLAUDE_HAIKU_45 => 'Claude Haiku 4.5',
             self::CLAUDE_OPUS_46 => 'Claude Opus 4.6',
+        };
+    }
+
+    public function supportsTemperature(): bool
+    {
+        return match ($this) {
+            self::GPT_41 => true,
+            default => false, // reasoning models (gpt-5-mini, gpt-5.2, claude) nie obsługują temperature
         };
     }
 

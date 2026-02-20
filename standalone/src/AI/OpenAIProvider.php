@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DiveChat\AI;
 
 use DiveChat\Config;
+use DiveChat\Enum\AIModel;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\ServerException;
@@ -66,9 +67,14 @@ final class OpenAIProvider implements AIProviderInterface
         $body = [
             'model' => $model,
             'messages' => $openaiMessages,
-            'temperature' => $this->temperature,
             'max_completion_tokens' => $this->maxTokens,
         ];
+
+        // Temperature tylko dla modeli które ją obsługują (nie reasoning)
+        $aiModel = AIModel::tryFrom($model);
+        if ($aiModel === null || $aiModel->supportsTemperature()) {
+            $body['temperature'] = $this->temperature;
+        }
 
         // Reasoning effort dla modeli eskalacyjnych (np. gpt-5.2)
         if (!empty($options['effort']) && is_string($options['effort'])) {
