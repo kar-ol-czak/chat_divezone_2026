@@ -89,33 +89,22 @@ Zmieniono default na `false`. AI powinno w odpowiedzi rozróżniać:
 - "dostępny od ręki" (in_stock=true)
 - "na zamówienie" (in_stock=false, is_active=true)
 
-## 5. Plan naprawczy
+## 5. Rozwiązanie: "Myśl zanim szukasz"
 
-### Priorytet 1: Wpisy QA do bazy wiedzy
-- QA-041: Regiony nurkowe → temperatura → grubość pianki
-- QA-042: Kiedy pytać o zaawansowanie (mapa kategorii)
-- QA-043: Kiedy pytać o płeć (mapa kategorii)
-- QA-044: Synonimy produktowe (pianka = skafander mokry itd.)
+### Podejście
+Nie budujemy słowników synonimów ani sztywnych mapowań. AI już wie, że pianka = skafander mokry
+i że w Polsce jest zimna woda. Problem polegał na tym, że AI przekazywało dosłowne słowa klienta
+do search_products zamiast przetłumaczyć je na terminologię produktową.
 
-### Priorytet 2: Query expansion (TASK-010 lub nowy task)
-- Słownik synonimów klienckich → terminów produktowych
-- Przed generowaniem embeddingu: rozszerz query o synonimy
-- Alternatywnie: wzbogać tekst embeddingu produktu o synonimy
+### Implementacja (zrobiona)
+1. **Tool description search_products** — jasna instrukcja: "query musi zawierać terminologię
+   produktową, NIE słowa klienta. Przetłumacz potrzebę na język produktów."
+2. **System prompt** — sekcja "MYŚL ZANIM SZUKASZ" z przykładami tłumaczeń
+3. **System prompt** — sekcja "PYTANIA DOPRECYZOWUJĄCE" z mapą: kiedy pytać o zaawansowanie,
+   kiedy o płeć, kiedy żadne z tych nie ma sensu
 
-### Priorytet 3: System prompt update
-- Dodaj instrukcję: NIE pytaj o zaawansowanie przy piankach/maskach/butach
-- Dodaj instrukcję: PYTAJ o płeć przy piankach i BCD
-- Dodaj instrukcję: "Polska" = zimna woda = 7mm semidry minimum
-
-## 6. Decyzja architektoniczna do podjęcia
-
-**Pytanie 7:** Jak rozwiązać problem synonimów?
-a) Query expansion w PHP (słownik JSON, przed embeddingiem)
-b) Wzbogacenie tekstu embeddingu produktu o synonimy klienckie
-c) Oba (belt and suspenders)
-d) Inne podejście
-
-**Pytanie 8:** Gdzie umieścić wiedzę "region → temperatura → pianka"?
-a) Tylko w QA knowledge base (get_expert_knowledge)
-b) W system prompcie (zawsze w kontekście)
-c) Oba (skrócona wersja w prompcie + szczegóły w QA)
+### Zalety
+- Zero hardkodowania, zero utrzymania słowników
+- AI wykorzystuje swoją wiedzę o nurkowaniu
+- Działa dla nowych synonimów bez zmian w kodzie
+- Skaluje się na nowe kategorie produktów

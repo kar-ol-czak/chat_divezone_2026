@@ -25,9 +25,13 @@ final class ProductSearch implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Wyszukuje produkty w ofercie divezone.pl na podstawie opisu, kategorii, ceny i marki. '
-             . 'Zwraca listę pasujących produktów z cenami i dostępnością. '
-             . 'Używaj gdy klient szuka produktu, pyta o rekomendację lub porównanie.';
+        return 'Wyszukuje produkty w ofercie divezone.pl metodą semantyczną (embedding similarity). '
+             . 'WAŻNE: Parametr query musi zawierać terminologię produktową/sklepową, NIE słowa klienta. '
+             . 'Przed wyszukaniem przetłumacz potrzebę klienta na język produktów. '
+             . 'Przykłady: klient mówi "pianka" → szukaj "skafander mokry neoprenowy"; '
+             . 'klient mówi "nurkuję w Polsce" → szukaj "skafander 7mm semidry" bo wiesz że Polska = zimna woda 4-10°C; '
+             . 'klient mówi "jacket" → szukaj "kamizelka wyrównawcza BCD". '
+             . 'Uwzględniaj w query grubość, typ, przeznaczenie — wszystko co wiesz z kontekstu rozmowy.';
     }
 
     public function getParametersSchema(): array
@@ -37,7 +41,9 @@ final class ProductSearch implements ToolInterface
             'properties' => [
                 'query' => [
                     'type' => 'string',
-                    'description' => 'Opis czego szuka klient, np. "maska do freedivingu" lub "automat oddechowy do zimnej wody"',
+                    'description' => 'Zapytanie w terminologii produktowej sklepu (NIE słowa klienta). '
+                        . 'Przetłumacz potrzebę klienta na parametry produktu: typ, grubość, przeznaczenie. '
+                        . 'Np. "skafander mokry 7mm damski" lub "automat oddechowy zimna woda DIN"',
                 ],
                 'category' => [
                     'type' => 'string',
