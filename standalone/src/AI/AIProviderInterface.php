@@ -26,6 +26,7 @@ interface AIProviderInterface
      *
      * @param array $messages Lista wiadomości (ujednolicony format)
      * @param array $tools Lista definicji narzędzi
+     * @param array $options Opcje: effort (string|int), model_override (string)
      */
-    public function chat(array $messages, array $tools = []): AIResponse;
+    public function chat(array $messages, array $tools = [], array $options = []): AIResponse;
 }

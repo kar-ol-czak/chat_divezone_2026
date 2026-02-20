@@ -1,44 +1,28 @@
 /**
  * DiveChat — Panel ustawien
- * Load/save z /api/settings, dropdowny zalezne od providera.
+ * Load/save z /api/settings, dynamiczne modele z API, effort UI.
  */
 (function () {
     'use strict';
 
     // Elementy DOM
-    const elProvider = document.getElementById('settingProvider');
-    const elModel = document.getElementById('settingModel');
-    const elEscalation = document.getElementById('settingEscalation');
-    const elTemp = document.getElementById('settingTemp');
-    const elTempValue = document.getElementById('tempValue');
-    const elEmoji = document.getElementById('settingEmoji');
-    const elGapThreshold = document.getElementById('settingGapThreshold');
-    const elGapValue = document.getElementById('gapValue');
-    const elSaved = document.getElementById('settingSaved');
+    var elProvider = document.getElementById('settingProvider');
+    var elModel = document.getElementById('settingModel');
+    var elEscalation = document.getElementById('settingEscalation');
+    var elTemp = document.getElementById('settingTemp');
+    var elTempValue = document.getElementById('tempValue');
+    var elEmoji = document.getElementById('settingEmoji');
+    var elGapThreshold = document.getElementById('settingGapThreshold');
+    var elGapValue = document.getElementById('gapValue');
+    var elSaved = document.getElementById('settingSaved');
+    var elEffortGroup = document.getElementById('effortGroup');
+    var elEffortOpenai = document.getElementById('effortOpenai');
+    var elEffortClaude = document.getElementById('effortClaude');
+    var elEffortClaudeValue = document.getElementById('effortClaudeValue');
 
-    // Modele per provider
-    const MODELS = {
-        openai: {
-            primary: [
-                { value: 'gpt-4.1', label: 'gpt-4.1' },
-                { value: 'gpt-5-mini', label: 'gpt-5-mini' },
-            ],
-            escalation: [
-                { value: 'gpt-5.2', label: 'gpt-5.2' },
-            ],
-        },
-        claude: {
-            primary: [
-                { value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6' },
-                { value: 'claude-haiku-4-5', label: 'claude-haiku-4-5' },
-            ],
-            escalation: [
-                { value: 'claude-opus-4-6', label: 'claude-opus-4-6' },
-            ],
-        },
-    };
-
-    let saveTimeout = null;
+    // Modele z API (ładowane dynamicznie)
+    var availableModels = null;
+    var saveTimeout = null;
 
     // --- Init ---
     loadSettings();
@@ -50,7 +34,10 @@
     });
 
     elModel.addEventListener('change', function () { saveAll(); });
-    elEscalation.addEventListener('change', function () { saveAll(); });
+    elEscalation.addEventListener('change', function () {
+        updateEffortUI();
+        saveAll();
+    });
 
     elTemp.addEventListener('input', function () {
         elTempValue.textContent = elTemp.value;
@@ -64,6 +51,16 @@
     });
     elGapThreshold.addEventListener('change', function () { saveAll(); });
 
+    if (elEffortOpenai) {
+        elEffortOpenai.addEventListener('change', function () { saveAll(); });
+    }
+    if (elEffortClaude) {
+        elEffortClaude.addEventListener('input', function () {
+            elEffortClaudeValue.textContent = elEffortClaude.value;
+        });
+        elEffortClaude.addEventListener('change', function () { saveAll(); });
+    }
+
     // --- Funkcje ---
 
     function loadSettings() {
@@ -74,6 +71,7 @@
             })
             .then(function (r) { return r.json(); })
             .then(function (data) {
+                availableModels = data.available_models || null;
                 var s = data.settings || {};
                 applySettings(s);
             })
@@ -115,14 +113,32 @@
             elGapThreshold.value = s.knowledge_gap_threshold;
             elGapValue.textContent = s.knowledge_gap_threshold;
         }
+
+        // Effort
+        if (s.escalation_effort != null) {
+            if (elEffortOpenai && typeof s.escalation_effort === 'string') {
+                elEffortOpenai.value = s.escalation_effort;
+            }
+            if (elEffortClaude && typeof s.escalation_effort === 'number') {
+                elEffortClaude.value = s.escalation_effort;
+                elEffortClaudeValue.textContent = s.escalation_effort;
+            }
+        }
+
+        updateEffortUI();
     }
 
     function updateModelDropdowns(provider) {
-        var models = MODELS[provider] || MODELS.openai;
+        var models = availableModels ? availableModels[provider] : null;
+
+        // Fallback jeśli API nie zwróciło modeli
+        if (!models) {
+            return;
+        }
 
         // Primary
         elModel.innerHTML = '';
-        models.primary.forEach(function (m) {
+        (models.primary || []).forEach(function (m) {
             var opt = document.createElement('option');
             opt.value = m.value;
             opt.textContent = m.label;
@@ -131,12 +147,50 @@
 
         // Escalation
         elEscalation.innerHTML = '';
-        models.escalation.forEach(function (m) {
+        (models.escalation || []).forEach(function (m) {
             var opt = document.createElement('option');
             opt.value = m.value;
             opt.textContent = m.label;
             elEscalation.appendChild(opt);
         });
+
+        updateEffortUI();
+    }
+
+    function updateEffortUI() {
+        if (!elEffortGroup || !availableModels) return;
+
+        var provider = elProvider.value;
+        var escalationValue = elEscalation.value;
+        var models = availableModels[provider];
+        if (!models || !models.escalation) {
+            elEffortGroup.classList.add('hidden');
+            return;
+        }
+
+        // Znajdz wybrany model eskalacyjny
+        var selectedModel = null;
+        models.escalation.forEach(function (m) {
+            if (m.value === escalationValue) selectedModel = m;
+        });
+
+        if (!selectedModel || !selectedModel.supports_effort) {
+            elEffortGroup.classList.add('hidden');
+            return;
+        }
+
+        elEffortGroup.classList.remove('hidden');
+
+        // Pokaz odpowiedni kontroler effort
+        var isOpenai = selectedModel.effort_param === 'reasoning_effort';
+        var isClaude = selectedModel.effort_param === 'extended_thinking';
+
+        if (elEffortOpenai) {
+            elEffortOpenai.parentElement.style.display = isOpenai ? '' : 'none';
+        }
+        if (elEffortClaude) {
+            elEffortClaude.parentElement.style.display = isClaude ? '' : 'none';
+        }
     }
 
     function saveAll() {
@@ -145,6 +199,17 @@
     }
 
     function doSave() {
+        // Rozpoznaj effort na podstawie providera
+        var provider = elProvider.value;
+        var effort;
+        if (provider === 'claude' && elEffortClaude) {
+            effort = parseInt(elEffortClaude.value, 10);
+        } else if (elEffortOpenai) {
+            effort = elEffortOpenai.value;
+        } else {
+            effort = 'medium';
+        }
+
         var settings = {
             ai_provider: elProvider.value,
             primary_model: elModel.value,
@@ -152,6 +217,7 @@
             temperature: parseFloat(elTemp.value),
             emoji_enabled: elEmoji.checked,
             knowledge_gap_threshold: parseFloat(elGapThreshold.value),
+            escalation_effort: effort,
         };
 
         fetch('/api/settings', {

@@ -37,7 +37,7 @@ final class OpenAIProvider implements AIProviderInterface
         ]);
     }
 
-    public function chat(array $messages, array $tools = []): AIResponse
+    public function chat(array $messages, array $tools = [], array $options = []): AIResponse
     {
         $openaiMessages = [];
 
@@ -61,12 +61,19 @@ final class OpenAIProvider implements AIProviderInterface
             };
         }
 
+        $model = $options['model_override'] ?? $this->model;
+
         $body = [
-            'model' => $this->model,
+            'model' => $model,
             'messages' => $openaiMessages,
             'temperature' => $this->temperature,
             'max_completion_tokens' => $this->maxTokens,
         ];
+
+        // Reasoning effort dla modeli eskalacyjnych (np. gpt-5.2)
+        if (!empty($options['effort']) && is_string($options['effort'])) {
+            $body['reasoning_effort'] = $options['effort'];
+        }
 
         if (!empty($tools)) {
             $body['tools'] = $this->formatTools($tools);

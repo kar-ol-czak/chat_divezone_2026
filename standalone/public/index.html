@@ -82,6 +82,22 @@
                             <option value="gpt-5.2">gpt-5.2</option>
                         </select>
                     </div>
+                    <div class="setting-group hidden" id="effortGroup">
+                        <label class="setting-label">Reasoning effort</label>
+                        <div>
+                            <select id="effortOpenai" class="setting-select">
+                                <option value="low">Low</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="high">High</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="setting-label" for="effortClaude">
+                                Budget tokens: <span id="effortClaudeValue">5000</span>
+                            </label>
+                            <input type="range" id="effortClaude" class="setting-range" min="1000" max="20000" step="1000" value="5000">
+                        </div>
+                    </div>
                     <div class="setting-group">
                         <label class="setting-label" for="settingTemp">
                             Temperature: <span id="tempValue">0.6</span>

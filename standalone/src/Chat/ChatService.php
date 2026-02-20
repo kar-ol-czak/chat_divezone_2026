@@ -8,6 +8,7 @@ use DiveChat\AI\AIProviderInterface;
 use DiveChat\AI\AIResponse;
 use DiveChat\AI\ToolCall;
 use DiveChat\Config;
+use DiveChat\Enum\AIModel;
 use DiveChat\Tools\ToolRegistry;
 
 /**
@@ -82,9 +83,22 @@ final class ChatService
         $knowledgeGap = false;
         $timings = ['ai_ms' => 0.0, 'tool_ms' => 0.0, 'embedding_ms' => 0.0];
 
+        // Rozpoznaj aktualnego providera
+        $currentProvider = Config::get('AI_PROVIDER', str_starts_with(Config::get('ANTHROPIC_MODEL', ''), 'claude') ? 'claude' : 'openai');
+
+        // Opcje AI (effort, model override z settings)
+        $aiOptions = $settings['ai_options'] ?? [];
+        if (!empty($settings['primary_model'])) {
+            // Model override tylko jeśli pasuje do aktualnego providera
+            $settingsModel = AIModel::tryFrom($settings['primary_model']);
+            if ($settingsModel !== null && $settingsModel->provider() === $currentProvider) {
+                $aiOptions['model_override'] = $settings['primary_model'];
+            }
+        }
+
         for ($i = 0; $i < self::MAX_TOOL_ITERATIONS; $i++) {
             $aiStart = microtime(true);
-            $response = $this->aiProvider->chat($messages, $toolDefinitions);
+            $response = $this->aiProvider->chat($messages, $toolDefinitions, $aiOptions);
             $timings['ai_ms'] += (microtime(true) - $aiStart) * 1000;
 
             $totalUsage['input_tokens'] += $response->usage['input_tokens'];
@@ -145,9 +159,11 @@ final class ChatService
 
         $timings['total_ms'] = (microtime(true) - $startTime) * 1000;
 
-        $modelUsed = Config::get('AI_PROVIDER', 'openai') === 'claude'
-            ? Config::get('ANTHROPIC_MODEL', 'claude-sonnet-4-20250514')
-            : Config::get('OPENAI_CHAT_MODEL', 'gpt-4o');
+        // Model raportowany = override jeśli użyty, inaczej z .env
+        $modelUsed = $aiOptions['model_override']
+            ?? ($currentProvider === 'claude'
+                ? Config::get('ANTHROPIC_MODEL', 'claude-sonnet-4-20250514')
+                : Config::get('OPENAI_CHAT_MODEL', 'gpt-4o'));
 
         // 5. Zapisz historię (bez system prompta)
         $historyToSave = array_values(array_filter(
@@ -203,13 +219,34 @@ final class ChatService
     /**
      * Wczytuje ustawienia z bazy z fallbackami na .env/defaults.
      */
+    /**
+     * Wczytuje ustawienia z bazy z fallbackami na .env/defaults.
+     * Buduje opcje effort na podstawie modelu eskalacyjnego.
+     */
     private function loadSettings(): array
     {
         $dbSettings = $this->settingsStore->getAll();
 
+        // Rozpoznaj effort na podstawie modelu eskalacyjnego
+        $escalationModelId = $dbSettings['escalation_model'] ?? null;
+        $effort = $dbSettings['escalation_effort'] ?? 'medium';
+        $aiOptions = [];
+
+        if ($escalationModelId !== null) {
+            $escalationModel = AIModel::tryFrom($escalationModelId);
+            if ($escalationModel !== null && $escalationModel->supportsEffort()) {
+                // Claude: effort to budget_tokens (int), OpenAI: effort to string
+                $aiOptions['effort'] = $escalationModel->provider() === 'claude'
+                    ? (is_int($effort) ? $effort : 5000)
+                    : (is_string($effort) ? $effort : 'medium');
+            }
+        }
+
         return [
             'emoji_enabled' => $dbSettings['emoji_enabled'] ?? true,
             'knowledge_gap_threshold' => (float) ($dbSettings['knowledge_gap_threshold'] ?? 0.5),
+            'ai_options' => $aiOptions,
+            'primary_model' => $dbSettings['primary_model'] ?? null,
         ];
     }
 

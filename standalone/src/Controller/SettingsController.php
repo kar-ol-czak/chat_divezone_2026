@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DiveChat\Controller;
 
 use DiveChat\Chat\SettingsStore;
+use DiveChat\Enum\AIModel;
 use DiveChat\Http\Request;
 use DiveChat\Http\Response;
 
@@ -25,7 +26,10 @@ final class SettingsController
      */
     public function get(Request $request): void
     {
-        Response::json(['settings' => $this->settingsStore->getAll()]);
+        Response::json([
+            'settings' => $this->settingsStore->getAll(),
+            'available_models' => AIModel::grouped(),
+        ]);
     }
 
     /**

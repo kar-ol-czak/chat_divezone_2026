@@ -37,7 +37,7 @@ final class ClaudeProvider implements AIProviderInterface
         ]);
     }
 
-    public function chat(array $messages, array $tools = []): AIResponse
+    public function chat(array $messages, array $tools = [], array $options = []): AIResponse
     {
         // Wydziel system prompt i konwertuj wiadomości
         $system = '';
@@ -56,12 +56,26 @@ final class ClaudeProvider implements AIProviderInterface
             };
         }
 
+        $model = $options['model_override'] ?? $this->model;
+
         $body = [
-            'model' => $this->model,
+            'model' => $model,
             'max_tokens' => $this->maxTokens,
             'temperature' => $this->temperature,
             'messages' => $claudeMessages,
         ];
+
+        // Extended thinking dla modeli eskalacyjnych (np. claude-opus-4-6)
+        if (!empty($options['effort']) && is_int($options['effort'])) {
+            $body['thinking'] = [
+                'type' => 'enabled',
+                'budget_tokens' => $options['effort'],
+            ];
+            // Extended thinking wymaga wyższego max_tokens
+            $body['max_tokens'] = max($this->maxTokens, $options['effort'] + 4096);
+            // Temperature musi być 1 z extended thinking
+            unset($body['temperature']);
+        }
 
         if ($system !== '') {
             $body['system'] = $system;
