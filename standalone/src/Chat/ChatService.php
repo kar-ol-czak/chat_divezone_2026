@@ -7,11 +7,13 @@ namespace DiveChat\Chat;
 use DiveChat\AI\AIProviderInterface;
 use DiveChat\AI\AIResponse;
 use DiveChat\AI\ToolCall;
+use DiveChat\Config;
 use DiveChat\Tools\ToolRegistry;
 
 /**
  * Orkiestrator czatu.
  * Obsługuje tool loop: AI -> narzędzia -> AI -> ... -> odpowiedź.
+ * Zbiera diagnostykę: timings, search quality, knowledge gaps.
  */
 final class ChatService
 {
@@ -22,21 +24,27 @@ final class ChatService
         private readonly AIProviderInterface $aiProvider,
         private readonly ToolRegistry $toolRegistry,
         private readonly ConversationStore $conversationStore,
+        private readonly SettingsStore $settingsStore,
     ) {}
 
     /**
      * Główna metoda - obsługuje wiadomość klienta.
      *
-     * @return array{response: string, session_id: string, tools_used: string[], products: array, usage: array}
+     * @return array{response: string, session_id: string, tools_used: string[], products: array, usage: array, diagnostics: array}
      */
     public function handle(string $sessionId, string $message, ?int $customerId): array
     {
+        $startTime = microtime(true);
+
+        // Wczytaj ustawienia z bazy (fallback na .env/defaults)
+        $settings = $this->loadSettings();
+
         // 1. Wczytaj lub utwórz sesję
         $history = $this->conversationStore->startOrResume($sessionId, $customerId);
 
         // 2. Zbuduj listę wiadomości
         $messages = [
-            ['role' => 'system', 'content' => SystemPrompt::build()],
+            ['role' => 'system', 'content' => SystemPrompt::build($settings['emoji_enabled'])],
         ];
 
         // Rehydratuj ToolCall objects z historii (JSON zwraca tablice)
@@ -66,13 +74,19 @@ final class ChatService
         // 3. Przygotuj definicje narzędzi
         $toolDefinitions = $this->toolRegistry->getToolDefinitions();
 
-        // 4. Tool loop
+        // 4. Tool loop z diagnostyką
         $toolsUsed = [];
         $products = [];
         $totalUsage = ['input_tokens' => 0, 'output_tokens' => 0];
+        $searchDiagnostics = [];
+        $knowledgeGap = false;
+        $timings = ['ai_ms' => 0.0, 'tool_ms' => 0.0, 'embedding_ms' => 0.0];
 
         for ($i = 0; $i < self::MAX_TOOL_ITERATIONS; $i++) {
+            $aiStart = microtime(true);
             $response = $this->aiProvider->chat($messages, $toolDefinitions);
+            $timings['ai_ms'] += (microtime(true) - $aiStart) * 1000;
+
             $totalUsage['input_tokens'] += $response->usage['input_tokens'];
             $totalUsage['output_tokens'] += $response->usage['output_tokens'];
 
@@ -92,11 +106,23 @@ final class ChatService
             foreach ($response->toolCalls as $toolCall) {
                 $toolsUsed[] = $toolCall->name;
 
+                $toolStart = microtime(true);
                 $result = $this->executeTool($toolCall->name, $toolCall->arguments);
+                $toolElapsed = (microtime(true) - $toolStart) * 1000;
+                $timings['tool_ms'] += $toolElapsed;
 
                 // Zbieraj produkty z wyników search_products
                 if ($toolCall->name === 'search_products' && !empty($result['products'])) {
                     $products = array_merge($products, $result['products']);
+                }
+
+                // Diagnostyka search quality
+                $diag = $this->buildSearchDiagnostic($toolCall, $result, $settings['knowledge_gap_threshold']);
+                if ($diag !== null) {
+                    $searchDiagnostics[] = $diag;
+                    if ($diag['knowledge_gap']) {
+                        $knowledgeGap = true;
+                    }
                 }
 
                 // Dodaj wynik narzędzia do wiadomości
@@ -116,6 +142,12 @@ final class ChatService
         }
 
         $finalContent = $response->content ?? 'Przepraszam, nie udało się wygenerować odpowiedzi.';
+
+        $timings['total_ms'] = (microtime(true) - $startTime) * 1000;
+
+        $modelUsed = Config::get('AI_PROVIDER', 'openai') === 'claude'
+            ? Config::get('ANTHROPIC_MODEL', 'claude-sonnet-4-20250514')
+            : Config::get('OPENAI_CHAT_MODEL', 'gpt-4o');
 
         // 5. Zapisz historię (bez system prompta)
         $historyToSave = array_values(array_filter(
@@ -140,7 +172,18 @@ final class ChatService
             $historyToSave[] = ['role' => 'assistant', 'content' => $finalContent];
         }
 
-        $this->conversationStore->save($sessionId, $historyToSave, array_unique($toolsUsed), $totalUsage);
+        $roundedTimings = array_map(fn($v) => round((float) $v, 1), $timings);
+
+        $this->conversationStore->save(
+            $sessionId,
+            $historyToSave,
+            array_unique($toolsUsed),
+            $totalUsage,
+            $modelUsed,
+            $roundedTimings,
+            $searchDiagnostics,
+            $knowledgeGap,
+        );
 
         return [
             'response' => $finalContent,
@@ -148,6 +191,53 @@ final class ChatService
             'tools_used' => array_values(array_unique($toolsUsed)),
             'products' => $products,
             'usage' => $totalUsage,
+            'diagnostics' => [
+                'model_used' => $modelUsed,
+                'response_times' => $roundedTimings,
+                'search_diagnostics' => $searchDiagnostics,
+                'knowledge_gap' => $knowledgeGap,
+            ],
+        ];
+    }
+
+    /**
+     * Wczytuje ustawienia z bazy z fallbackami na .env/defaults.
+     */
+    private function loadSettings(): array
+    {
+        $dbSettings = $this->settingsStore->getAll();
+
+        return [
+            'emoji_enabled' => $dbSettings['emoji_enabled'] ?? true,
+            'knowledge_gap_threshold' => (float) ($dbSettings['knowledge_gap_threshold'] ?? 0.5),
+        ];
+    }
+
+    /**
+     * Buduje diagnostykę dla narzędzi wyszukujących.
+     */
+    private function buildSearchDiagnostic(ToolCall $toolCall, array $result, float $threshold): ?array
+    {
+        $searchTools = ['search_products', 'get_expert_knowledge'];
+        if (!in_array($toolCall->name, $searchTools, true)) {
+            return null;
+        }
+
+        // Wyciągnij similarity z wyników
+        $items = $result['products'] ?? $result['knowledge'] ?? [];
+        $similarities = array_map(fn(array $item) => (float) ($item['similarity'] ?? 0), $items);
+
+        $maxSim = !empty($similarities) ? max($similarities) : null;
+        $minSim = !empty($similarities) ? min($similarities) : null;
+        $gap = empty($items) || ($maxSim !== null && $maxSim < $threshold);
+
+        return [
+            'tool' => $toolCall->name,
+            'query_text' => $toolCall->arguments['query'] ?? null,
+            'result_count' => count($items),
+            'max_similarity' => $maxSim !== null ? round($maxSim, 3) : null,
+            'min_similarity' => $minSim !== null ? round($minSim, 3) : null,
+            'knowledge_gap' => $gap,
         ];
     }
 

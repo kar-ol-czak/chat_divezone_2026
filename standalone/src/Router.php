@@ -10,19 +10,20 @@ use DiveChat\Http\Response;
 /**
  * Prosty router bez frameworka.
  * Mapuje METHOD + path na callable handler.
+ * Obsługuje parametry w ścieżce: /api/conversations/{session_id}
  */
 final class Router
 {
-    /** @var array<string, callable> */
+    /** @var array{method: string, path: string, handler: callable}[] */
     private array $routes = [];
 
-    /**
-     * Rejestruje route: $method + $path -> $handler.
-     */
     public function add(string $method, string $path, callable $handler): self
     {
-        $key = strtoupper($method) . ':' . rtrim($path, '/');
-        $this->routes[$key] = $handler;
+        $this->routes[] = [
+            'method' => strtoupper($method),
+            'path' => rtrim($path, '/'),
+            'handler' => $handler,
+        ];
         return $this;
     }
 
@@ -41,14 +42,42 @@ final class Router
      */
     public function dispatch(Request $request): void
     {
-        $key = $request->method . ':' . $request->path;
+        foreach ($this->routes as $route) {
+            if ($route['method'] !== $request->method) {
+                continue;
+            }
 
-        $handler = $this->routes[$key] ?? null;
-
-        if ($handler === null) {
-            Response::error('Not found', 404);
+            $params = $this->matchPath($route['path'], $request->path);
+            if ($params !== null) {
+                $req = !empty($params) ? $request->withParams($params) : $request;
+                ($route['handler'])($req);
+                return;
+            }
         }
 
-        $handler($request);
+        Response::error('Not found', 404);
+    }
+
+    /**
+     * Dopasowuje path z parametrami {name}. Zwraca null jeśli brak dopasowania.
+     *
+     * @return array<string, string>|null
+     */
+    private function matchPath(string $routePath, string $requestPath): ?array
+    {
+        // Szybka ścieżka: brak parametrów
+        if (!str_contains($routePath, '{')) {
+            return $routePath === $requestPath ? [] : null;
+        }
+
+        // Zamień {param} na regex named groups
+        $pattern = preg_replace('/\{(\w+)\}/', '(?P<$1>[^/]+)', $routePath);
+        $pattern = '#^' . $pattern . '$#';
+
+        if (preg_match($pattern, $requestPath, $matches)) {
+            return array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+        }
+
+        return null;
     }
 }

@@ -26,7 +26,7 @@ final class Response
     private static function setCorsHeaders(): void
     {
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-        $allowed = ['https://divezone.pl', 'https://www.divezone.pl', 'https://dev.divezone.pl'];
+        $allowed = ['https://divezone.pl', 'https://www.divezone.pl', 'https://dev.divezone.pl', 'https://chat.divezone.pl', 'http://localhost:3000'];
 
         if (in_array($origin, $allowed, true)) {
             header("Access-Control-Allow-Origin: {$origin}");

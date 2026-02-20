@@ -25,13 +25,23 @@ logger = logging.getLogger(__name__)
 LOCAL_MYSQL_PORT = 33060
 MAX_DESCRIPTION_LENGTH = 500
 
+# Kategorie wykluczone z indeksu embeddingów (i ich potomkowie w nested set)
+EXCLUDED_CATEGORY_IDS = [
+    484, 458, 485, 486, 468, 368, 413, 451, 406, 409,
+    445, 447, 110, 396, 366, 448, 397, 482, 168, 461,
+    59, 457, 436, 462, 490
+]
+
+# Produkty wykluczone ręcznie (np. maseczka COVID w kategorii Gadżety)
+EXCLUDED_PRODUCT_IDS = [5910]
+
 # Zapytanie główne: aktywne produkty z lang_id=1 (polski)
 PRODUCTS_SQL = """
 SELECT
     p.id_product,
+    p.id_category_default,
     pl.name AS product_name,
     pl.description,
-    pl.description_short,
     pl.link_rewrite,
     cl.name AS category_name,
     m.name AS brand_name,
@@ -62,6 +72,33 @@ JOIN pr_feature_value_lang fvl ON fp.id_feature_value = fvl.id_feature_value AND
 IMAGES_SQL = """
 SELECT id_product, id_image FROM pr_image WHERE cover = 1
 """
+
+# Dozwolone kategorie: potomkowie "Główna" (id=2), aktywne, bez wykluczonych i ich potomków
+ALLOWED_CATEGORIES_SQL = """
+SELECT c.id_category
+FROM pr_category c
+JOIN pr_category_shop cs ON c.id_category = cs.id_category AND cs.id_shop = 1
+JOIN pr_category root ON root.id_category = 2
+WHERE c.nleft > root.nleft AND c.nright < root.nright
+  AND c.active = 1
+  AND c.id_category NOT IN ({excluded})
+  AND NOT EXISTS (
+    SELECT 1 FROM pr_category excl
+    WHERE excl.id_category IN ({excluded})
+      AND c.nleft BETWEEN excl.nleft AND excl.nright
+  )
+"""
+
+
+def get_allowed_categories(cur) -> set[int]:
+    """Pobiera dozwolone ID kategorii z drzewa PrestaShop (nested set)."""
+    excluded_str = ",".join(str(x) for x in EXCLUDED_CATEGORY_IDS)
+    sql = ALLOWED_CATEGORIES_SQL.format(excluded=excluded_str)
+    cur.execute(sql)
+    allowed = {row["id_category"] for row in cur.fetchall()}
+    logger.info("Dozwolone kategorie: %d (wykluczone: %d IDs + ich potomkowie)",
+                len(allowed), len(EXCLUDED_CATEGORY_IDS))
+    return allowed
 
 
 def open_ssh_tunnel():
@@ -130,13 +167,13 @@ def build_document_text(product: dict) -> str:
     if product.get("price_brutto"):
         parts.append(f"Cena: {product['price_brutto']:.2f} PLN")
 
-    # Opis: najpierw short, potem long jako fallback
-    desc = strip_html(product.get("description_short") or "")
-    if len(desc) < 20:
-        desc = strip_html(product.get("description") or "")
+    # Opis: tylko description (długi opis), bez description_short (CMS śmieci)
+    desc = strip_html(product.get("description") or "")
     if desc:
         desc = desc[:MAX_DESCRIPTION_LENGTH]
         parts.append(f"Opis: {desc}")
+    else:
+        logger.warning("Produkt %s bez opisu", product.get("ps_product_id") or product.get("id_product"))
 
     # Cechy
     if product.get("features"):
@@ -159,13 +196,26 @@ def extract_products(limit: int = None) -> list[dict]:
     conn = get_mysql_connection()
     cur = conn.cursor()
 
+    # Pobierz dozwolone kategorie (filtr drzewa kategorii)
+    allowed_categories = get_allowed_categories(cur)
+
     # Pobierz produkty
     sql = PRODUCTS_SQL
     if limit:
         sql += f" LIMIT {int(limit)}"
     cur.execute(sql)
     products_raw = cur.fetchall()
-    logger.info("Pobrano %d produktów z MySQL", len(products_raw))
+    total_before_filter = len(products_raw)
+    logger.info("Pobrano %d produktów z MySQL (przed filtrem kategorii)", total_before_filter)
+
+    # Filtruj po dozwolonych kategoriach i wykluczonych produktach
+    products_raw = [
+        p for p in products_raw
+        if p.get("id_category_default") in allowed_categories
+        and p["id_product"] not in EXCLUDED_PRODUCT_IDS
+    ]
+    logger.info("Po filtrze kategorii + produktów: %d produktów (odrzucono %d)",
+                len(products_raw), total_before_filter - len(products_raw))
 
     # Pobierz features
     cur.execute(FEATURES_SQL)

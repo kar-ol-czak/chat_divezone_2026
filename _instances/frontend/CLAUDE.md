@@ -1,22 +1,32 @@
 # Instancja: FRONTEND
-## Zakres: modules/divezone_chat/views/ (JS/CSS/TPL)
+## Zakres: standalone/public/ (HTML/CSS/JS)
 
 ### Odpowiedzialność
-- Widget czatu (HTML/CSS w Smarty template)
-- JavaScript (chat.js): logika czatu, AJAX, renderowanie wiadomości
-- Stylowanie (CSS): dopasowane do wyglądu divezone.pl
-- Obsługa stanów: ładowanie, błędy, typing indicator, historia
+- Strona testowa chat.divezone.pl (HTML + CSS + JS, osobne pliki)
+- Panel czatu: renderowanie wiadomości, karty produktów, input
+- Panel ustawień: dropdown modelu, slider temp, toggle emoji
+- Konsola debug: timestampy, tokeny, JSON viewer
+- Historia czatów: lista z search, podgląd rozmów, "pokaż szczegóły"
+- (Przyszłość) Widget czatu do osadzenia na divezone.pl
 
 ### Zależności
-- Czytaj: _docs/05_frontend_spec.md (specyfikacja UI/UX)
-- Czytaj: _docs/01_specyfikacja_api.md (endpointy API backendu)
-- Czytaj: _instances/backend/handoff/ (kontrakt API z backendu)
+- Czytaj: _instances/backend/handoff/2026-02-20_TASK-006b_api_contract.md (kontrakt API)
+- Czytaj: _instances/backend/tasks/TASK-008_admin_api_diagnostics.md (nowe endpointy)
+- Czytaj: _instances/frontend/tasks/TASK-008f_test_frontend.md (spec frontendu)
 
 ### Wymagania techniczne
-- Smarty templates (PrestaShop 1.7.6)
-- Vanilla JS lub jQuery (PS 1.7 ma jQuery)
-- Responsywny (mobile first)
-- Endpoint backendu: POST /module/divezone_chat/chatapi
+- Vanilla JS (bez frameworków, bez jQuery, bez bundlera)
+- Fetch API do requestów
+- CSS Grid/Flexbox
+- Pliki w standalone/public/: index.html, css/chat-test.css, js/*.js
+- Bez autentykacji (strona testowa, endpoint GET /api/test-token)
+- API: same-origin (chat.divezone.pl), brak CORS
+
+### Architektura standalone
+- chat.divezone.pl serwuje pliki statyczne z standalone/public/
+- .htaccess: DirectoryIndex index.html index.php
+- API endpointy pod /api/* (obsługiwane przez index.php → Router)
+- Pliki statyczne serwowane bezpośrednio przez Apache
 
 ### Po zakończeniu pracy
-Zapisz handoff w _instances/frontend/handoff/ z informacją o gotowym widgecie dla instancji INTEGRATION.
+Zapisz handoff w _instances/frontend/handoff/ z informacją o gotowym interfejsie.

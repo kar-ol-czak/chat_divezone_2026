@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DiveChat Test Console</title>
+    <link rel="stylesheet" href="css/chat-test.css">
+</head>
+<body>
+    <!-- Top bar -->
+    <header class="topbar">
+        <div class="topbar__title">DiveChat Test Console</div>
+        <div class="topbar__status" id="connectionStatus">
+            <span class="topbar__dot"></span>
+            <span id="statusText">Sprawdzanie...</span>
+        </div>
+    </header>
+
+    <!-- Main layout -->
+    <main class="layout">
+        <!-- Lewy panel: Czat -->
+        <section class="panel-chat" id="panelChat">
+            <!-- Pasek info czatu -->
+            <div class="chat-header">
+                <span class="chat-header__label" id="chatHeaderLabel">Nowa rozmowa</span>
+                <button class="btn btn--small" id="btnNewChat">Nowa rozmowa</button>
+                <button class="btn btn--small btn--ghost hidden" id="btnBackToChat">Powrot do czatu</button>
+            </div>
+
+            <!-- Wiadomosci -->
+            <div class="chat-messages" id="chatMessages">
+                <div class="chat-welcome">
+                    <div class="chat-welcome__icon">&#x1F3A3;</div>
+                    <h2>Witaj w DiveChat</h2>
+                    <p>Zapytaj o produkty nurkowe, dostawe, zamowienia i wiele wiecej.</p>
+                </div>
+            </div>
+
+            <!-- Input -->
+            <div class="chat-input">
+                <textarea
+                    id="chatInput"
+                    class="chat-input__textarea"
+                    placeholder="Napisz wiadomosc..."
+                    rows="1"
+                    maxlength="2000"
+                ></textarea>
+                <button class="btn btn--primary chat-input__send" id="btnSend" disabled>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                    </svg>
+                </button>
+            </div>
+        </section>
+
+        <!-- Prawy panel -->
+        <aside class="panel-right">
+            <!-- Ustawienia -->
+            <section class="panel-section panel-settings" id="panelSettings">
+                <div class="panel-section__header" data-toggle="settingsBody">
+                    <h3>Ustawienia</h3>
+                    <span class="panel-section__chevron">&#x25BC;</span>
+                </div>
+                <div class="panel-section__body" id="settingsBody">
+                    <div class="setting-group">
+                        <label class="setting-label" for="settingProvider">Provider</label>
+                        <select id="settingProvider" class="setting-select">
+                            <option value="openai">OpenAI</option>
+                            <option value="claude">Anthropic</option>
+                        </select>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="settingModel">Model</label>
+                        <select id="settingModel" class="setting-select">
+                            <option value="gpt-4.1">gpt-4.1</option>
+                            <option value="gpt-5-mini">gpt-5-mini</option>
+                        </select>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="settingEscalation">Model eskalacji</label>
+                        <select id="settingEscalation" class="setting-select">
+                            <option value="gpt-5.2">gpt-5.2</option>
+                        </select>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="settingTemp">
+                            Temperature: <span id="tempValue">0.6</span>
+                        </label>
+                        <input type="range" id="settingTemp" class="setting-range" min="0" max="1" step="0.1" value="0.6">
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="settingEmoji">Emoji</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="settingEmoji" checked>
+                            <span class="toggle__slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-group">
+                        <label class="setting-label" for="settingGapThreshold">
+                            Knowledge gap threshold: <span id="gapValue">0.5</span>
+                        </label>
+                        <input type="range" id="settingGapThreshold" class="setting-range" min="0" max="1" step="0.05" value="0.5">
+                    </div>
+                    <div class="setting-status hidden" id="settingSaved">Zapisano</div>
+                </div>
+            </section>
+
+            <!-- Konsola debug -->
+            <section class="panel-section panel-console" id="panelConsole">
+                <div class="panel-section__header" data-toggle="consoleBody">
+                    <h3>Konsola debug</h3>
+                    <div class="panel-section__actions">
+                        <button class="btn btn--tiny" id="btnClearConsole">Wyczysc</button>
+                        <span class="panel-section__chevron">&#x25BC;</span>
+                    </div>
+                </div>
+                <div class="panel-section__body" id="consoleBody">
+                    <div class="console-log" id="consoleLog">
+                        <div class="console-empty">Brak logow</div>
+                    </div>
+                    <div class="console-json-wrapper hidden" id="jsonWrapper">
+                        <div class="console-json-header">
+                            <span>Ostatni response JSON</span>
+                            <button class="btn btn--tiny" id="btnCopyJson">Kopiuj</button>
+                        </div>
+                        <pre class="console-json" id="jsonViewer"></pre>
+                    </div>
+                    <button class="btn btn--tiny btn--ghost" id="btnToggleJson">Pokaz JSON</button>
+                </div>
+            </section>
+
+            <!-- Historia czatow -->
+            <section class="panel-section panel-history" id="panelHistory">
+                <div class="panel-section__header" data-toggle="historyBody">
+                    <h3>Historia czatow</h3>
+                    <span class="panel-section__chevron">&#x25BC;</span>
+                </div>
+                <div class="panel-section__body" id="historyBody">
+                    <input
+                        type="text"
+                        class="history-search"
+                        id="historySearch"
+                        placeholder="Szukaj w rozmowach..."
+                    >
+                    <div class="history-list" id="historyList">
+                        <div class="history-empty">Ladowanie...</div>
+                    </div>
+                    <button class="btn btn--small btn--ghost hidden" id="btnLoadMore">Zaladuj wiecej</button>
+                </div>
+            </section>
+        </aside>
+    </main>
+
+    <script src="js/console.js"></script>
+    <script src="js/settings.js"></script>
+    <script src="js/history.js"></script>
+    <script src="js/chat.js"></script>
+</body>
+</html>

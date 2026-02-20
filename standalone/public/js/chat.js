@@ -1,0 +1,298 @@
+/**
+ * DiveChat — Panel czatu
+ * Wysylanie wiadomosci, renderowanie odpowiedzi, karty produktow, sesje.
+ */
+(function () {
+    'use strict';
+
+    var chatMessages = document.getElementById('chatMessages');
+    var chatInput = document.getElementById('chatInput');
+    var btnSend = document.getElementById('btnSend');
+    var btnNewChat = document.getElementById('btnNewChat');
+    var chatHeaderLabel = document.getElementById('chatHeaderLabel');
+    var statusDot = document.querySelector('.topbar__dot');
+    var statusText = document.getElementById('statusText');
+
+    var sessionId = generateSessionId();
+    var sending = false;
+    var authCache = null;
+
+    // --- Init ---
+    checkHealth();
+    chatInput.focus();
+    updateSendButton();
+
+    // --- Events ---
+    chatInput.addEventListener('input', function () {
+        autoResize();
+        updateSendButton();
+    });
+
+    chatInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    btnSend.addEventListener('click', function () {
+        sendMessage();
+    });
+
+    btnNewChat.addEventListener('click', function () {
+        // Wyjdz z historii jesli aktywna
+        if (window.DiveChat.History && window.DiveChat.History.isViewing()) {
+            window.DiveChat.History.exitView();
+        }
+        sessionId = generateSessionId();
+        chatMessages.innerHTML =
+            '<div class="chat-welcome">' +
+                '<div class="chat-welcome__icon">&#x1F3A3;</div>' +
+                '<h2>Witaj w DiveChat</h2>' +
+                '<p>Zapytaj o produkty nurkowe, dostawe, zamowienia i wiele wiecej.</p>' +
+            '</div>';
+        chatHeaderLabel.textContent = 'Nowa rozmowa';
+        chatInput.value = '';
+        chatInput.focus();
+        updateSendButton();
+    });
+
+    // --- Funkcje ---
+
+    function sendMessage() {
+        var text = chatInput.value.trim();
+        if (!text || sending) return;
+
+        // Wyjdz z historii jesli aktywna
+        if (window.DiveChat.History && window.DiveChat.History.isViewing()) {
+            window.DiveChat.History.exitView();
+        }
+
+        // Usun ekran powitalny
+        var welcome = chatMessages.querySelector('.chat-welcome');
+        if (welcome) welcome.remove();
+
+        // Renderuj wiadomosc uzytkownika
+        appendMessage(text, 'user');
+        chatInput.value = '';
+        autoResize();
+        updateSendButton();
+
+        // Loguj w konsoli
+        if (window.DiveChat.Console) {
+            window.DiveChat.Console.logRequest(text, sessionId);
+        }
+
+        // Pokaz typing indicator
+        var typingEl = showTyping();
+
+        // Zablokuj input
+        setSending(true);
+
+        // Pobierz token i wyslij
+        getAuthToken()
+            .then(function (auth) {
+                return fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-DiveChat-Token': auth.token,
+                        'X-DiveChat-Customer': String(auth.customer_id),
+                        'X-DiveChat-Time': String(auth.timestamp),
+                    },
+                    body: JSON.stringify({
+                        message: text,
+                        session_id: sessionId,
+                    }),
+                });
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                removeTyping(typingEl);
+
+                if (data.error) {
+                    appendMessage('Blad: ' + data.error, 'ai');
+                    if (window.DiveChat.Console) {
+                        window.DiveChat.Console.log('Blad API: ' + data.error, 'error');
+                    }
+                    return;
+                }
+
+                // Aktualizuj session_id z odpowiedzi
+                if (data.session_id) {
+                    sessionId = data.session_id;
+                    chatHeaderLabel.textContent = 'Rozmowa #' + sessionId.substring(0, 8);
+                }
+
+                // Renderuj odpowiedz AI
+                appendMessage(data.response, 'ai');
+
+                // Karty produktow
+                if (data.products && data.products.length > 0) {
+                    appendProductCards(data.products);
+                }
+
+                // Loguj diagnostyke
+                if (window.DiveChat.Console) {
+                    window.DiveChat.Console.logResponse(data);
+                }
+            })
+            .catch(function (err) {
+                removeTyping(typingEl);
+                appendMessage('Blad polaczenia. Sprobuj ponownie.', 'ai');
+                if (window.DiveChat.Console) {
+                    window.DiveChat.Console.log('Fetch error: ' + err.message, 'error');
+                }
+            })
+            .finally(function () {
+                setSending(false);
+                chatInput.focus();
+            });
+    }
+
+    function appendMessage(content, role) {
+        var el = document.createElement('div');
+        el.className = 'message message--' + role;
+
+        var bubble = document.createElement('div');
+        bubble.className = 'message__bubble';
+        bubble.textContent = content;
+        el.appendChild(bubble);
+
+        var meta = document.createElement('div');
+        meta.className = 'message__meta';
+        var now = new Date();
+        meta.textContent = now.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+        el.appendChild(meta);
+
+        chatMessages.appendChild(el);
+        scrollToBottom();
+    }
+
+    function appendProductCards(products) {
+        var container = document.createElement('div');
+        container.className = 'product-cards';
+
+        products.forEach(function (p) {
+            var card = document.createElement('a');
+            card.className = 'product-card';
+            card.href = p.url || p.product_url || '#';
+            card.target = '_blank';
+            card.rel = 'noopener';
+
+            var imgSrc = p.image_url || '';
+            var stockClass = p.in_stock ? 'product-card__stock--available' : 'product-card__stock--order';
+            var stockText = p.in_stock ? 'Od reki' : 'Na zamowienie';
+            var price = typeof p.price === 'number' ? p.price.toFixed(2) + ' zl' : (p.price || '');
+
+            card.innerHTML =
+                (imgSrc ? '<img class="product-card__img" src="' + escAttr(imgSrc) + '" alt="" loading="lazy">' : '') +
+                '<div class="product-card__info">' +
+                    '<div class="product-card__name">' + escHtml(p.name || '') + '</div>' +
+                    '<div class="product-card__brand">' + escHtml(p.brand || '') + '</div>' +
+                    '<div class="product-card__price">' + escHtml(price) + '</div>' +
+                    '<div class="product-card__stock ' + stockClass + '">' + stockText + '</div>' +
+                '</div>';
+
+            container.appendChild(card);
+        });
+
+        chatMessages.appendChild(container);
+        scrollToBottom();
+    }
+
+    function showTyping() {
+        var el = document.createElement('div');
+        el.className = 'typing-indicator';
+        el.innerHTML =
+            '<span class="typing-indicator__dot"></span>' +
+            '<span class="typing-indicator__dot"></span>' +
+            '<span class="typing-indicator__dot"></span>';
+        chatMessages.appendChild(el);
+        scrollToBottom();
+        return el;
+    }
+
+    function removeTyping(el) {
+        if (el && el.parentNode) {
+            el.parentNode.removeChild(el);
+        }
+    }
+
+    function setSending(val) {
+        sending = val;
+        chatInput.disabled = val;
+        btnSend.disabled = val;
+    }
+
+    function updateSendButton() {
+        btnSend.disabled = sending || !chatInput.value.trim();
+    }
+
+    function autoResize() {
+        chatInput.style.height = 'auto';
+        var maxH = 120; // 4 linie
+        chatInput.style.height = Math.min(chatInput.scrollHeight, maxH) + 'px';
+    }
+
+    function scrollToBottom() {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function generateSessionId() {
+        var arr = new Uint8Array(16);
+        crypto.getRandomValues(arr);
+        return Array.from(arr, function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    }
+
+    /**
+     * Pobiera token HMAC z /api/test-token.
+     * Cachuje token na 4 minuty (wygasa po 5).
+     */
+    function getAuthToken() {
+        if (authCache && (Date.now() / 1000) < authCache.timestamp + 240) {
+            return Promise.resolve(authCache);
+        }
+
+        return fetch('/api/test-token')
+            .then(function (r) {
+                if (!r.ok) throw new Error('Token endpoint: ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                authCache = data;
+                return data;
+            });
+    }
+
+    /**
+     * Sprawdza dostepnosc API.
+     */
+    function checkHealth() {
+        fetch('/api/health')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.status === 'ok') {
+                    statusDot.className = 'topbar__dot topbar__dot--ok';
+                    statusText.textContent = 'API OK';
+                } else {
+                    statusDot.className = 'topbar__dot topbar__dot--error';
+                    statusText.textContent = 'API degraded';
+                }
+            })
+            .catch(function () {
+                statusDot.className = 'topbar__dot topbar__dot--error';
+                statusText.textContent = 'API offline';
+            });
+    }
+
+    function escHtml(s) {
+        var d = document.createElement('div');
+        d.textContent = String(s);
+        return d.innerHTML;
+    }
+
+    function escAttr(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+})();
