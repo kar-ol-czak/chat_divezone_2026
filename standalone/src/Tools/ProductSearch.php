@@ -57,7 +57,7 @@ final class ProductSearch implements ToolInterface
                 ],
                 'in_stock_only' => [
                     'type' => 'boolean',
-                    'description' => 'Czy pokazywać tylko produkty dostępne od ręki (domyślnie true)',
+                    'description' => 'Czy pokazywać tylko produkty dostępne od ręki. Domyślnie false (pokazuj też produkty na zamówienie). Ustaw true tylko gdy klient wyraźnie potrzebuje natychmiastowej dostawy.',
                 ],
                 'limit' => [
                     'type' => 'integer',
@@ -75,7 +75,7 @@ final class ProductSearch implements ToolInterface
         $minPrice = isset($params['min_price']) ? (float) $params['min_price'] : null;
         $maxPrice = isset($params['max_price']) ? (float) $params['max_price'] : null;
         $brand = $params['brand'] ?? null;
-        $inStockOnly = $params['in_stock_only'] ?? true;
+        $inStockOnly = $params['in_stock_only'] ?? false;
         $limit = min((int) ($params['limit'] ?? 5), 10);
 
         // Generuj embedding zapytania
