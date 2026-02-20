@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace DiveChat\Tools;
 
-use DiveChat\AI\AIProviderInterface;
+use DiveChat\AI\EmbeddingService;
 use DiveChat\Database\PostgresConnection;
 
 /**
@@ -14,7 +14,8 @@ use DiveChat\Database\PostgresConnection;
 final class ProductSearch implements ToolInterface
 {
     public function __construct(
-        private readonly AIProviderInterface $aiProvider,
+        private readonly EmbeddingService $embeddingService,
+        private readonly PostgresConnection $db,
     ) {}
 
     public function getName(): string
@@ -58,6 +59,10 @@ final class ProductSearch implements ToolInterface
                     'type' => 'boolean',
                     'description' => 'Czy pokazywać tylko produkty dostępne od ręki (domyślnie true)',
                 ],
+                'limit' => [
+                    'type' => 'integer',
+                    'description' => 'Liczba wyników (domyślnie 5, max 10)',
+                ],
             ],
             'required' => ['query'],
         ];
@@ -71,14 +76,15 @@ final class ProductSearch implements ToolInterface
         $maxPrice = isset($params['max_price']) ? (float) $params['max_price'] : null;
         $brand = $params['brand'] ?? null;
         $inStockOnly = $params['in_stock_only'] ?? true;
+        $limit = min((int) ($params['limit'] ?? 5), 10);
 
         // Generuj embedding zapytania
-        $embedding = $this->aiProvider->getEmbedding($query);
+        $embedding = $this->embeddingService->getEmbedding($query);
         $vectorStr = '[' . implode(',', $embedding) . ']';
 
-        // Buduj zapytanie dynamicznie (PDO nie obsługuje $N placeholderów)
+        // Buduj zapytanie dynamicznie
         $conditions = ['is_active = true'];
-        $sqlParams = [$vectorStr]; // parametr 1: wektor
+        $sqlParams = [$vectorStr];
 
         if ($inStockOnly) {
             $conditions[] = 'in_stock = true';
@@ -112,13 +118,12 @@ final class ProductSearch implements ToolInterface
                 FROM divechat_product_embeddings
                 WHERE {$where}
                 ORDER BY embedding <=> ?::vector
-                LIMIT 5";
+                LIMIT {$limit}";
 
         // Wektor potrzebny dwa razy (w SELECT i ORDER BY)
         $sqlParams[] = $vectorStr;
 
-        $db = PostgresConnection::getInstance();
-        $results = $db->fetchAll($sql, $sqlParams);
+        $results = $this->db->fetchAll($sql, $sqlParams);
 
         if (empty($results)) {
             return ['products' => [], 'message' => 'Nie znaleziono produktów pasujących do zapytania.'];

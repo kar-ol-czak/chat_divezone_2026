@@ -69,6 +69,7 @@ final class ChatController
                 'session_id' => $result['session_id'],
                 'tools_used' => $result['tools_used'],
                 'products' => $result['products'],
+                'usage' => $result['usage'],
             ]);
         } catch (\Throwable $e) {
             $errorMessage = Config::isDebug()

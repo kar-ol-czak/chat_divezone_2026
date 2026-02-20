@@ -6,6 +6,8 @@ namespace DiveChat\AI;
 
 use DiveChat\Config;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Exception\ServerException;
 
 /**
  * Provider Anthropic Claude API.
@@ -37,7 +39,7 @@ final class ClaudeProvider implements AIProviderInterface
 
     public function chat(array $messages, array $tools = []): AIResponse
     {
-        // Wydziel system prompt z listy wiadomości
+        // Wydziel system prompt i konwertuj wiadomości
         $system = '';
         $claudeMessages = [];
 
@@ -49,7 +51,7 @@ final class ClaudeProvider implements AIProviderInterface
                     'content' => $msg['content'],
                 ],
                 'assistant' => $claudeMessages[] = $this->formatAssistantMessage($msg),
-                'tool_result' => $claudeMessages[] = $this->formatToolResult($msg),
+                'tool_result' => $this->appendToolResult($claudeMessages, $msg),
                 default => null,
             };
         }
@@ -69,39 +71,19 @@ final class ClaudeProvider implements AIProviderInterface
             $body['tools'] = $this->formatTools($tools);
         }
 
-        $response = $this->http->post('v1/messages', [
+        $options = [
             'headers' => [
                 'x-api-key' => $this->apiKey,
                 'anthropic-version' => '2023-06-01',
                 'content-type' => 'application/json',
             ],
             'json' => $body,
-        ]);
+        ];
+
+        $response = $this->requestWithRetry('POST', 'v1/messages', $options);
 
         $data = json_decode($response->getBody()->getContents(), true);
         return $this->parseResponse($data);
-    }
-
-    public function getEmbedding(string $text): array
-    {
-        // Claude nie ma embeddingów - delegujemy do OpenAI
-        $openaiKey = Config::getRequired('OPENAI_API_KEY');
-        $http = new Client(['timeout' => 15]);
-
-        $response = $http->post('https://api.openai.com/v1/embeddings', [
-            'headers' => [
-                'Authorization' => "Bearer {$openaiKey}",
-                'Content-Type' => 'application/json',
-            ],
-            'json' => [
-                'model' => 'text-embedding-3-large',
-                'input' => $text,
-                'dimensions' => 1536,
-            ],
-        ]);
-
-        $data = json_decode($response->getBody()->getContents(), true);
-        return $data['data'][0]['embedding'];
     }
 
     /**
@@ -143,18 +125,49 @@ final class ClaudeProvider implements AIProviderInterface
     }
 
     /**
-     * Formatuje wynik narzędzia na format Claude (user message z tool_result block).
+     * Grupuje kolejne tool_result w jedną wiadomość user z wieloma content blocks.
+     * Claude API wymaga aby wyniki narzędzi z jednego turnu były w jednym user message.
      */
-    private function formatToolResult(array $msg): array
+    private function appendToolResult(array &$messages, array $msg): void
     {
-        return [
-            'role' => 'user',
-            'content' => [[
-                'type' => 'tool_result',
-                'tool_use_id' => $msg['tool_call_id'],
-                'content' => $msg['content'],
-            ]],
+        $block = [
+            'type' => 'tool_result',
+            'tool_use_id' => $msg['tool_call_id'],
+            'content' => $msg['content'],
         ];
+
+        $last = count($messages) - 1;
+        if ($last >= 0
+            && $messages[$last]['role'] === 'user'
+            && is_array($messages[$last]['content'])
+            && ($messages[$last]['content'][0]['type'] ?? '') === 'tool_result'
+        ) {
+            $messages[$last]['content'][] = $block;
+        } else {
+            $messages[] = [
+                'role' => 'user',
+                'content' => [$block],
+            ];
+        }
+    }
+
+    /**
+     * Retry: 1 ponowienie po 2s przy HTTP 429 lub 5xx.
+     */
+    private function requestWithRetry(string $method, string $uri, array $options): \Psr\Http\Message\ResponseInterface
+    {
+        try {
+            return $this->http->request($method, $uri, $options);
+        } catch (ServerException $e) {
+            sleep(2);
+            return $this->http->request($method, $uri, $options);
+        } catch (ClientException $e) {
+            if ($e->getResponse()->getStatusCode() === 429) {
+                sleep(2);
+                return $this->http->request($method, $uri, $options);
+            }
+            throw $e;
+        }
     }
 
     /**

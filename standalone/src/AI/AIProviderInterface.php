@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace DiveChat\AI;
 
 /**
- * Interfejs providera AI.
+ * Interfejs providera AI (chat only).
  *
  * Format wiadomości (ujednolicony):
  * - ['role' => 'system', 'content' => '...']
@@ -17,6 +17,7 @@ namespace DiveChat\AI;
  * [['name' => '...', 'description' => '...', 'parameters' => [...]], ...]
  *
  * Provider konwertuje na natywny format wewnętrznie.
+ * Embeddingi obsługuje osobny EmbeddingService.
  */
 interface AIProviderInterface
 {
@@ -27,11 +28,4 @@ interface AIProviderInterface
      * @param array $tools Lista definicji narzędzi
      */
     public function chat(array $messages, array $tools = []): AIResponse;
-
-    /**
-     * Generuje embedding dla tekstu.
-     *
-     * @return float[] Wektor 1536-wymiarowy
-     */
-    public function getEmbedding(string $text): array;
 }

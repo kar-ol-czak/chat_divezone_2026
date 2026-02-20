@@ -207,7 +207,7 @@ Logika: jeśli zapytanie nie pozwala zawęzić do <10 produktów, AI pyta. Max 2
 **UWAGA BEZPIECZEŃSTWA:** Stary config.php zawiera hardkodowane hasła i klucze API. Do zrotowania: klucz OpenAI, hasło MySQL divezone_sklep_tmp2, hasło MySQL divezone_chat_usr, klucz PrestaShop API.
 
 ### ADR-019: Migracja bazy z Aiven na Railway (2026-02-20)
-**Status:** W toku
+**Status:** ✅ ZAKOŃCZONA (2026-02-20)
 **Kontekst:** IP serwera Aiven (159.223.235.232, DigitalOcean) jest na blackliście AbuseIPDB. Hosting divezone.pl blokuje ruch wychodzący do tego IP. Aiven nie oferuje zmiany IP/regionu. Problem niezależny od nas.
 **Decyzja:** Migracja do Railway (pgvector-pg18 template). PG 18.2, pgvector 0.8.1, infrastruktura GCP (czyste IP).
 **Nowe dane połączenia:**
@@ -218,9 +218,13 @@ Logika: jeśli zapytanie nie pozwala zawęzić do <10 produktów, AI pyta. Max 2
 - Password: <RAILWAY_PASSWORD_REDACTED>
 - pgvector: 0.8.1 | PG: 18.2
 - IP: 66.33.22.230 (czyste, brak wpisów w AbuseIPDB)
+- **SSL: sslmode=disable** (Railway proxy nie obsługuje SSL)
 **Koszt:** Hobby plan $5/mies z $5 kredytów (efektywnie darmowe przy niskim usage). Aiven: $5/mies z $300 kredytów (ale bezużyteczne z powodu blokady IP).
-**Migracja:** pg_dump z Aiven → pg_restore na Railway. 2670 produktów + 37 Q&A + indeksy.
+**Migracja:** pg_dump z Aiven → pg_restore na Railway. 2670 produktów + 37 Q&A + 6 rozmów + indeksy HNSW. Wykonana 2026-02-20.
 **Blocker:** ~~Port 14368 TCP wychodzący do 66.33.22.230 czeka na odblokowanie przez admina hostingu.~~ ODBLOKOWANY 2026-02-20. Gotowe do migracji.
+**Weryfikacja:** curl https://chat.divezone.pl/api/health → postgres: true, mysql: true, status: ok
+**UWAGA BEZPIECZEŃSTWA:** Brak SSL na Railway proxy. Dane lecą nieszyfrowane. Akceptowalne na etapie dev (embeddingi nie są danymi wrażliwymi). Przed produkcją rozważyć Railway private networking lub tunel SSH.
+**Aiven:** NIE kasować jeszcze. Backup na wypadek problemów z Railway.
 
 ### ADR-020: Multi-model routing z eskalacją (2026-02-20)
 **Status:** Zatwierdzony (zastępuje ADR-014)
@@ -253,6 +257,28 @@ Logika: jeśli zapytanie nie pozwala zawęzić do <10 produktów, AI pyta. Max 2
 - Claude Haiku 4.5 (ultra-tani, do sprawdzenia)
 
 **MVP:** Oba zestawy (OpenAI + Anthropic) od razu, przełączane w panelu admina. Gemini (Vertex AI) jako planned, osobne SDK.
+
+### ADR-022: Diagnostyka search quality i knowledge gaps (2026-02-20)
+**Status:** Zatwierdzony
+**Kontekst:** Potrzebujemy monitorować jakość wyszukiwania i identyfikować luki w bazie wiedzy.
+**Decyzja:**
+- Każdy tool call z search_products/get_expert_knowledge zapisuje diagnostykę: query_text, wyniki z similarity, matched_text
+- knowledge_gap = true gdy: brak wyników LUB max similarity < konfigurowalny próg (domyślnie 0.5)
+- Admin widzi rozmowy z lukami i może: tworzyć nowe chunki wiedzy (one-click draft z odpowiedzi AI), lub notować obserwacje
+- Kolumna admin_status (new/reviewed/knowledge_created/ignored) do śledzenia przeglądanych rozmów
+- Przyszłość: automatyczne raporty braków (grupowanie podobnych pytań bez wiedzy)
+**Implementacja:** Nowe kolumny w divechat_conversations: search_diagnostics (JSONB), knowledge_gap (boolean), admin_status, admin_notes. Szczegóły w TASK-008.
+
+### ADR-023: Filtrowanie produktów do embeddingów po drzewie kategorii (2026-02-20)
+**Status:** Zatwierdzony
+**Kontekst:** W indeksie embeddingów znalazły się produkty spoza oferty (maseczki COVID, opłaty, vouchery, kategorie "Niedostępne"). description_short zawiera CMS cruft zamiast opisów.
+**Decyzja:**
+- Produkty tylko z aktywnych kategorii potomnych id=2 ("Główna")
+- 25 kategorii wykluczonych (z ich potomkami): 484, 458, 485, 486, 468, 368, 413, 451, 406, 409, 445, 447, 110, 396, 366, 448, 397, 482, 168, 461, 59, 457, 436, 462, 490
+- description_short NIE używany nigdzie w pipeline. Tylko description (długi opis).
+- Panel admina: drzewo kategorii z checkboxami wykluczeń (zamiast zaznaczania co wchodzi)
+- Po poprawkach: pełny re-embedding
+**Implementacja:** TASK-007 (embeddings)
 
 ### ADR-021: Eval framework do testowania modeli (2026-02-20)
 **Status:** Zaplanowany

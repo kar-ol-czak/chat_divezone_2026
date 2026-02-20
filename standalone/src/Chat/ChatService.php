@@ -6,6 +6,7 @@ namespace DiveChat\Chat;
 
 use DiveChat\AI\AIProviderInterface;
 use DiveChat\AI\AIResponse;
+use DiveChat\AI\ToolCall;
 use DiveChat\Tools\ToolRegistry;
 
 /**
@@ -15,6 +16,7 @@ use DiveChat\Tools\ToolRegistry;
 final class ChatService
 {
     private const MAX_TOOL_ITERATIONS = 5;
+    private const MAX_HISTORY_MESSAGES = 10;
 
     public function __construct(
         private readonly AIProviderInterface $aiProvider,
@@ -36,6 +38,20 @@ final class ChatService
         $messages = [
             ['role' => 'system', 'content' => SystemPrompt::build()],
         ];
+
+        // Rehydratuj ToolCall objects z historii (JSON zwraca tablice)
+        foreach ($history as &$msg) {
+            if (!empty($msg['tool_calls']) && is_array($msg['tool_calls'])) {
+                $msg['tool_calls'] = array_map(
+                    fn(array $tc) => new ToolCall($tc['id'], $tc['name'], $tc['arguments'] ?? []),
+                    $msg['tool_calls'],
+                );
+            }
+        }
+        unset($msg);
+
+        // Przytnij historię do ostatnich N wiadomości
+        $history = $this->trimHistory($history);
 
         // Dodaj historię (bez systemu - jest na początku)
         foreach ($history as $msg) {
@@ -93,6 +109,12 @@ final class ChatService
             }
         }
 
+        // Loguj wyczerpanie pętli narzędzi
+        if ($response->hasToolCalls()) {
+            error_log("[DiveChat] Tool loop wyczerpany po " . self::MAX_TOOL_ITERATIONS
+                . " iteracjach, sesja: {$sessionId}");
+        }
+
         $finalContent = $response->content ?? 'Przepraszam, nie udało się wygenerować odpowiedzi.';
 
         // 5. Zapisz historię (bez system prompta)
@@ -127,6 +149,26 @@ final class ChatService
             'products' => $products,
             'usage' => $totalUsage,
         ];
+    }
+
+    /**
+     * Przycina historię do ostatnich MAX_HISTORY_MESSAGES wiadomości.
+     * Upewnia się, że historia nie zaczyna się od tool_result ani assistant z tool_calls.
+     */
+    private function trimHistory(array $history): array
+    {
+        if (count($history) <= self::MAX_HISTORY_MESSAGES) {
+            return $history;
+        }
+
+        $trimmed = array_slice($history, -self::MAX_HISTORY_MESSAGES);
+
+        // Upewnij się że zaczynamy od wiadomości user (nie tool_result/assistant)
+        while (!empty($trimmed) && $trimmed[0]['role'] !== 'user') {
+            array_shift($trimmed);
+        }
+
+        return array_values($trimmed);
     }
 
     /**

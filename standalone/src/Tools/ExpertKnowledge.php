@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace DiveChat\Tools;
 
-use DiveChat\AI\AIProviderInterface;
+use DiveChat\AI\EmbeddingService;
 use DiveChat\Database\PostgresConnection;
 
 /**
@@ -14,7 +14,8 @@ use DiveChat\Database\PostgresConnection;
 final class ExpertKnowledge implements ToolInterface
 {
     public function __construct(
-        private readonly AIProviderInterface $aiProvider,
+        private readonly EmbeddingService $embeddingService,
+        private readonly PostgresConnection $db,
     ) {}
 
     public function getName(): string
@@ -52,11 +53,11 @@ final class ExpertKnowledge implements ToolInterface
         $query = $params['query'] ?? '';
         $category = $params['category'] ?? null;
 
-        $embedding = $this->aiProvider->getEmbedding($query);
+        $embedding = $this->embeddingService->getEmbedding($query);
         $vectorStr = '[' . implode(',', $embedding) . ']';
 
         $conditions = ['active = true', '1 - (embedding <=> ?::vector) > 0.5'];
-        $sqlParams = [$vectorStr]; // parametr 1: wektor
+        $sqlParams = [$vectorStr];
 
         if ($category !== null) {
             $sqlParams[] = $category;
@@ -72,12 +73,10 @@ final class ExpertKnowledge implements ToolInterface
                 ORDER BY embedding <=> ?::vector
                 LIMIT 3";
 
-        // Wektor potrzebny 3 razy (w WHERE, SELECT, ORDER BY) - ale PDO tworzy nowe parametry
         $sqlParams[] = $vectorStr; // dla SELECT
         $sqlParams[] = $vectorStr; // dla ORDER BY
 
-        $db = PostgresConnection::getInstance();
-        $results = $db->fetchAll($sql, $sqlParams);
+        $results = $this->db->fetchAll($sql, $sqlParams);
 
         if (empty($results)) {
             return ['knowledge' => [], 'message' => 'Nie znaleziono wiedzy na ten temat.'];

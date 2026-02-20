@@ -6,6 +6,8 @@ namespace DiveChat\AI;
 
 use DiveChat\Config;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Exception\ServerException;
 
 /**
  * Provider OpenAI API (GPT-4o, GPT-4.1).
@@ -70,34 +72,18 @@ final class OpenAIProvider implements AIProviderInterface
             $body['tools'] = $this->formatTools($tools);
         }
 
-        $response = $this->http->post('v1/chat/completions', [
+        $options = [
             'headers' => [
                 'Authorization' => "Bearer {$this->apiKey}",
                 'Content-Type' => 'application/json',
             ],
             'json' => $body,
-        ]);
+        ];
+
+        $response = $this->requestWithRetry('POST', 'v1/chat/completions', $options);
 
         $data = json_decode($response->getBody()->getContents(), true);
         return $this->parseResponse($data);
-    }
-
-    public function getEmbedding(string $text): array
-    {
-        $response = $this->http->post('v1/embeddings', [
-            'headers' => [
-                'Authorization' => "Bearer {$this->apiKey}",
-                'Content-Type' => 'application/json',
-            ],
-            'json' => [
-                'model' => 'text-embedding-3-large',
-                'input' => $text,
-                'dimensions' => 1536,
-            ],
-        ]);
-
-        $data = json_decode($response->getBody()->getContents(), true);
-        return $data['data'][0]['embedding'];
     }
 
     /**
@@ -137,6 +123,25 @@ final class OpenAIProvider implements AIProviderInterface
         }
 
         return $result;
+    }
+
+    /**
+     * Retry: 1 ponowienie po 2s przy HTTP 429 lub 5xx.
+     */
+    private function requestWithRetry(string $method, string $uri, array $options): \Psr\Http\Message\ResponseInterface
+    {
+        try {
+            return $this->http->request($method, $uri, $options);
+        } catch (ServerException $e) {
+            sleep(2);
+            return $this->http->request($method, $uri, $options);
+        } catch (ClientException $e) {
+            if ($e->getResponse()->getStatusCode() === 429) {
+                sleep(2);
+                return $this->http->request($method, $uri, $options);
+            }
+            throw $e;
+        }
     }
 
     /**

@@ -12,6 +12,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 
 use DiveChat\AI\AIProviderFactory;
+use DiveChat\AI\EmbeddingService;
 use DiveChat\Chat\ChatService;
 use DiveChat\Chat\ConversationStore;
 use DiveChat\Config;
@@ -25,13 +26,13 @@ Response::handlePreflight();
 // Załaduj .env
 Config::load(dirname(__DIR__));
 
-// Inicjalizuj AI provider i narzędzia
+// Inicjalizuj serwisy
 $aiProvider = AIProviderFactory::create();
+$embeddingService = new EmbeddingService();
 
 $registerTools = require dirname(__DIR__) . '/config/tools.php';
-$toolRegistry = $registerTools($aiProvider);
+$toolRegistry = $registerTools($embeddingService);
 
-// Inicjalizuj ChatService
 $chatService = new ChatService($aiProvider, $toolRegistry, new ConversationStore());
 
 // Inicjalizuj router i zarejestruj routes
