@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DiveChat\AI;
 
 use DiveChat\Config;
+use DiveChat\Enum\AIModel;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\ServerException;
@@ -65,16 +66,19 @@ final class ClaudeProvider implements AIProviderInterface
             'messages' => $claudeMessages,
         ];
 
-        // Extended thinking dla modeli eskalacyjnych (np. claude-opus-4-6)
+        // Extended thinking tylko dla modeli eskalacyjnych (np. claude-opus-4-6)
         if (!empty($options['effort']) && is_int($options['effort'])) {
-            $body['thinking'] = [
-                'type' => 'enabled',
-                'budget_tokens' => $options['effort'],
-            ];
-            // Extended thinking wymaga wyższego max_tokens
-            $body['max_tokens'] = max($this->maxTokens, $options['effort'] + 4096);
-            // Temperature musi być 1 z extended thinking
-            unset($body['temperature']);
+            $aiModel = AIModel::tryFrom($model);
+            if ($aiModel !== null && $aiModel->supportsEffort()) {
+                $body['thinking'] = [
+                    'type' => 'enabled',
+                    'budget_tokens' => $options['effort'],
+                ];
+                // Extended thinking wymaga wyższego max_tokens
+                $body['max_tokens'] = max($this->maxTokens, $options['effort'] + 4096);
+                // Temperature musi być 1 z extended thinking
+                unset($body['temperature']);
+            }
         }
 
         if ($system !== '') {

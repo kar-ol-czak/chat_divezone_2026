@@ -76,9 +76,12 @@ final class OpenAIProvider implements AIProviderInterface
             $body['temperature'] = $this->temperature;
         }
 
-        // Reasoning effort dla modeli eskalacyjnych (np. gpt-5.2)
+        // Reasoning effort tylko dla modeli które go obsługują
         if (!empty($options['effort']) && is_string($options['effort'])) {
-            $body['reasoning_effort'] = $options['effort'];
+            $aiModel = $aiModel ?? AIModel::tryFrom($model);
+            if ($aiModel !== null && $aiModel->supportsEffort()) {
+                $body['reasoning_effort'] = $options['effort'];
+            }
         }
 
         if (!empty($tools)) {

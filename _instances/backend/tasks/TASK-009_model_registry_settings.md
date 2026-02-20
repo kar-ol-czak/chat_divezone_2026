@@ -5,15 +5,36 @@
 # Zależności: TASK-006b (standalone API), TASK-008f (frontend panel)
 
 ## Cel
-Jedno źródło prawdy o modelach AI (AIModel.php), dynamiczne ładowanie w panelu settings, obsługa reasoning effort dla modeli eskalacyjnych.
+Jedno źródło prawdy o modelach AI (AIModel.php), dynamiczne ładowanie w panelu settings, obsługa reasoning effort per-model (nie per-tier).
 
 ## Kontekst
-- AIModel.php jest nieaktualny (stare modele, brak tierów)
-- settings.js ma hardkodowaną listę modeli
-- Brak obsługi reasoning_effort (OpenAI) i extended_thinking (Claude)
-- SystemPrompt.php miał błędne dane kontaktowe (naprawione ręcznie, do deploy)
+- AIModel.php częściowo naprawiony (sesja 5: gpt-5-mini fix, supportsTemperature)
+- Effort wysyłany jest globalnie, a powinien być per-model
+- supportsEffort() oparte na tierze, a powinno na typie modelu (reasoning vs nie)
+- Settings ma jedno pole escalation_effort, potrzebne dwa: primary_effort + escalation_effort
+- UI pokazuje effort tylko przy modelu eskalacyjnym, powinno przy każdym reasoning modelu
+- AIProviderFactory nadal czyta provider z .env, ignoruje settings DB
 
 ## Zmiany
+
+### KLUCZOWA ZMIANA: effort per-model (nie per-tier)
+
+Stara logika: `supportsEffort()` === tier 'escalation'. Effort tylko na modelu eskalacyjnym.
+Nowa logika: `isReasoning()` === true dla gpt-5-mini, gpt-5.2, claude-opus-4-6. Effort przy każdym reasoning modelu.
+
+AIModel metody:
+- `isReasoning(): bool` - gpt-5-mini, gpt-5.2 = true; gpt-4.1 = false
+- `supportsTemperature(): bool` - odwrotność isReasoning (już istnieje)
+- `effortParamName(): ?string` - reasoning_effort (OpenAI) | extended_thinking (Claude)
+- `tier(): string` - primary | escalation (do UI, ale nie do decyzji o effort)
+
+Settings DB: dwa pola effort:
+- `primary_effort` (dla primary model jeśli reasoning)
+- `escalation_effort` (dla escalation model jeśli reasoning)
+
+ChatService: `loadSettings()` zwraca oba, `handle()` wysyła odpowiedni effort w zależności od aktualnie użytego modelu.
+
+UI: kontrolka effort pojawia się pod dropdownem modelu jeśli wybrany model ma `isReasoning() === true`.
 
 ### 1. AIModel.php — pełna refaktoryzacja
 
