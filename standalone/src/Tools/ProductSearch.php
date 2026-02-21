@@ -26,12 +26,9 @@ final class ProductSearch implements ToolInterface
     public function getDescription(): string
     {
         return 'Wyszukuje produkty w ofercie divezone.pl metodą semantyczną (embedding similarity). '
-             . 'WAŻNE: Parametr query musi zawierać terminologię produktową/sklepową, NIE słowa klienta. '
-             . 'Przed wyszukaniem przetłumacz potrzebę klienta na język produktów. '
-             . 'Przykłady: klient mówi "pianka" → szukaj "skafander mokry neoprenowy"; '
-             . 'klient mówi "nurkuję w Polsce" → szukaj "skafander 7mm semidry" bo wiesz że Polska = zimna woda 4-10°C; '
-             . 'klient mówi "jacket" → szukaj "kamizelka wyrównawcza BCD". '
-             . 'Uwzględniaj w query grubość, typ, przeznaczenie — wszystko co wiesz z kontekstu rozmowy.';
+             . 'WAŻNE: Parametr query musi zawierać nazewnictwo sklepu divezone.pl, NIE słowa klienta ani podręcznikową terminologię. '
+             . 'Przed wyszukaniem przetłumacz potrzebę klienta na nazwy kategorii i produktów sklepu (patrz NAZEWNICTWO SKLEPU w system prompcie). '
+             . 'Uwzględniaj w query typ, przeznaczenie i kontekst z rozmowy.';
     }
 
     public function getParametersSchema(): array
