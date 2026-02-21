@@ -2,7 +2,7 @@
 # Data: 2026-02-20
 # Instancje: backend + frontend
 # Priorytet: WYSOKI (UX, postrzegany czas oczekiwania)
-# Status: DO ZROBIENIA
+# Status: ZROBIONE
 
 ## Problem
 Gdy AI wywołuje narzędzia (search_products x3), czas odpowiedzi sięga 30-40s.

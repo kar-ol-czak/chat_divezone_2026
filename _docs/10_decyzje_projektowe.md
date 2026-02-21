@@ -295,3 +295,94 @@ Logika: jeśli zapytanie nie pozwala zawęzić do <10 produktów, AI pyta. Max 2
 **Decyzja:** 4-poziomowa hierarchia: Dziedzina (7) -> Temat (30-60) -> Artykuł (jednostka redakcyjna) -> Chunk (jednostka embeddingu). Workflow redakcyjny: draft/imported -> review -> published. Tylko published jest embeddowany. AI writing assistant: model generuje draft, człowiek redaguje i zatwierdza.
 **Szczegóły:** _docs/14_architektura_bazy_wiedzy.md
 **Migracja:** Obecne 37 Q&A -> artykuły source_type=manual, status=published. Zachowana kompatybilność z divechat_knowledge (dodane pole article_id).
+
+
+### ADR-024: Architektura wyszukiwania eksperckiego, 4 warstwy (2026-02-21)
+**Status:** Zatwierdzony
+**Kontekst:** AI nie potrafi efektywnie wyszukiwać produktów (vocabulary mismatch). Klient mówi "pianka", produkt to "BARE Velocity Semi-Dry 7mm Lady". Analiza branżowa: Amazon, Taobao, Zalando stosują query understanding + hybrid retrieval + re-ranking.
+**Decyzja:** 4-warstwowa architektura:
+1. LLM Product Enrichment (build time): silny LLM generuje 5-8 fraz per produkt, wzbogacone o realne dane z GSC/Luigi's Box/GA4. Walidacja przez drugi LLM.
+2. Hybrid Search (query time): embedding + pg_trgm trigram, combined score 0.7/0.3.
+3. Structured Query Rewriting (query time): parametr search_reasoning w tool schema wymusza chain-of-thought.
+4. Category Filter (query time): semi-wymagany parametr category w tool schema.
+**Modele enrichment:** GPT-5.2 generuje, Claude Opus 4.6 waliduje. Test na 30 produktach, potem pełny run.
+**Odrzucone:** dedykowany re-ranker (przy 5-10 wynikach LLM re-rankuje naturalnie), fine-tuning modelu embeddingowego (za mały dataset), hardkodowane słowniki synonimów.
+**Przed implementacją:** zebranie danych z GSC, Luigi's Box, GA4. Analiza zewnętrzna (brief do OpenAI/Gemini).
+**Szczegóły:** _docs/14_architektura_wyszukiwania_rozwiazanie.md, _docs/15_brief_do_analizy_zewnetrznej.md, _docs/16_instrukcja_ekstrakcji_danych.md
+**Implementacja:** TASK-011 (enrichment), TASK-012 (hybrid search), TASK-013 (query rewriting + category)
+
+
+### ADR-025: Korekty po analizie zewnętrznej (OpenAI + Gemini) (2026-02-21)
+**Status:** Zatwierdzony
+**Kontekst:** Dwie niezależne analizy (GPT-5.2 i Gemini 2.5 Pro) zidentyfikowały 3 krytyczne błędy i 4 ulepszenia w architekturze z ADR-024.
+**Źródła:** _docs/17_synteza_analiz_zewnetrznych.md, data/external_reviews/
+
+**Krytyczne zmiany:**
+1. **pg_trgm → Full-Text Search + pg_trgm:** pg_trgm zostaje TYLKO do fuzzy matching nazw własnych. Główny tor leksykalny: PostgreSQL native FTS (tsvector/tsquery) z dict_xsyn (słownik synonimów nurkowych), hunspell/lematyzacja PL, unaccent. Jeśli niewystarczające, upgrade do ParadeDB (BM25).
+2. **Wagi liniowe 0.7/0.3 → RRF:** Reciprocal Rank Fusion (k=60) zamiast kombinacji liniowej. Skale wyników cosine i FTS są nieporównywalne, RRF operuje na rangach.
+3. **Anti-phrases ZABRONIONE:** Frazy negatywne w embeddingach przesuwają wektor BLIŻEJ negowanego pojęcia. Negacja wyłącznie przez filtry SQL (WHERE ... != ...) w Warstwie 4.
+
+**Ulepszenia (do implementacji po krytycznych):**
+4. **Multi-Vector Retrieval:** 3 kolumny wektorowe: embedding_name, embedding_description, embedding_jargon. Izolacja sygnałów, brak rozmycia.
+5. **Agentic Query Planning:** search_reasoning ewoluuje z string → strukturalny JSON (intent, semantic_query, exact_keywords, filters, routing weights).
+6. **Polska lematyzacja:** unaccent + hunspell/stemmer w konfiguracji FTS.
+7. **Golden Dataset + metryki:** NDCG@K, MRR, Zero Results Rate na 30-50 zapytaniach z GSC/Luigi's Box.
+
+**Odrzucone (za wcześnie):**
+- ColBERT (wymaga osobnej infrastruktury, quick wins dadzą więcej)
+- GraphRAG (kompatybilność przez knowledge base + JSON metadata)
+- Fine-tuning embeddingów (za mały dataset, syntetyczne dane na przyszłość)
+- HyDE (dodatkowa latencja, enrichment po stronie bazy jest lepszy)
+- Re-ranking cross-encoder (LLM w pętli + RRF wystarczą na start)
+
+**Zaktualizowany plan tasków:**
+- TASK-011: LLM Product Enrichment (bez zmian)
+- TASK-012: Hybrid Search 3-torowy z RRF (zmieniony)
+- TASK-012b: Multi-Vector Retrieval (nowy)
+- TASK-013: Agentic Query Planning (zmieniony)
+- TASK-014: Golden Dataset + Ewaluacja (nowy)
+
+
+### ADR-026: Obsługa synonimów w FTS na Railway (2026-02-21)
+**Status:** Do decyzji (pytanie 26)
+**Kontekst:** dict_xsyn wymaga pliku .rules w $SHAREDIR/tsearch_data/. Railway PostgreSQL jest kontenerem Docker, ten katalog nie jest na wolumenie. Plik ginie po redeployu.
+
+**Opcje:**
+
+#### Opcja A: Fork obrazu Docker Railway
+- Fork railwayapp-templates/postgres-ssl
+- Dodanie pliku diving_synonyms.rules do obrazu
+- Deploy custom image na Railway
+- PRO: pełna kontrola, dict_xsyn działa natywnie
+- CON: maintenance (update PostgreSQL = rebuild image), wyższy próg wejścia
+
+#### Opcja B: Init script z wolumenu
+- Trzymanie .rules na wolumenie (/var/lib/postgresql/data/)
+- Script startowy kopiuje do /usr/share/postgresql/tsearch_data/ przy każdym deploy
+- PRO: prostsze niż fork
+- CON: wymaga custom entrypoint, może nie przeżyć automatycznego restartu
+
+#### Opcja C: Synonimy w warstwie aplikacyjnej (REKOMENDOWANE)
+- Rezygnacja z dict_xsyn w PostgreSQL
+- Słownik synonimów jako tablica w bazie (divechat_synonyms)
+- Python/PHP rozwija zapytanie PRZED wysłaniem do FTS
+- Np. "pianka" → FTS query: "pianka | skafander | wetsuit | neopren"
+- FTS używa konfiguracji 'simple' lub 'polish' (bez dict_xsyn)
+- PRO: zero zależności od filesystemu, słownik edytowalny przez SQL, działa na każdym hostingu
+- CON: dodatkowy query do bazy na rozwinięcie synonimów (trivialny koszt)
+
+#### Opcja D: Synonimy niepotrzebne w FTS (mamy embeddingi)
+- Warstwa 1 (LLM enrichment) już dodaje synonimy do document_text
+- Embeddingi (Warstwa 2, tor semantyczny) już łapią "pianka" → "skafander"
+- FTS szuka LITERALNIE w document_text który ZAWIERA synonimy
+- Np. dokument ma "Szukaj też jako: pianka nurkowa, skafander mokry, wetsuit"
+- FTS na "pianka" trafi w to pole bez żadnego słownika synonimów
+- PRO: zero dodatkowej pracy, embeddingi + enriched text rozwiązują problem
+- CON: działa TYLKO jeśli enrichment jest dobry, brak fallbacku
+
+**Analiza:** Opcja D jest elegancka, bo synonimy z Warstwy 1 naturalnie trafiają do FTS.
+Opcja C jest solidnym fallbackiem gdyby D nie wystarczyła.
+Opcje A i B to overengineering na tym etapie.
+
+**Rekomendacja:** Zaczynamy z D (zero pracy), monitorujemy jakość FTS na golden dataset.
+Jeśli FTS nie łapie czegoś co powinien, implementujemy C (tabela synonimów + query expansion).
