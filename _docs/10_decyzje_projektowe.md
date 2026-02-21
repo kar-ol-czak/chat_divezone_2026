@@ -386,3 +386,22 @@ Opcje A i B to overengineering na tym etapie.
 
 **Rekomendacja:** Zaczynamy z D (zero pracy), monitorujemy jakość FTS na golden dataset.
 Jeśli FTS nie łapie czegoś co powinien, implementujemy C (tabela synonimów + query expansion).
+
+
+### ADR-027: Hierarchia kategorii w wyszukiwaniu (2026-02-21)
+**Status:** Zatwierdzony
+**Kontekst:** PrestaShop ma hierarchiczne kategorie. W niektórych gałęziach (Komputery Nurkowe, Automaty Oddechowe) podkategoriami są marki. Produkty są przypisane do podkategorii (np. "Komputery SHEARWATER"), nie do parent (np. "Komputery Nurkowe").
+
+**Decyzja:** Podejście B (SQL po parent_id).
+- Dodać kolumnę `parent_category_name` do divechat_product_embeddings
+- Filtr category działa na OBU poziomach: `WHERE category_name ILIKE $1 OR parent_category_name ILIKE $1`
+- System prompt zawiera TYLKO parent categories (krótszy prompt)
+- LLM może filtrować po parent ("Automaty Oddechowe") lub child ("APEKS")
+
+**Migracja:**
+```sql
+ALTER TABLE divechat_product_embeddings
+    ADD COLUMN IF NOT EXISTS parent_category_name VARCHAR(255);
+
+-- Wypełnienie z PrestaShop MySQL (jednorazowo, w extract_products.py)
+```

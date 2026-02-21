@@ -1,0 +1,404 @@
+[
+  {
+    "canonical": "automat oddechowy",
+    "synonyms": [
+      "regulator",
+      "lung",
+      "AO",
+      "automat",
+      "regulatory"
+    ],
+    "notes": "Główny sprzęt oddechowy"
+  },
+  {
+    "canonical": "octopus",
+    "synonyms": [
+      "oktopus",
+      "octo",
+      "zapasowy automat",
+      "alternatywne źródło powietrza",
+      "backup regulator"
+    ],
+    "notes": "Zapasowy II stopień"
+  },
+  {
+    "canonical": "skafander mokry",
+    "synonyms": [
+      "pianka",
+      "pianka nurkowa",
+      "pianka neoprenowa",
+      "wetsuit",
+      "kombinezon neoprenowy",
+      "neopren",
+      "mokry kombinezon"
+    ],
+    "notes": "Pianki nurkowe"
+  },
+  {
+    "canonical": "skafander suchy",
+    "synonyms": [
+      "suchacz",
+      "suchar",
+      "drysuit",
+      "suchy kombinezon",
+      "skafander membranowy",
+      "trylaminat"
+    ],
+    "notes": "Skafandry suche"
+  },
+  {
+    "canonical": "skafander półsuchy",
+    "synonyms": [
+      "semidry",
+      "semi-dry",
+      "pianka półsucha"
+    ],
+    "notes": "Pośredni typ"
+  },
+  {
+    "canonical": "jacket",
+    "synonyms": [
+      "BCD",
+      "kamizelka wypornościowa",
+      "kamizelka",
+      "kompensator pływalności",
+      "system wypornościowy",
+      "KRW"
+    ],
+    "notes": "System wypornościowy rekreacyjny"
+  },
+  {
+    "canonical": "skrzydło",
+    "synonyms": [
+      "wing",
+      "skrzydło nurkowe",
+      "worek wypornościowy"
+    ],
+    "notes": "System wypornościowy techniczny"
+  },
+  {
+    "canonical": "komputer nurkowy",
+    "synonyms": [
+      "komputer",
+      "komputer dekompresyjny",
+      "komputer wielogazowy",
+      "komputer trimixowy",
+      "komputer nitroksowy",
+      "komp"
+    ],
+    "notes": "Komputery nurkowe"
+  },
+  {
+    "canonical": "płetwy",
+    "synonyms": [
+      "fins",
+      "płetwy kaloszowe",
+      "płetwy paskowe",
+      "płetwy techniczne",
+      "jet fin"
+    ],
+    "notes": "Wszystkie typy płetw"
+  },
+  {
+    "canonical": "maska nurkowa",
+    "synonyms": [
+      "maska",
+      "gogle",
+      "maska pełnotwarzowa"
+    ],
+    "notes": "Maski"
+  },
+  {
+    "canonical": "fajka",
+    "synonyms": [
+      "snorkel",
+      "fajka nurkowa",
+      "rurka"
+    ],
+    "notes": "Fajki/snorkele"
+  },
+  {
+    "canonical": "latarka nurkowa",
+    "synonyms": [
+      "latarka",
+      "światło nurkowe",
+      "światło główne",
+      "oświetlenie nurkowe",
+      "błyskacz"
+    ],
+    "notes": "Latarki i oświetlenie"
+  },
+  {
+    "canonical": "butla nurkowa",
+    "synonyms": [
+      "butla",
+      "cylinder",
+      "flaszka",
+      "zbiornik",
+      "butla stalowa",
+      "butla aluminiowa"
+    ],
+    "notes": "Butle nurkowe"
+  },
+  {
+    "canonical": "twinset",
+    "synonyms": [
+      "twin",
+      "zestaw dwubutlowy",
+      "dwubutlowiec",
+      "podwójne butle",
+      "zestaw podwójny"
+    ],
+    "notes": "Zestawy podwójnych butli"
+  },
+  {
+    "canonical": "stage",
+    "synonyms": [
+      "stejdż",
+      "butla boczna",
+      "butla stage",
+      "butla dekompresyjna"
+    ],
+    "notes": "Butle boczne/dekompresyjne"
+  },
+  {
+    "canonical": "pierwszy stopień",
+    "synonyms": [
+      "I stopień",
+      "1st stage",
+      "reduktor"
+    ],
+    "notes": "Pierwszy stopień automatu"
+  },
+  {
+    "canonical": "drugi stopień",
+    "synonyms": [
+      "II stopień",
+      "2nd stage",
+      "ustnik"
+    ],
+    "notes": "Drugi stopień automatu"
+  },
+  {
+    "canonical": "nitrox",
+    "synonyms": [
+      "nitroks",
+      "EANx",
+      "EAN",
+      "enriched air",
+      "wzbogacone powietrze",
+      "NX"
+    ],
+    "notes": "Mieszanki nitroksowe"
+  },
+  {
+    "canonical": "trimix",
+    "synonyms": [
+      "trimiks",
+      "trymix",
+      "TMX",
+      "mieszanka helowa"
+    ],
+    "notes": "Mieszanki trimixowe"
+  },
+  {
+    "canonical": "balast",
+    "synonyms": [
+      "obciążniki",
+      "ciężarki",
+      "kafle",
+      "ołów",
+      "system balastowy",
+      "pas balastowy"
+    ],
+    "notes": "System balastowy"
+  },
+  {
+    "canonical": "backplate",
+    "synonyms": [
+      "blacha",
+      "płyta stalowa",
+      "płyta",
+      "blacha na plecach"
+    ],
+    "notes": "Płyta do konfiguracji technicznej"
+  },
+  {
+    "canonical": "uprząż",
+    "synonyms": [
+      "uprzęż",
+      "szelki",
+      "harness",
+      "system uprzęży"
+    ],
+    "notes": "Uprząż nurkowa"
+  },
+  {
+    "canonical": "manometr",
+    "synonyms": [
+      "wskaźnik ciśnienia",
+      "czujnik ciśnienia",
+      "SPG"
+    ],
+    "notes": "Manometr/SPG"
+  },
+  {
+    "canonical": "konsola",
+    "synonyms": [
+      "konsola nurkowa",
+      "przyrządy pomiarowe"
+    ],
+    "notes": "Konsola z przyrządami"
+  },
+  {
+    "canonical": "rękawice nurkowe",
+    "synonyms": [
+      "rękawice",
+      "rękawice neoprenowe",
+      "rękawice suche"
+    ],
+    "notes": "Rękawice"
+  },
+  {
+    "canonical": "buty nurkowe",
+    "synonyms": [
+      "buty neoprenowe",
+      "buty",
+      "botki nurkowe"
+    ],
+    "notes": "Buty/botki"
+  },
+  {
+    "canonical": "kaptur",
+    "synonyms": [
+      "kominiarka",
+      "głowa neoprenowa",
+      "kaptur neoprenowy"
+    ],
+    "notes": "Ochrona głowy"
+  },
+  {
+    "canonical": "kompas nurkowy",
+    "synonyms": [
+      "kompas",
+      "kompas analogowy"
+    ],
+    "notes": "Kompas"
+  },
+  {
+    "canonical": "nóż nurkowy",
+    "synonyms": [
+      "nóż",
+      "sekator",
+      "nóż do sieci"
+    ],
+    "notes": "Noże i narzędzia tnące"
+  },
+  {
+    "canonical": "boja dekompresyjna",
+    "synonyms": [
+      "boja",
+      "DSMB",
+      "SMB",
+      "boja sygnalizacyjna",
+      "kiełbasa"
+    ],
+    "notes": "Boje sygnalizacyjne"
+  },
+  {
+    "canonical": "kołowrotek",
+    "synonyms": [
+      "szpulka",
+      "reel",
+      "spool",
+      "kołowrotek jaskiniowy"
+    ],
+    "notes": "Kołowrotki i szpulki"
+  },
+  {
+    "canonical": "DIN",
+    "synonyms": [
+      "połączenie DIN",
+      "gwint DIN",
+      "DIN 300"
+    ],
+    "notes": "Złącze DIN"
+  },
+  {
+    "canonical": "INT",
+    "synonyms": [
+      "yoke",
+      "połączenie INT",
+      "strzemię"
+    ],
+    "notes": "Złącze INT/yoke"
+  },
+  {
+    "canonical": "inflator",
+    "synonyms": [
+      "zawór dodawczy",
+      "pompka BCD",
+      "wąż inflatora"
+    ],
+    "notes": "Inflator BCD"
+  },
+  {
+    "canonical": "karabinek",
+    "synonyms": [
+      "snap",
+      "bolt snap",
+      "D-ring",
+      "karabińczyk"
+    ],
+    "notes": "Karabinki i mocowania"
+  },
+  {
+    "canonical": "torba nurkowa",
+    "synonyms": [
+      "torba",
+      "skrzynia transportowa",
+      "walizka nurkowa"
+    ],
+    "notes": "Transport sprzętu"
+  },
+  {
+    "canonical": "freediving",
+    "synonyms": [
+      "nurkowanie bezdechowe",
+      "nurkowanie na bezdechu",
+      "free diving",
+      "apnoe",
+      "bezdech"
+    ],
+    "notes": "Nurkowanie bezdechowe"
+  },
+  {
+    "canonical": "choroba dekompresyjna",
+    "synonyms": [
+      "DCS",
+      "DCI",
+      "choroba kesonowa",
+      "the bends"
+    ],
+    "notes": "Wiedza - nie produkt, ale klient może pytać"
+  },
+  {
+    "canonical": "tabele dekompresyjne",
+    "synonyms": [
+      "tabele",
+      "tabele nurkowe",
+      "RDP"
+    ],
+    "notes": "Tabele deko"
+  },
+  {
+    "canonical": "rebreather",
+    "synonyms": [
+      "CCR",
+      "SCR",
+      "obieg zamknięty",
+      "obieg półzamknięty"
+    ],
+    "notes": "Rebreathery"
+  }
+]
