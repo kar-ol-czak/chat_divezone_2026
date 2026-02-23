@@ -9,6 +9,7 @@ use DiveChat\Tools\ProductSearch;
 use DiveChat\Tools\ProductDetails;
 use DiveChat\Tools\ExpertKnowledge;
 use DiveChat\Tools\OrderStatus;
+use DiveChat\Tools\SynonymExpander;
 use DiveChat\Tools\ShippingInfo;
 
 /**
@@ -17,8 +18,9 @@ use DiveChat\Tools\ShippingInfo;
 return static function (EmbeddingService $embeddingService): ToolRegistry {
     $registry = new ToolRegistry();
     $pg = PostgresConnection::getInstance();
+    $synonymExpander = new SynonymExpander($pg);
 
-    $registry->register(new ProductSearch($embeddingService, $pg));
+    $registry->register(new ProductSearch($embeddingService, $pg, $synonymExpander));
     $registry->register(new ProductDetails());
     $registry->register(new ExpertKnowledge($embeddingService, $pg));
     $registry->register(new OrderStatus());

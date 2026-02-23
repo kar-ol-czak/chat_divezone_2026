@@ -8,14 +8,18 @@ use DiveChat\AI\EmbeddingService;
 use DiveChat\Database\PostgresConnection;
 
 /**
- * Wyszukiwanie hybrydowe produktów: embedding similarity + filtry SQL.
+ * Wyszukiwanie hybrydowe produktów: 3 tory (semantic + FTS + trigram) + RRF fusion.
  * Dane z divechat_product_embeddings (PostgreSQL/pgvector).
  */
 final class ProductSearch implements ToolInterface
 {
+    private const RRF_K = 60;
+    private const TRACK_LIMIT = 30;
+
     public function __construct(
         private readonly EmbeddingService $embeddingService,
         private readonly PostgresConnection $db,
+        private readonly SynonymExpander $synonymExpander,
     ) {}
 
     public function getName(): string
@@ -74,66 +78,274 @@ final class ProductSearch implements ToolInterface
     public function execute(array $params): array
     {
         $query = $params['query'] ?? '';
-        $category = $params['category'] ?? null;
-        $minPrice = isset($params['min_price']) ? (float) $params['min_price'] : null;
-        $maxPrice = isset($params['max_price']) ? (float) $params['max_price'] : null;
-        $brand = $params['brand'] ?? null;
-        $inStockOnly = $params['in_stock_only'] ?? false;
         $limit = min((int) ($params['limit'] ?? 5), 10);
 
-        // Generuj embedding zapytania
+        // Wspólne filtry
+        $filters = $this->buildFilters($params);
+
+        // Embedding
         $embedding = $this->embeddingService->getEmbedding($query);
         $vectorStr = '[' . implode(',', $embedding) . ']';
 
-        // Buduj zapytanie dynamicznie
-        $conditions = ['is_active = true'];
-        $sqlParams = [$vectorStr];
+        // Ekspansja synonimów dla FTS
+        $expandedQuery = $this->synonymExpander->expandForFts($query);
 
-        if ($inStockOnly) {
-            $conditions[] = 'in_stock = true';
-        }
+        // 3 tory wyszukiwania
+        $semantic = $this->searchSemantic($vectorStr, $filters);
+        $fulltext = $expandedQuery !== '' ? $this->searchFullText($expandedQuery, $filters) : [];
+        $trigram = $this->searchTrigram($query, $filters);
 
-        if ($category !== null) {
-            $sqlParams[] = $category;
-            $conditions[] = 'category_name ILIKE \'%\' || ? || \'%\'';
-        }
+        // Fuzja RRF
+        $merged = $this->mergeRRF($semantic, $fulltext, $trigram, $limit);
 
-        if ($minPrice !== null) {
-            $sqlParams[] = $minPrice;
-            $conditions[] = 'price >= ?';
-        }
-
-        if ($maxPrice !== null) {
-            $sqlParams[] = $maxPrice;
-            $conditions[] = 'price <= ?';
-        }
-
-        if ($brand !== null) {
-            $sqlParams[] = $brand;
-            $conditions[] = 'brand_name ILIKE \'%\' || ? || \'%\'';
-        }
-
-        $where = implode(' AND ', $conditions);
-
-        $sql = "SELECT ps_product_id, product_name, brand_name, category_name,
-                       price, in_stock, product_url, image_url,
-                       1 - (embedding <=> ?::vector) AS similarity
-                FROM divechat_product_embeddings
-                WHERE {$where}
-                ORDER BY embedding <=> ?::vector
-                LIMIT {$limit}";
-
-        // Wektor potrzebny dwa razy (w SELECT i ORDER BY)
-        $sqlParams[] = $vectorStr;
-
-        $results = $this->db->fetchAll($sql, $sqlParams);
-
-        if (empty($results)) {
+        if (empty($merged['products'])) {
             return ['products' => [], 'message' => 'Nie znaleziono produktów pasujących do zapytania.'];
         }
 
+        return $merged;
+    }
+
+    /**
+     * Buduje wspólne warunki WHERE + parametry dla 3 torów.
+     * @return array{where: string, params: list<mixed>}
+     */
+    private function buildFilters(array $params): array
+    {
+        $conditions = ['is_active = true'];
+        $sqlParams = [];
+
+        if (!empty($params['in_stock_only'])) {
+            $conditions[] = 'in_stock = true';
+        }
+
+        if (isset($params['category'])) {
+            $sqlParams[] = $params['category'];
+            $conditions[] = "category_name ILIKE '%' || ? || '%'";
+        }
+
+        if (isset($params['min_price'])) {
+            $sqlParams[] = (float) $params['min_price'];
+            $conditions[] = 'price >= ?';
+        }
+
+        if (isset($params['max_price'])) {
+            $sqlParams[] = (float) $params['max_price'];
+            $conditions[] = 'price <= ?';
+        }
+
+        if (isset($params['brand'])) {
+            $sqlParams[] = $params['brand'];
+            $conditions[] = "brand_name ILIKE '%' || ? || '%'";
+        }
+
         return [
-            'products' => array_map(fn(array $row) => [
+            'where' => implode(' AND ', $conditions),
+            'params' => $sqlParams,
+        ];
+    }
+
+    /**
+     * Tor 1: Embedding cosine similarity (pgvector).
+     * @return list<array{ps_product_id: int, rank: int, similarity: float}>
+     */
+    private function searchSemantic(string $vectorStr, array $filters): array
+    {
+        $params = [$vectorStr, ...$filters['params'], $vectorStr];
+        $trackLimit = self::TRACK_LIMIT;
+
+        $sql = "SELECT ps_product_id,
+                       1 - (embedding <=> ?::vector) AS similarity
+                FROM divechat_product_embeddings
+                WHERE {$filters['where']}
+                ORDER BY embedding <=> ?::vector
+                LIMIT {$trackLimit}";
+
+        $rows = $this->db->fetchAll($sql, $params);
+
+        $results = [];
+        foreach ($rows as $rank => $row) {
+            $results[] = [
+                'ps_product_id' => (int) $row['ps_product_id'],
+                'rank' => $rank + 1,
+                'similarity' => (float) $row['similarity'],
+            ];
+        }
+
+        return $results;
+    }
+
+    /**
+     * Tor 2: Full-text search z unaccent (diving_simple config).
+     * @return list<array{ps_product_id: int, rank: int, ts_rank: float}>
+     */
+    private function searchFullText(string $expandedQuery, array $filters): array
+    {
+        $trackLimit = self::TRACK_LIMIT;
+
+        // Próbuj to_tsquery z ręcznie zbudowanym tsquery string
+        $params = [$expandedQuery, ...$filters['params'], $expandedQuery];
+        $sql = "SELECT ps_product_id,
+                       ts_rank(fts_vector, to_tsquery('diving_simple', ?)) AS ts_rank
+                FROM divechat_product_embeddings
+                WHERE {$filters['where']}
+                  AND fts_vector @@ to_tsquery('diving_simple', ?)
+                ORDER BY ts_rank DESC
+                LIMIT {$trackLimit}";
+
+        try {
+            $rows = $this->db->fetchAll($sql, $params);
+        } catch (\PDOException) {
+            // Fallback na plainto_tsquery przy błędzie składni
+            $params = [$expandedQuery, ...$filters['params'], $expandedQuery];
+            $sql = "SELECT ps_product_id,
+                           ts_rank(fts_vector, plainto_tsquery('diving_simple', ?)) AS ts_rank
+                    FROM divechat_product_embeddings
+                    WHERE {$filters['where']}
+                      AND fts_vector @@ plainto_tsquery('diving_simple', ?)
+                    ORDER BY ts_rank DESC
+                    LIMIT {$trackLimit}";
+            $rows = $this->db->fetchAll($sql, $params);
+        }
+
+        $results = [];
+        foreach ($rows as $rank => $row) {
+            $results[] = [
+                'ps_product_id' => (int) $row['ps_product_id'],
+                'rank' => $rank + 1,
+                'ts_rank' => (float) $row['ts_rank'],
+            ];
+        }
+
+        return $results;
+    }
+
+    /**
+     * Tor 3: Trigram fuzzy matching na product_name i brand_name.
+     * @return list<array{ps_product_id: int, rank: int, trgm_score: float}>
+     */
+    private function searchTrigram(string $query, array $filters): array
+    {
+        $trackLimit = self::TRACK_LIMIT;
+
+        $params = [$query, $query, ...$filters['params'], $query, $query];
+        $sql = "SELECT ps_product_id,
+                       GREATEST(
+                           similarity(product_name, ?),
+                           similarity(brand_name, ?)
+                       ) AS trgm_score
+                FROM divechat_product_embeddings
+                WHERE {$filters['where']}
+                  AND (similarity(product_name, ?) > 0.15 OR similarity(brand_name, ?) > 0.25)
+                ORDER BY trgm_score DESC
+                LIMIT {$trackLimit}";
+
+        $rows = $this->db->fetchAll($sql, $params);
+
+        $results = [];
+        foreach ($rows as $rank => $row) {
+            $results[] = [
+                'ps_product_id' => (int) $row['ps_product_id'],
+                'rank' => $rank + 1,
+                'trgm_score' => (float) $row['trgm_score'],
+            ];
+        }
+
+        return $results;
+    }
+
+    /**
+     * Reciprocal Rank Fusion: łączy wyniki 3 torów.
+     * RRF score = sum(1 / (K + rank_i)) dla każdego toru.
+     * @return array{products: list<array>, count: int, search_debug: array}
+     */
+    private function mergeRRF(array $semantic, array $fulltext, array $trigram, int $limit): array
+    {
+        $k = self::RRF_K;
+        $scores = [];
+        $trackInfo = [];
+
+        // Semantic scores
+        foreach ($semantic as $item) {
+            $id = $item['ps_product_id'];
+            $scores[$id] = ($scores[$id] ?? 0.0) + 1.0 / ($k + $item['rank']);
+            $trackInfo[$id]['semantic_rank'] = $item['rank'];
+            $trackInfo[$id]['semantic_sim'] = $item['similarity'];
+        }
+
+        // Fulltext scores
+        foreach ($fulltext as $item) {
+            $id = $item['ps_product_id'];
+            $scores[$id] = ($scores[$id] ?? 0.0) + 1.0 / ($k + $item['rank']);
+            $trackInfo[$id]['fulltext_rank'] = $item['rank'];
+            $trackInfo[$id]['fulltext_ts_rank'] = $item['ts_rank'];
+        }
+
+        // Trigram scores
+        foreach ($trigram as $item) {
+            $id = $item['ps_product_id'];
+            $scores[$id] = ($scores[$id] ?? 0.0) + 1.0 / ($k + $item['rank']);
+            $trackInfo[$id]['trigram_rank'] = $item['rank'];
+            $trackInfo[$id]['trigram_score'] = $item['trgm_score'];
+        }
+
+        if (empty($scores)) {
+            return ['products' => [], 'count' => 0, 'search_debug' => []];
+        }
+
+        // Sortuj po RRF score malejąco
+        arsort($scores);
+
+        // Top N product IDs
+        $topIds = array_slice(array_keys($scores), 0, $limit);
+
+        if (empty($topIds)) {
+            return ['products' => [], 'count' => 0, 'search_debug' => []];
+        }
+
+        // Pobierz pełne dane produktów
+        $placeholders = implode(',', array_fill(0, count($topIds), '?'));
+        $rows = $this->db->fetchAll(
+            "SELECT ps_product_id, product_name, brand_name, category_name,
+                    price, in_stock, product_url, image_url
+             FROM divechat_product_embeddings
+             WHERE ps_product_id IN ({$placeholders})",
+            $topIds
+        );
+
+        // Indeksuj po ID
+        $rowsById = [];
+        foreach ($rows as $row) {
+            $rowsById[(int) $row['ps_product_id']] = $row;
+        }
+
+        // Buduj wyniki w kolejności RRF
+        $products = [];
+        $debugItems = [];
+        foreach ($topIds as $id) {
+            if (!isset($rowsById[$id])) {
+                continue;
+            }
+            $row = $rowsById[$id];
+            $rrfScore = $scores[$id];
+            $info = $trackInfo[$id] ?? [];
+
+            // Dominujący tor
+            $dominant = 'semantic';
+            $bestContrib = 0;
+            if (isset($info['semantic_rank'])) {
+                $contrib = 1.0 / ($k + $info['semantic_rank']);
+                if ($contrib > $bestContrib) { $bestContrib = $contrib; $dominant = 'semantic'; }
+            }
+            if (isset($info['fulltext_rank'])) {
+                $contrib = 1.0 / ($k + $info['fulltext_rank']);
+                if ($contrib > $bestContrib) { $bestContrib = $contrib; $dominant = 'fulltext'; }
+            }
+            if (isset($info['trigram_rank'])) {
+                $contrib = 1.0 / ($k + $info['trigram_rank']);
+                if ($contrib > $bestContrib) { $bestContrib = $contrib; $dominant = 'trigram'; }
+            }
+
+            $products[] = [
                 'id' => (int) $row['ps_product_id'],
                 'name' => $row['product_name'],
                 'brand' => $row['brand_name'],
@@ -142,9 +354,31 @@ final class ProductSearch implements ToolInterface
                 'in_stock' => (bool) $row['in_stock'],
                 'url' => $row['product_url'],
                 'image_url' => $row['image_url'],
-                'similarity' => round((float) $row['similarity'], 3),
-            ], $results),
-            'count' => count($results),
+                'similarity' => round($rrfScore, 4),
+            ];
+
+            $debugItems[] = [
+                'product_id' => $id,
+                'rrf_score' => round($rrfScore, 6),
+                'dominant_track' => $dominant,
+                'semantic_rank' => $info['semantic_rank'] ?? null,
+                'fulltext_rank' => $info['fulltext_rank'] ?? null,
+                'trigram_rank' => $info['trigram_rank'] ?? null,
+            ];
+        }
+
+        return [
+            'products' => $products,
+            'count' => count($products),
+            'search_debug' => [
+                'tracks' => [
+                    'semantic_count' => count($semantic),
+                    'fulltext_count' => count($fulltext),
+                    'trigram_count' => count($trigram),
+                ],
+                'rrf_k' => $k,
+                'items' => $debugItems,
+            ],
         ];
     }
 }
