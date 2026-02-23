@@ -1,0 +1,637 @@
+[
+  {
+    "id": "Q001",
+    "query": "pianka",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Skafandry Na ZIMNE wody",
+      "Skafandry Na CIEPŁE wody"
+    ],
+    "notes": "Ogólne zapytanie, powinno zwrócić skafandry neoprenowe"
+  },
+  {
+    "id": "Q002",
+    "query": "pianka na zimną wodę",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Skafandry Na ZIMNE wody"
+    ],
+    "notes": "Zawężone do zimnych wód (7mm, semidry)"
+  },
+  {
+    "id": "Q003",
+    "query": "pianka na Morze Czerwone",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Skafandry Na CIEPŁE wody"
+    ],
+    "notes": "Ciepłe wody = 3mm, shorty"
+  },
+  {
+    "id": "Q004",
+    "query": "BARE 7mm",
+    "intent": "navigational",
+    "expected_categories": [
+      "Skafandry Na ZIMNE wody"
+    ],
+    "expected_brands": [
+      "BARE"
+    ],
+    "notes": "Marka + grubość, trigram powinien łapać"
+  },
+  {
+    "id": "Q005",
+    "query": "Shearwater Teric",
+    "intent": "navigational",
+    "expected_products_partial": [
+      "Teric"
+    ],
+    "expected_brands": [
+      "SHEARWATER"
+    ],
+    "notes": "Dokładna nazwa produktu flagowego"
+  },
+  {
+    "id": "Q006",
+    "query": "Shearwater Perdix",
+    "intent": "navigational",
+    "expected_products_partial": [
+      "Perdix"
+    ],
+    "expected_brands": [
+      "SHEARWATER"
+    ],
+    "notes": "Konkretny model komputera"
+  },
+  {
+    "id": "Q007",
+    "query": "komputer nurkowy",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Komputery Nurkowe",
+      "Komputery SHEARWATER",
+      "Komputery SUUNTO",
+      "Komputery SCUBAPRO",
+      "Komputery MARES",
+      "Komputery Garmin"
+    ],
+    "notes": "Ogólne zapytanie o komputery"
+  },
+  {
+    "id": "Q008",
+    "query": "komputer do trimixu",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Komputery SHEARWATER",
+      "Komputery SCUBAPRO",
+      "Komputery SUUNTO"
+    ],
+    "expected_products_partial": [
+      "Perdix",
+      "Teric",
+      "Petrel"
+    ],
+    "notes": "Wymaga wiedzy: trimix = wielogazowy, zaawansowane komputery"
+  },
+  {
+    "id": "Q009",
+    "query": "komputer nurkowy dla początkującego do 2000 zł",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Komputery Nurkowe",
+      "Komputery SUUNTO",
+      "Komputery MARES",
+      "Komputery SCUBAPRO"
+    ],
+    "notes": "Filtr cenowy + segment entry-level"
+  },
+  {
+    "id": "Q010",
+    "query": "automat oddechowy",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Automaty Oddechowe",
+      "1 stopnie",
+      "2 stopnie",
+      "Zestawy rekreacyjne"
+    ],
+    "notes": "Ogólne zapytanie o regulatory"
+  },
+  {
+    "id": "Q011",
+    "query": "automat na zimne wody Bałtyk",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Automaty Oddechowe",
+      "1 stopnie",
+      "2 stopnie"
+    ],
+    "notes": "Zimne wody = environmentally sealed, membranowy I stopień"
+  },
+  {
+    "id": "Q012",
+    "query": "Apeks XTX50",
+    "intent": "navigational",
+    "expected_brands": [
+      "APEKS"
+    ],
+    "expected_products_partial": [
+      "XTX50",
+      "XTX 50"
+    ],
+    "notes": "Konkretny model automatu premium"
+  },
+  {
+    "id": "Q013",
+    "query": "latarka nurkowa",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Latarki nurkowe",
+      "Duże z Głowicą",
+      "Małe i do Ręki",
+    ],
+    "notes": "Ogólne zapytanie o latarki"
+  },
+  {
+    "id": "Q014",
+    "query": "latarka główna do jaskini 4000 lumenów",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Duże z Głowicą"
+    ],
+    "notes": "Latarka primary canister, jaskinowa, wysoka moc"
+  },
+  {
+    "id": "Q015",
+    "query": "skrzydło BCD",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Skrzydła",
+      "Skrzydła z uprzężą do Poj. Butli",
+      "Skrzydła z uprzężą do Twina",
+      "SKRZYDŁA, HYBRYDY"
+    ],
+    "notes": "Ogólne zapytanie o skrzydła (wing-style BCD)"
+  },
+  {
+    "id": "Q016",
+    "query": "skrzydło do twinset",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Skrzydła z uprzężą do Twina",
+      "Skrzydła"
+    ],
+    "notes": "Skrzydła tech do podwójnej butli"
+  },
+  {
+    "id": "Q017",
+    "query": "xDEEP Zeos",
+    "intent": "navigational",
+    "expected_brands": [
+      "xDEEP"
+    ],
+    "expected_products_partial": [
+      "ZEOS",
+      "Zeos"
+    ],
+    "notes": "Konkretny model skrzydła"
+  },
+  {
+    "id": "Q018",
+    "query": "suchy skafander",
+    "intent": "exploratory",
+    "expected_categories": [
+      "SUCHE Trylaminat, Cordura",
+      "SUCHE Neoprenowe",
+      "Skafandry suche"
+    ],
+    "notes": "Ogólne zapytanie o drysuits"
+  },
+  {
+    "id": "Q019",
+    "query": "SANTI suchy skafander",
+    "intent": "navigational",
+    "expected_brands": [
+      "SANTI"
+    ],
+    "expected_categories": [
+      "SUCHE Trylaminat, Cordura",
+      "Skafandry suche"
+    ],
+    "notes": "Marka + typ produktu"
+  },
+  {
+    "id": "Q020",
+    "query": "ocieplacz pod suchy skafander",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Ocieplacze do Suchych"
+    ],
+    "notes": "Undersuit / ocieplacz do drysuit"
+  },
+  {
+    "id": "Q021",
+    "query": "maska do nurkowania",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Maski jednoszybowe",
+      "Maski dwuszybowe",
+      "Maski panoramiczne",
+      "Maski korekcyjne"
+    ],
+    "notes": "Ogólne zapytanie o maski"
+  },
+  {
+    "id": "Q022",
+    "query": "płetwy",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Płetwy Gumowe JET",
+      "Płetwy Paskowe na Buta",
+      "Płetwy Kaloszowe na Stopę",
+      "Płetwy"
+    ],
+    "notes": "Ogólne zapytanie o płetwy"
+  },
+  {
+    "id": "Q023",
+    "query": "Scubapro MK25 EVO",
+    "intent": "navigational",
+    "expected_brands": [
+      "SCUBAPRO"
+    ],
+    "expected_products_partial": [
+      "MK25"
+    ],
+    "notes": "Konkretny model I stopnia automatu"
+  },
+  {
+    "id": "Q024",
+    "query": "Suunto D5",
+    "intent": "navigational",
+    "expected_brands": [
+      "SUUNTO"
+    ],
+    "expected_products_partial": [
+      "D5"
+    ],
+    "notes": "Popularny komputer rekreacyjny"
+  },
+  {
+    "id": "Q025",
+    "query": "Halcyon skrzydło Eclipse",
+    "intent": "navigational",
+    "expected_brands": [
+      "HALCYON"
+    ],
+    "expected_products_partial": [
+      "Eclipse"
+    ],
+    "notes": "Konkretny model skrzydła premium"
+  },
+  {
+    "id": "Q026",
+    "query": "rękawice nurkowe na zimno",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Rękawice",
+      "Rękawice i Pierścienie"
+    ],
+    "notes": "Rękawice grube (5mm+) na zimne wody"
+  },
+  {
+    "id": "Q027",
+    "query": "buty neoprenowe",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Buty",
+      "Buty do suchego"
+    ],
+    "notes": "Buty nurkowe neoprenowe"
+  },
+  {
+    "id": "Q028",
+    "query": "bojka dekompresyjna",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Bojki dekompresyjne",
+      "Bojki i kołowrotki"
+    ],
+    "notes": "SMB / deco buoy"
+  },
+  {
+    "id": "Q029",
+    "query": "coś na zimno pod piankę",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Odzież Termoaktywna",
+      "Ocieplacze do Suchych",
+      "Koszulki"
+    ],
+    "notes": "Naturalny język, podpianka/rashguard/ocieplacz"
+  },
+  {
+    "id": "Q030",
+    "query": "prezent dla nurka do 500 zł",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Akcesoria",
+      "Gadżety",
+      "Latarki nurkowe",
+      "Małe i do Ręki",
+      "Książki nurkowe"
+    ],
+    "notes": "Edge case: gift query, budżet, brak konkretnej kategorii"
+  },
+  {
+    "id": "Q031",
+    "query": "mk3i",
+    "source": "LB",
+    "intent": "navigational",
+    "expected_categories": [
+      "Komputery Garmin"
+    ],
+    "expected_products_partial": [
+      "MK3",
+      "Descent"
+    ],
+    "notes": "LB top query (195 profili). Skrót modelu Garmin Descent MK3i"
+  },
+  {
+    "id": "Q032",
+    "query": "kaptur",
+    "source": "LB",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Kaptury"
+    ],
+    "notes": "LB 1-słowowe (71 profili). Kaptury neoprenowe"
+  },
+  {
+    "id": "Q033",
+    "query": "bojka",
+    "source": "LB",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Bojki dekompresyjne",
+      "Bojki i kołowrotki"
+    ],
+    "notes": "LB 1-słowowe (51 profili). Bez polskich znaków (bójka)"
+  },
+  {
+    "id": "Q034",
+    "query": "waz",
+    "source": "LB",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Węże do Automatów",
+      "Węże do Inflatorów",
+      "Węże do Manometrów"
+    ],
+    "notes": "LB 1-słowowe (83 profili). Bez polskiego ą (wąż)"
+  },
+  {
+    "id": "Q035",
+    "query": "rekawice",
+    "source": "LB",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Rękawice",
+      "Rękawice i Pierścienie"
+    ],
+    "notes": "LB 1-słowowe (59 profili). Bez polskich znaków (rękawice)"
+  },
+  {
+    "id": "Q036",
+    "query": "noz",
+    "source": "LB",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Noże"
+    ],
+    "notes": "LB 1-słowowe (71 profili). Bez polskiego ó (nóż)"
+  },
+  {
+    "id": "Q037",
+    "query": "pletwy",
+    "source": "LB",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Płetwy Gumowe JET",
+      "Płetwy Paskowe na Buta",
+      "Płetwy Kaloszowe na Stopę",
+      "Płetwy"
+    ],
+    "notes": "LB 1-słowowe (82 profili). Bez polskiego ł (płetwy). Por. Q022 z diakrytykami"
+  },
+  {
+    "id": "Q038",
+    "query": "manometr",
+    "source": "LB",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Manometry",
+      "Konsole"
+    ],
+    "notes": "LB top query (130 profili). Manometry nurkowe"
+  },
+  {
+    "id": "Q039",
+    "query": "kompas",
+    "source": "LB",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Kompasy"
+    ],
+    "notes": "LB 1-słowowe (57 profili). Kompasy nurkowe"
+  },
+  {
+    "id": "Q040",
+    "query": "karabinczyk",
+    "source": "LB",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Karabinki nurkowe"
+    ],
+    "notes": "LB 1-słowowe (42 profili). Bez polskich znaków (karabińczyk)"
+  },
+  {
+    "id": "Q041",
+    "query": "skarpety",
+    "source": "LB",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Buty",
+      "Skafandry mokre i akcesoria"
+    ],
+    "notes": "LB 1-słowowe (44 profili). Skarpety neoprenowe nurkowe"
+  },
+  {
+    "id": "Q042",
+    "query": "latarka",
+    "source": "LB",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Latarki nurkowe",
+      "Duże z Głowicą",
+      "Małe i do Ręki",
+      "Oświetlenia Video"
+    ],
+    "notes": "LB 1-słowowe (53 profili). Bez kontekstu 'nurkowa'. Por. Q013"
+  },
+  {
+    "id": "Q043",
+    "query": "pianka do nurkowania w zimnej wodzie",
+    "source": "GSC",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Skafandry Na ZIMNE wody"
+    ],
+    "notes": "GSC 119 kliknięć, pozycja 1.41. Naturalny język, zimne wody"
+  },
+  {
+    "id": "Q044",
+    "query": "suchy skafander nurkowy",
+    "source": "GSC",
+    "intent": "exploratory",
+    "expected_categories": [
+      "SUCHE Trylaminat, Cordura",
+      "SUCHE Neoprenowe",
+      "Skafandry suche"
+    ],
+    "notes": "GSC 183 kliknięć, pozycja 2.46. Synonim suchego skafandra"
+  },
+  {
+    "id": "Q045",
+    "query": "nóż nurkowy",
+    "source": "GSC",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Noże"
+    ],
+    "notes": "GSC 113 kliknięć, pozycja 2.03. Z polskim znakiem ó"
+  },
+  {
+    "id": "Q046",
+    "query": "jacket nurkowy",
+    "source": "GSC",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Jackety (BCD)",
+      "SKRZYDŁA, HYBRYDY",
+      "Skrzydła i jackety"
+    ],
+    "notes": "GSC 97 kliknięć, pozycja 1.57. Kamizelka BCD typu jacket"
+  },
+  {
+    "id": "Q047",
+    "query": "skrzydło do nurkowania",
+    "source": "GSC",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Skrzydła",
+      "Skrzydła z uprzężą do Poj. Butli",
+      "Skrzydła z uprzężą do Twina"
+    ],
+    "notes": "GSC 94 kliknięć, pozycja 1.94. Wing BCD bez technicznego żargonu"
+  },
+  {
+    "id": "Q048",
+    "query": "garmin descent mk3i",
+    "source": "GSC",
+    "intent": "navigational",
+    "expected_brands": [
+      "Garmin"
+    ],
+    "expected_categories": [
+      "Komputery Garmin"
+    ],
+    "expected_products_partial": [
+      "MK3",
+      "Descent"
+    ],
+    "notes": "GSC 44 kliknięć, pozycja 4.88. Pełna nazwa modelu komputera"
+  },
+  {
+    "id": "Q049",
+    "query": "shearwater peregrine",
+    "source": "GSC",
+    "intent": "navigational",
+    "expected_brands": [
+      "SHEARWATER"
+    ],
+    "expected_products_partial": [
+      "Peregrine"
+    ],
+    "notes": "GSC 99 kliknięć, pozycja 11.55. Popularny komputer rekreacyjny Shearwater"
+  },
+  {
+    "id": "Q050",
+    "query": "santi edge",
+    "source": "GSC",
+    "intent": "navigational",
+    "expected_brands": [
+      "SANTI"
+    ],
+    "expected_products_partial": [
+      "Edge"
+    ],
+    "notes": "GSC 104 kliknięć, pozycja 4.97. Suchy skafander Santi Edge"
+  },
+  {
+    "id": "Q051",
+    "query": "pianka do nurkowania",
+    "source": "GSC",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Skafandry Na ZIMNE wody",
+      "Skafandry Na CIEPŁE wody",
+      "Komplety Pianek do nurkowania"
+    ],
+    "notes": "GSC 542 kliknięć, pozycja 1.94. Top query po 'maska do nurkowania'"
+  },
+  {
+    "id": "Q052",
+    "query": "noz nurkowy",
+    "source": "GSC",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Noże"
+    ],
+    "notes": "GSC 44 kliknięć, pozycja 1.45. Bez ó, por. Q045 z diakrytykiem"
+  },
+  {
+    "id": "Q053",
+    "query": "skrzydlo nurkowe",
+    "source": "GSC",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Skrzydła",
+      "Skrzydła z uprzężą do Poj. Butli",
+      "Skrzydła z uprzężą do Twina"
+    ],
+    "notes": "GSC 32 kliknięć, pozycja 1.03. Bez ł i ó"
+  },
+  {
+    "id": "Q054",
+    "query": "boja dekompresyjna",
+    "source": "GSC",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Bojki dekompresyjne",
+      "Bojki i kołowrotki"
+    ],
+    "notes": "GSC 30 kliknięć, pozycja 1.73. 'boja' zamiast 'bojka/bójka'"
+  },
+  {
+    "id": "Q055",
+    "query": "maska pelnotwarzowa",
+    "source": "LB",
+    "intent": "exploratory",
+    "expected_categories": [
+      "Maski panoramiczne",
+      "Zestawy Maska+Fajka"
+    ],
+    "notes": "LB 23 profili. Bez polskich znaków (pełnotwarzowa). Maska full-face"
+  }
+]
