@@ -23,15 +23,14 @@
       "wetsuit damski 5/4mm",
       "pianka 5mm na bałtyk",
       "pianka damska na jeziora",
-      "skafander neoprenowy 5mm polska",
       "długa pianka nurkowa damska 5mm",
-      "scubapro everflex damska",
+      "pianka neoprenowa 5mm na polskie wody",
+      "scubapro everflex damski",
+      "pianka nurkowa 5/4mm damska na zimne wody",
+      "scubapro everflex 5/4 damska",
       "pianka nurkowa damska zimna woda",
-      "pianka 5/4mm na zimne wody",
-      "skafander nurkowy damski 5mm",
-      "pianka damska kamieniołom",
-      "pianka nurkowa 5mm bałtyk damska",
-      "neopren damski 5/4mm"
+      "skafander mokry 5mm damski",
+      "pianka do nurkowania damska 5mm zimne wody"
     ],
     "validation": {
       "keep": [
@@ -40,27 +39,30 @@
         "wetsuit damski 5/4mm",
         "pianka 5mm na bałtyk",
         "pianka damska na jeziora",
-        "skafander neoprenowy 5mm polska",
         "długa pianka nurkowa damska 5mm"
       ],
       "remove": [
         "pianka damska do egiptu zimą"
       ],
-      "fix": [],
+      "fix": [
+        {
+          "old": "skafander neoprenowy 5mm polska",
+          "new": "pianka neoprenowa 5mm na polskie wody"
+        }
+      ],
       "add": [
-        "scubapro everflex damska",
+        "scubapro everflex damski",
+        "pianka nurkowa 5/4mm damska na zimne wody",
+        "scubapro everflex 5/4 damska",
         "pianka nurkowa damska zimna woda",
-        "pianka 5/4mm na zimne wody",
-        "skafander nurkowy damski 5mm",
-        "pianka damska kamieniołom",
-        "pianka nurkowa 5mm bałtyk damska",
-        "neopren damski 5/4mm"
+        "skafander mokry 5mm damski",
+        "pianka do nurkowania damska 5mm zimne wody"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 573,
-    "validator_tokens_out": 206,
-    "validated_at": "2026-02-23T09:10:53.062936+00:00"
+    "validator_tokens_in": 365,
+    "validator_tokens_out": 287,
+    "validated_at": "2026-02-23T08:50:45.671122+00:00"
   },
   "3197": {
     "product_name": "SCUBAPRO Definition 7mm Damski",
@@ -83,47 +85,52 @@
     "validated_phrases": [
       "pianka damska 7mm zimna woda",
       "skafander mokry damski 7 mm",
-      "wetsuit damski 7mm długi",
       "pianka 7mm na bałtyk",
       "pianka damska 7mm jeziora",
       "skafander 7mm polska wiosna jesień",
-      "skafander mokry 7mm rekreacyjny",
-      "scubapro definition damska",
-      "pianka scubapro 7mm damska",
+      "pianka do nurkowania damska 7mm długa",
+      "scubapro definition 7mm damski",
+      "scubapro pianka damska 7mm",
+      "pianka nurkowa 7mm damska zimne wody",
       "skafander nurkowy damski zimna woda",
-      "pianka 7mm kamieniołom",
-      "pianka damska 7mm nurkowanie polska",
-      "pianka 7mm damska wiosna jesień",
-      "skafander nurkowy 7mm bałtyk"
+      "pianka 7mm nurkowanie polska",
+      "pianka damska 7mm bałtyk jeziora",
+      "gruby skafander damski do nurkowania",
+      "scubapro definition damski skafander"
     ],
     "validation": {
       "keep": [
         "pianka damska 7mm zimna woda",
         "skafander mokry damski 7 mm",
-        "wetsuit damski 7mm długi",
         "pianka 7mm na bałtyk",
         "pianka damska 7mm jeziora",
-        "skafander 7mm polska wiosna jesień",
-        "skafander mokry 7mm rekreacyjny"
+        "skafander 7mm polska wiosna jesień"
       ],
       "remove": [
-        "pianka 7mm na egipt zima"
+        "pianka 7mm na egipt zima",
+        "skafander mokry 7mm rekreacyjny"
       ],
-      "fix": [],
+      "fix": [
+        {
+          "old": "wetsuit damski 7mm długi",
+          "new": "pianka do nurkowania damska 7mm długa"
+        }
+      ],
       "add": [
-        "scubapro definition damska",
-        "pianka scubapro 7mm damska",
+        "scubapro definition 7mm damski",
+        "scubapro pianka damska 7mm",
+        "pianka nurkowa 7mm damska zimne wody",
         "skafander nurkowy damski zimna woda",
-        "pianka 7mm kamieniołom",
-        "pianka damska 7mm nurkowanie Polska",
-        "pianka 7mm damska wiosna jesień",
-        "skafander nurkowy 7mm bałtyk"
+        "pianka 7mm nurkowanie polska",
+        "pianka damska 7mm bałtyk jeziora",
+        "gruby skafander damski do nurkowania",
+        "scubapro definition damski skafander"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 575,
-    "validator_tokens_out": 214,
-    "validated_at": "2026-02-23T09:10:59.595259+00:00"
+    "validator_tokens_in": 367,
+    "validator_tokens_out": 316,
+    "validated_at": "2026-02-23T08:51:25.425151+00:00"
   },
   "3198": {
     "product_name": "SCUBAPRO Definition Vest 6mm Damski",
@@ -145,56 +152,50 @@
     "timestamp": "2026-02-23T08:49:39.256569+00:00",
     "validated_phrases": [
       "kamizelka neoprenowa 6mm damska",
-      "ocieplacz neoprenowy pod skafander",
       "bezrękawnik neoprenowy nurkowy damski",
       "vest neoprenowy na zimną wodę",
-      "docieplenie pod piankę nurkową 6mm",
-      "docieplenie pod skafander mokry damskie",
+      "ocieplacz neoprenowy pod skafander",
+      "docieplenie pod piankę mokrą 6mm",
       "scubapro definition vest damski",
-      "kamizelka neoprenowa pod skafander zimna woda",
-      "bezrękawnik nurkowy 6mm na bałtyk",
-      "vest ocieplający nurkowy damski 6mm",
-      "docieplenie neoprenowe pod piankę bałtyk",
-      "podpinka neoprenowa 6mm damska",
-      "kamizelka nurkowa na zimne wody damska",
-      "neoprenowy vest scubapro 6mm"
+      "kamizelka neoprenowa scubapro damska",
+      "vest nurkowy 6mm zimne wody",
+      "bezrękawnik nurkowy 6mm damski scubapro",
+      "docieplenie neoprenowe pod mokry skafander damskie",
+      "kamizelka pod piankę nurkową zimne wody",
+      "neoprenowy vest docieplający 6mm"
     ],
     "validation": {
       "keep": [
         "kamizelka neoprenowa 6mm damska",
-        "ocieplacz neoprenowy pod skafander",
         "bezrękawnik neoprenowy nurkowy damski",
-        "vest neoprenowy na zimną wodę"
+        "vest neoprenowy na zimną wodę",
+        "ocieplacz neoprenowy pod skafander"
       ],
       "remove": [
         "docieplenie do pianki polska",
-        "warstwa pod skafander egipt zimą"
+        "warstwa pod skafander egipt zimą",
+        "docieplenie do suchego skafandra damskie"
       ],
       "fix": [
         {
           "old": "docieplenie pod piankę 7mm",
-          "new": "docieplenie pod piankę nurkową 6mm"
-        },
-        {
-          "old": "docieplenie do suchego skafandra damskie",
-          "new": "docieplenie pod skafander mokry damskie"
+          "new": "docieplenie pod piankę mokrą 6mm"
         }
       ],
       "add": [
         "SCUBAPRO Definition Vest damski",
-        "kamizelka neoprenowa pod skafander zimna woda",
-        "bezrękawnik nurkowy 6mm na Bałtyk",
-        "vest ocieplający nurkowy damski 6mm",
-        "docieplenie neoprenowe pod piankę Bałtyk",
-        "podpinka neoprenowa 6mm damska",
-        "kamizelka nurkowa na zimne wody damska",
-        "neoprenowy vest SCUBAPRO 6mm"
+        "kamizelka neoprenowa SCUBAPRO damska",
+        "vest nurkowy 6mm zimne wody",
+        "bezrękawnik nurkowy 6mm damski SCUBAPRO",
+        "docieplenie neoprenowe pod mokry skafander damskie",
+        "kamizelka pod piankę nurkową zimne wody",
+        "neoprenowy vest docieplający 6mm"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 583,
-    "validator_tokens_out": 356,
-    "validated_at": "2026-02-23T09:11:10.447834+00:00"
+    "validator_tokens_in": 375,
+    "validator_tokens_out": 325,
+    "validated_at": "2026-02-23T08:51:37.768407+00:00"
   },
   "4170": {
     "product_name": "SCUBAPRO Definition 5mm Damski",
@@ -221,13 +222,14 @@
       "pianka 5 mm na polskie jeziora",
       "damski skafander neoprenowy 5 mm",
       "pianka nurkowa 5 mm rekreacyjna damska",
-      "pianka mokra damska 5 mm",
-      "scubapro definition damska",
-      "pianka damska 5mm na chorwację",
-      "pianka nurkowa damska zimna woda",
-      "pianka 5 mm damska kamieniołom",
-      "skafander mokry damski 5 mm scubapro",
-      "pianka do nurkowania damska 5 mm wiosna jesień"
+      "pianka damska 5 mm wody umiarkowane",
+      "skafander mokry damski 5 mm",
+      "scubapro definition 5mm damski",
+      "scubapro pianka damska 5 mm",
+      "pianka do nurkowania damska zimna woda",
+      "skafander nurkowy damski 5 mm zimne wody",
+      "pianka nurkowa damska na bałtyk 5 mm",
+      "neopren 5 mm damski nurkowanie"
     ],
     "validation": {
       "keep": [
@@ -238,28 +240,30 @@
         "damski skafander neoprenowy 5 mm",
         "pianka nurkowa 5 mm rekreacyjna damska"
       ],
-      "remove": [
-        "pianka damska 5 mm egipt zima"
-      ],
+      "remove": [],
       "fix": [
         {
+          "old": "pianka damska 5 mm egipt zima",
+          "new": "pianka damska 5 mm wody umiarkowane"
+        },
+        {
           "old": "skafander półsuchy damski 5 mm",
-          "new": "pianka mokra damska 5 mm"
+          "new": "skafander mokry damski 5 mm"
         }
       ],
       "add": [
-        "SCUBAPRO Definition damska",
-        "pianka damska 5mm na chorwację",
-        "pianka nurkowa damska zimna woda",
-        "pianka 5 mm damska kamieniołom",
-        "skafander mokry damski 5 mm SCUBAPRO",
-        "pianka do nurkowania damska 5 mm wiosna jesień"
+        "scubapro definition 5mm damski",
+        "scubapro pianka damska 5 mm",
+        "pianka do nurkowania damska zimna woda",
+        "skafander nurkowy damski 5 mm zimne wody",
+        "pianka nurkowa damska na bałtyk 5 mm",
+        "neopren 5 mm damski nurkowanie"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 590,
-    "validator_tokens_out": 245,
-    "validated_at": "2026-02-23T09:11:20.075385+00:00"
+    "validator_tokens_in": 382,
+    "validator_tokens_out": 335,
+    "validated_at": "2026-02-23T08:51:52.470385+00:00"
   },
   "4171": {
     "product_name": "SCUBAPRO Definition 5mm Męski",
@@ -286,16 +290,15 @@
       "pianka 5mm bałtyk jeziora",
       "kombinezon nurkowy 5mm rekreacyjny",
       "pianka męska do chłodnej wody",
-      "pianka nurkowa 5mm do nurkowania w polsce",
+      "pianka 5mm wiosna jesień europa",
       "scubapro definition 5mm",
-      "pianka scubapro 5mm męska",
-      "skafander 5mm zimne wody",
-      "pianka nurkowa 5mm kamieniołom",
-      "pianka 5mm na wody umiarkowane",
+      "scubapro pianka 5mm męska",
+      "pianka nurkowa 5mm zimne wody",
+      "skafander nurkowy 5mm męski na zimną wodę",
+      "pianka do nurkowania 5mm męska",
       "kombinezon mokry 5mm męski",
-      "pianka do nurkowania 5mm chorwacja",
-      "wetsuit męski na zimną wodę",
-      "pianka neoprenowa 5mm na jesień wiosnę bałtyk"
+      "neopren 5mm nurkowanie zimne wody",
+      "pianka 5mm nurkowanie polska wody"
     ],
     "validation": {
       "keep": [
@@ -307,30 +310,29 @@
         "pianka męska do chłodnej wody"
       ],
       "remove": [
-        "pianka 5mm egipt wiosna jesień"
+        "pianka nurkowa 5mm polska"
       ],
       "fix": [
         {
-          "old": "pianka nurkowa 5mm polska",
-          "new": "pianka nurkowa 5mm do nurkowania w Polsce"
+          "old": "pianka 5mm egipt wiosna jesień",
+          "new": "pianka 5mm wiosna jesień europa"
         }
       ],
       "add": [
         "scubapro definition 5mm",
-        "pianka scubapro 5mm męska",
-        "skafander 5mm zimne wody",
-        "pianka nurkowa 5mm kamieniołom",
-        "pianka 5mm na wody umiarkowane",
+        "scubapro pianka 5mm męska",
+        "pianka nurkowa 5mm zimne wody",
+        "skafander nurkowy 5mm męski na zimną wodę",
+        "pianka do nurkowania 5mm męska",
         "kombinezon mokry 5mm męski",
-        "pianka do nurkowania 5mm Chorwacja",
-        "wetsuit męski na zimną wodę",
-        "pianka neoprenowa 5mm na jesień wiosnę Bałtyk"
+        "neopren 5mm nurkowanie zimne wody",
+        "pianka 5mm nurkowanie polska wody"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 579,
-    "validator_tokens_out": 275,
-    "validated_at": "2026-02-23T09:11:28.830853+00:00"
+    "validator_tokens_in": 371,
+    "validator_tokens_out": 319,
+    "validated_at": "2026-02-23T08:52:02.522802+00:00"
   },
   "4243": {
     "product_name": "Scubapro OneFlex Overal 5mm",
@@ -355,17 +357,19 @@
       "skafander mokry 5 mm",
       "wetsuit 5mm zimne wody",
       "pianka nurkowa 5mm polska",
-      "pianka 5mm damska nurkowa",
-      "pianka 5mm męska nurkowa",
       "pianka 5mm na jeziora",
+      "pianka 5mm damska zimne wody",
+      "pianka 5mm męska zimne wody",
       "scubapro oneflex 5mm",
-      "scubapro pianka 5mm",
+      "scubapro overal 5mm",
+      "pianka jednoczęściowa 5mm nurkowanie",
       "overal nurkowy 5mm",
-      "pianka jednoczęściowa 5mm",
-      "pianka 5mm kamieniołom",
-      "pianka na zimne wody nurkowanie",
-      "skafander nurkowy 5mm zimna woda",
-      "pianka nurkowa całoroczna polska"
+      "skafander nurkowy 5mm zimne wody",
+      "pianka 5mm do nurkowania w polsce",
+      "scubapro pianka 5mm",
+      "pianka nurkowa zimne wody jednoczęściowa",
+      "pianka 5mm wody umiarkowane",
+      "skafander mokry jednoczęściowy 5mm"
     ],
     "validation": {
       "keep": [
@@ -373,29 +377,38 @@
         "skafander mokry 5 mm",
         "wetsuit 5mm zimne wody",
         "pianka nurkowa 5mm polska",
-        "pianka 5mm damska nurkowa",
-        "pianka 5mm męska nurkowa",
         "pianka 5mm na jeziora"
       ],
       "remove": [
         "pianka 5mm do egiptu"
       ],
-      "fix": [],
+      "fix": [
+        {
+          "old": "pianka 5mm damska nurkowa",
+          "new": "pianka 5mm damska zimne wody"
+        },
+        {
+          "old": "pianka 5mm męska nurkowa",
+          "new": "pianka 5mm męska zimne wody"
+        }
+      ],
       "add": [
         "scubapro oneflex 5mm",
-        "scubapro pianka 5mm",
+        "scubapro overal 5mm",
+        "pianka jednoczęściowa 5mm nurkowanie",
         "overal nurkowy 5mm",
-        "pianka jednoczęściowa 5mm",
-        "pianka 5mm kamieniołom",
-        "pianka na zimne wody nurkowanie",
-        "skafander nurkowy 5mm zimna woda",
-        "pianka nurkowa całoroczna polska"
+        "skafander nurkowy 5mm zimne wody",
+        "pianka 5mm do nurkowania w Polsce",
+        "scubapro pianka 5mm",
+        "pianka nurkowa zimne wody jednoczęściowa",
+        "pianka 5mm wody umiarkowane",
+        "skafander mokry jednoczęściowy 5mm"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 566,
-    "validator_tokens_out": 208,
-    "validated_at": "2026-02-23T09:11:33.755546+00:00"
+    "validator_tokens_in": 358,
+    "validator_tokens_out": 342,
+    "validated_at": "2026-02-23T08:52:10.756504+00:00"
   },
   "4244": {
     "product_name": "Scubapro OneFlex Overal 7mm",
@@ -421,18 +434,16 @@
       "wetsuit 7 mm bałtyk",
       "pianka nurkowa 7mm jeziora",
       "ciepła pianka 7mm rekreacja",
-      "pianka 7mm overal unisex",
-      "scubapro pianka 7mm overal",
       "scubapro oneflex 7mm",
-      "overal nurkowy 7mm",
-      "pianka jednoczęściowa 7mm",
-      "skafander nurkowy 7mm zimna woda",
-      "pianka 7mm kamieniołom",
-      "kombinezon nurkowy 7mm bałtyk",
-      "pianka nurkowa na polskie wody",
-      "scubapro skafander 7mm",
-      "pianka 7mm nurkowanie techniczne",
-      "wetsuit 7mm cold water polska"
+      "scubapro overal 7mm",
+      "pianka jednoczęściowa 7mm nurkowanie",
+      "overal nurkowy 7mm zimne wody",
+      "skafander 7mm nurkowanie zimą",
+      "pianka 7mm do nurkowania w polsce",
+      "scubapro pianka 7mm",
+      "kombinezon nurkowy 7mm jednoczęściowy",
+      "pianka nurkowa na bałtyk 7mm",
+      "gruba pianka nurkowa zimne wody"
     ],
     "validation": {
       "keep": [
@@ -443,35 +454,28 @@
         "ciepła pianka 7mm rekreacja"
       ],
       "remove": [
+        "pianka 7mm męska",
+        "pianka 7mm damska",
         "mokry kombinezon 7mm egipt zimą"
       ],
-      "fix": [
-        {
-          "old": "pianka 7mm męska",
-          "new": "pianka 7mm overal unisex"
-        },
-        {
-          "old": "pianka 7mm damska",
-          "new": "scubapro pianka 7mm overal"
-        }
-      ],
+      "fix": [],
       "add": [
         "scubapro oneflex 7mm",
-        "overal nurkowy 7mm",
-        "pianka jednoczęściowa 7mm",
-        "skafander nurkowy 7mm zimna woda",
-        "pianka 7mm kamieniołom",
-        "kombinezon nurkowy 7mm bałtyk",
-        "pianka nurkowa na polskie wody",
-        "scubapro skafander 7mm",
-        "pianka 7mm nurkowanie techniczne",
-        "wetsuit 7mm cold water polska"
+        "scubapro overal 7mm",
+        "pianka jednoczęściowa 7mm nurkowanie",
+        "overal nurkowy 7mm zimne wody",
+        "skafander 7mm nurkowanie zimą",
+        "pianka 7mm do nurkowania w Polsce",
+        "scubapro pianka 7mm",
+        "kombinezon nurkowy 7mm jednoczęściowy",
+        "pianka nurkowa na bałtyk 7mm",
+        "gruba pianka nurkowa zimne wody"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 569,
-    "validator_tokens_out": 276,
-    "validated_at": "2026-02-23T09:11:42.319145+00:00"
+    "validator_tokens_in": 361,
+    "validator_tokens_out": 306,
+    "validated_at": "2026-02-23T08:52:17.365621+00:00"
   },
   "4245": {
     "product_name": "Scubapro OneFlex Vest 5mm ocieplacz rozmiar L",
@@ -495,50 +499,52 @@
       "ocieplacz neoprenowy 5mm l",
       "kamizelka neoprenowa 5 mm pod piankę",
       "bezrękawnik neoprenowy do zimnej wody",
-      "docieplenie pod suchy skafander 5mm",
-      "ocieplacz pod piankę 7mm",
-      "neoprenowa kamizelka na bałtyk",
       "bezrękawnik neoprenowy męski l",
+      "ocieplacz neoprenowy pod skafander 5mm",
+      "ocieplacz pod piankę nurkową 5mm",
+      "kamizelka neoprenowa nurkowanie zimne wody",
       "scubapro oneflex vest 5mm",
-      "ocieplacz scubapro 5mm",
+      "ocieplacz scubapro vest",
       "kamizelka ocieplająca nurkowa 5mm",
-      "ocieplacz pod skafander mokry",
-      "bezrękawnik nurkowy 5mm",
-      "vest neoprenowy nurkowanie",
-      "ocieplacz nurkowy na zimne wody",
-      "kamizelka pod piankę nurkową zimna woda",
-      "docieplenie pod piankę nurkową bałtyk"
+      "vest neoprenowy nurkowy rozmiar l",
+      "podpinka neoprenowa pod piankę 5mm"
     ],
     "validation": {
       "keep": [
         "ocieplacz neoprenowy 5mm l",
         "kamizelka neoprenowa 5 mm pod piankę",
         "bezrękawnik neoprenowy do zimnej wody",
-        "docieplenie pod suchy skafander 5mm",
-        "ocieplacz pod piankę 7mm",
-        "neoprenowa kamizelka na bałtyk",
         "bezrękawnik neoprenowy męski l"
       ],
       "remove": [
         "ocieplacz pod piankę egipt zimą"
       ],
-      "fix": [],
+      "fix": [
+        {
+          "old": "docieplenie pod suchy skafander 5mm",
+          "new": "ocieplacz neoprenowy pod skafander 5mm"
+        },
+        {
+          "old": "ocieplacz pod piankę 7mm",
+          "new": "ocieplacz pod piankę nurkową 5mm"
+        },
+        {
+          "old": "neoprenowa kamizelka na bałtyk",
+          "new": "kamizelka neoprenowa nurkowanie zimne wody"
+        }
+      ],
       "add": [
         "scubapro oneflex vest 5mm",
-        "ocieplacz scubapro 5mm",
+        "ocieplacz scubapro vest",
         "kamizelka ocieplająca nurkowa 5mm",
-        "ocieplacz pod skafander mokry",
-        "bezrękawnik nurkowy 5mm",
-        "vest neoprenowy nurkowanie",
-        "ocieplacz nurkowy na zimne wody",
-        "kamizelka pod piankę nurkową zimna woda",
-        "docieplenie pod piankę nurkową bałtyk"
+        "vest neoprenowy nurkowy rozmiar l",
+        "podpinka neoprenowa pod piankę 5mm"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 602,
-    "validator_tokens_out": 267,
-    "validated_at": "2026-02-23T09:11:54.526568+00:00"
+    "validator_tokens_in": 394,
+    "validator_tokens_out": 355,
+    "validated_at": "2026-02-23T08:52:45.831564+00:00"
   },
   "4699": {
     "product_name": "FOURTH ELEMENT Proteus 5mm Męski",
@@ -561,52 +567,56 @@
     "validated_phrases": [
       "pianka 5mm męska zimna woda",
       "skafander neoprenowy 5 mm męski",
-      "wetsuit 5mm na bałtyk",
       "ciepła pianka 5mm na jeziora",
-      "skafander neoprenowy męski rekreacyjny",
-      "pianka męska neoprenowa 5mm",
+      "pianka 5mm na bałtyk nurkowanie",
+      "pianka do nurkowania zimne wody polskie 5mm",
+      "skafander neoprenowy męski zimne wody",
       "fourth element proteus 5mm",
-      "pianka nurkowa 5mm zimne wody",
-      "skafander 5mm na kamieniołom",
-      "pianka nurkowa męska na bałtyk",
-      "pianka 5mm nurkowanie w polsce",
-      "skafander mokry 5mm męski",
-      "pianka do nurkowania 5mm zimna woda",
-      "fourth element skafander męski"
+      "pianka nurkowa fourth element męska",
+      "skafander 5mm nurkowanie zimne wody",
+      "pianka nurkowa 5mm męska na jeziora bałtyk",
+      "pianka do nurkowania zimna woda 5mm męska",
+      "fourth element proteus wetsuit",
+      "skafander nurkowy 5mm polska"
     ],
     "validation": {
       "keep": [
         "pianka 5mm męska zimna woda",
         "skafander neoprenowy 5 mm męski",
-        "wetsuit 5mm na bałtyk",
-        "ciepła pianka 5mm na jeziora",
-        "skafander neoprenowy męski rekreacyjny"
+        "ciepła pianka 5mm na jeziora"
       ],
       "remove": [
         "pianka 5mm egipt zima",
-        "pianka do nurkowania polska 5mm"
+        "pianka męska superstretch 5mm"
       ],
       "fix": [
         {
-          "old": "pianka męska superstretch 5mm",
-          "new": "pianka męska neoprenowa 5mm"
+          "old": "wetsuit 5mm na bałtyk",
+          "new": "pianka 5mm na Bałtyk nurkowanie"
+        },
+        {
+          "old": "pianka do nurkowania polska 5mm",
+          "new": "pianka do nurkowania zimne wody polskie 5mm"
+        },
+        {
+          "old": "skafander neoprenowy męski rekreacyjny",
+          "new": "skafander neoprenowy męski zimne wody"
         }
       ],
       "add": [
         "Fourth Element Proteus 5mm",
-        "pianka nurkowa 5mm zimne wody",
-        "skafander 5mm na kamieniołom",
-        "pianka nurkowa męska na Bałtyk",
-        "pianka 5mm nurkowanie w Polsce",
-        "skafander mokry 5mm męski",
-        "pianka do nurkowania 5mm zimna woda",
-        "fourth element skafander męski"
+        "pianka nurkowa Fourth Element męska",
+        "skafander 5mm nurkowanie zimne wody",
+        "pianka nurkowa 5mm męska na jeziora Bałtyk",
+        "pianka do nurkowania zimna woda 5mm męska",
+        "Fourth Element Proteus wetsuit",
+        "skafander nurkowy 5mm Polska"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 578,
-    "validator_tokens_out": 247,
-    "validated_at": "2026-02-23T09:12:01.723311+00:00"
+    "validator_tokens_in": 370,
+    "validator_tokens_out": 343,
+    "validated_at": "2026-02-23T08:52:54.029463+00:00"
   },
   "4700": {
     "product_name": "FOURTH ELEMENT Proteus 5mm Damski",
@@ -629,26 +639,25 @@
     "validated_phrases": [
       "pianka damska 5mm zimne wody",
       "skafander neoprenowy damski 5 mm",
-      "wetsuit damski 5mm bałtyk",
       "pianka 5mm na jeziora",
-      "pianka damska na polskę 5mm",
       "ciepła pianka damska 5mm",
+      "pianka damska 5mm bałtyk",
+      "pianka damska 5mm nurkowanie polska",
       "pianka 5mm wiosna jesień europa",
       "fourth element proteus damski",
+      "fourth element pianka damska 5mm",
+      "skafander damski 5mm nurkowanie",
+      "pianka nurkowa damska 5mm",
       "fourth element proteus 5mm",
-      "pianka damska zimne wody neopren",
-      "skafander damski 5mm kamieniołom",
-      "pianka 5mm damska nurkowanie polska",
-      "pianka damska bałtyk jesień",
-      "skafander mokry damski 5mm"
+      "pianka damska zimne wody nurkowanie",
+      "skafander mokry damski 5mm",
+      "pianka 5mm do nurkowania damska"
     ],
     "validation": {
       "keep": [
         "pianka damska 5mm zimne wody",
         "skafander neoprenowy damski 5 mm",
-        "wetsuit damski 5mm bałtyk",
         "pianka 5mm na jeziora",
-        "pianka damska na polskę 5mm",
         "ciepła pianka damska 5mm"
       ],
       "remove": [
@@ -656,24 +665,33 @@
       ],
       "fix": [
         {
+          "old": "wetsuit damski 5mm bałtyk",
+          "new": "pianka damska 5mm bałtyk"
+        },
+        {
+          "old": "pianka damska na polskę 5mm",
+          "new": "pianka damska 5mm nurkowanie polska"
+        },
+        {
           "old": "pianka 5mm egipt wiosna jesień",
           "new": "pianka 5mm wiosna jesień europa"
         }
       ],
       "add": [
         "fourth element proteus damski",
+        "fourth element pianka damska 5mm",
+        "skafander damski 5mm nurkowanie",
+        "pianka nurkowa damska 5mm",
         "fourth element proteus 5mm",
-        "pianka damska zimne wody neopren",
-        "skafander damski 5mm kamieniołom",
-        "pianka 5mm damska nurkowanie polska",
-        "pianka damska bałtyk jesień",
-        "skafander mokry damski 5mm"
+        "pianka damska zimne wody nurkowanie",
+        "skafander mokry damski 5mm",
+        "pianka 5mm do nurkowania damska"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 578,
-    "validator_tokens_out": 228,
-    "validated_at": "2026-02-23T09:12:11.992099+00:00"
+    "validator_tokens_in": 370,
+    "validator_tokens_out": 331,
+    "validated_at": "2026-02-23T08:53:01.814375+00:00"
   },
   "451": {
     "product_name": "SUUNTO Bezprzewodowy miernik ciśnienia w butli",
@@ -699,18 +717,14 @@
       "monitorowanie powietrza w butli",
       "air integration do komputera",
       "kontrola zużycia gazu nurkowanie",
-      "nadajnik suunto do vyper novo",
-      "transmiter suunto d4i d6i zoop novo",
+      "nadajnik suunto vyper novo",
+      "transmiter suunto d5 eon",
       "suunto tank pod",
       "suunto wireless transmitter",
       "bezprzewodowy czujnik ciśnienia suunto",
-      "nadajnik suunto do butli nurkowej",
-      "suunto air integration transmitter",
-      "tank pressure transmitter suunto",
-      "transmiter suunto eon steel",
-      "czujnik ciśnienia gazu nurkowanie",
-      "suunto nadajnik bezprzewodowy hp",
-      "integracja powietrza suunto"
+      "suunto nadajnik ciśnienia butli",
+      "air integration suunto",
+      "transmiter suunto do butli nurkowej"
     ],
     "validation": {
       "keep": [
@@ -726,30 +740,26 @@
       "fix": [
         {
           "old": "nadajnik do vyper air",
-          "new": "nadajnik suunto do vyper novo"
+          "new": "nadajnik suunto vyper novo"
         },
         {
           "old": "transmiter do d4i d6i",
-          "new": "transmiter suunto d4i d6i zoop novo"
+          "new": "transmiter suunto d5 eon"
         }
       ],
       "add": [
         "suunto tank pod",
         "suunto wireless transmitter",
         "bezprzewodowy czujnik ciśnienia suunto",
-        "nadajnik suunto do butli nurkowej",
-        "suunto air integration transmitter",
-        "tank pressure transmitter suunto",
-        "transmiter suunto eon steel",
-        "czujnik ciśnienia gazu nurkowanie",
-        "suunto nadajnik bezprzewodowy HP",
-        "integracja powietrza suunto"
+        "suunto nadajnik ciśnienia butli",
+        "air integration suunto",
+        "transmiter suunto do butli nurkowej"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 564,
+    "validator_tokens_in": 356,
     "validator_tokens_out": 256,
-    "validated_at": "2026-02-23T09:12:17.726352+00:00"
+    "validated_at": "2026-02-23T08:53:09.494181+00:00"
   },
   "2308": {
     "product_name": "SCUBAPRO Nadajnik Smart+ Galileo",
@@ -773,62 +783,55 @@
       "nadajnik do komputera nurkowego",
       "bezprzewodowa integracja powietrza",
       "nadajnik ciśnienia do butli",
-      "nadajnik do nurkowań w polsce",
-      "nadajnik smart+ do galileo",
-      "nadajnik scubapro do galileo sol",
-      "nadajnik smart+ do scubapro a2",
+      "nadajnik smart+ do scubapro galileo",
+      "nadajnik scubapro smart+ transmitter",
+      "nadajnik do scubapro a2",
       "scubapro smart+ transmitter",
-      "nadajnik smart plus scubapro",
-      "bezprzewodowy nadajnik scubapro",
-      "nadajnik do scubapro g2",
-      "nadajnik do scubapro g3",
-      "transmiter powietrza do nurkowania",
-      "nadajnik hp do pierwszego stopnia",
-      "scubapro smart+ galileo",
-      "bezprzewodowy pomiar ciśnienia butli",
-      "nadajnik do komputera nurkowego scubapro"
+      "nadajnik scubapro wysokociśnieniowy",
+      "nadajnik bezprzewodowy scubapro",
+      "scubapro nadajnik do galileo hud",
+      "nadajnik smart+ do g2",
+      "transmiter scubapro smart plus",
+      "bezprzewodowy czujnik ciśnienia powietrza nurkowanie"
     ],
     "validation": {
       "keep": [
         "nadajnik do komputera nurkowego",
         "bezprzewodowa integracja powietrza",
-        "nadajnik ciśnienia do butli",
-        "nadajnik do nurkowań w polsce"
+        "nadajnik ciśnienia do butli"
       ],
       "remove": [
-        "transmiter do manometru bez węża"
+        "transmiter do manometru bez węża",
+        "nadajnik do nurkowań w polsce"
       ],
       "fix": [
         {
           "old": "nadajnik do galileo luna",
-          "new": "nadajnik smart+ do galileo"
+          "new": "nadajnik smart+ do scubapro galileo"
         },
         {
           "old": "nadajnik do galileo sol",
-          "new": "nadajnik scubapro do galileo sol"
+          "new": "nadajnik scubapro smart+ transmitter"
         },
         {
           "old": "nadajnik do komputera a2",
-          "new": "nadajnik smart+ do scubapro a2"
+          "new": "nadajnik do scubapro a2"
         }
       ],
       "add": [
         "scubapro smart+ transmitter",
-        "nadajnik smart plus scubapro",
-        "bezprzewodowy nadajnik scubapro",
-        "nadajnik do scubapro g2",
-        "nadajnik do scubapro g3",
-        "transmiter powietrza do nurkowania",
-        "nadajnik hp do pierwszego stopnia",
-        "scubapro smart+ galileo",
-        "bezprzewodowy pomiar ciśnienia butli",
-        "nadajnik do komputera nurkowego scubapro"
+        "nadajnik scubapro wysokociśnieniowy",
+        "nadajnik bezprzewodowy scubapro",
+        "scubapro nadajnik do galileo hud",
+        "nadajnik smart+ do g2",
+        "transmiter scubapro smart plus",
+        "bezprzewodowy czujnik ciśnienia powietrza nurkowanie"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 562,
-    "validator_tokens_out": 293,
-    "validated_at": "2026-02-23T09:12:24.792088+00:00"
+    "validator_tokens_in": 354,
+    "validator_tokens_out": 318,
+    "validated_at": "2026-02-23T08:53:18.299692+00:00"
   },
   "2339": {
     "product_name": "SCUBAPRO Digital 330 - na pasku",
@@ -849,55 +852,55 @@
     "tokens_out": 96,
     "timestamp": "2026-02-23T08:50:03.324472+00:00",
     "validated_phrases": [
-      "zegarkowy bottom timer na pasek",
-      "zapasowy miernik głębokości czas",
       "cyfrowy głębokościomierz nurkowy zegarek",
       "timer nurkowy na rękę",
-      "prosty komputer nurkowy bez nitroksu",
-      "monochromatyczny zegarkowy komputer nurkowy",
-      "bottom timer do zimnej wody polska egipt",
-      "scubapro digital 330 pasek",
+      "bottom timer na pasku scubapro",
+      "zapasowy bottom timer głębokość czas",
+      "cyfrowy bottom timer zegarkowy nurkowanie",
       "scubapro digital 330",
-      "bottom timer scubapro",
+      "scubapro digital 330 bottom timer",
+      "bottom timer na nadgarstek",
       "digital 330 na pasku",
-      "prosty bottom timer nurkowy",
-      "komputer nurkowy na pasku scubapro",
-      "zapasowy komputer nurkowy na rękę",
-      "bottom timer do nurkowania rekreacyjnego"
+      "przyrząd nurkowy głębokość czas scubapro",
+      "backup bottom timer nurkowy"
     ],
     "validation": {
       "keep": [
-        "zegarkowy bottom timer na pasek",
-        "zapasowy miernik głębokości czas",
         "cyfrowy głębokościomierz nurkowy zegarek",
-        "timer nurkowy na rękę",
-        "prosty komputer nurkowy bez nitroksu",
-        "monochromatyczny zegarkowy komputer nurkowy"
+        "timer nurkowy na rękę"
       ],
       "remove": [
-        "miernik głębokości do nurkowań technicznych"
+        "prosty komputer nurkowy bez nitroksu",
+        "miernik głębokości do nurkowań technicznych",
+        "bottomtimer do zimnej wody polska egipt"
       ],
       "fix": [
         {
-          "old": "bottomtimer do zimnej wody polska egipt",
-          "new": "bottom timer do zimnej wody polska egipt"
+          "old": "zegarkowy bottom timer na pasek",
+          "new": "bottom timer na pasku SCUBAPRO"
+        },
+        {
+          "old": "zapasowy miernik głębokości czas",
+          "new": "zapasowy bottom timer głębokość czas"
+        },
+        {
+          "old": "monochromatyczny zegarkowy komputer nurkowy",
+          "new": "cyfrowy bottom timer zegarkowy nurkowanie"
         }
       ],
       "add": [
-        "scubapro digital 330 pasek",
-        "scubapro digital 330",
-        "bottom timer scubapro",
+        "SCUBAPRO Digital 330",
+        "scubapro digital 330 bottom timer",
+        "bottom timer na nadgarstek",
         "digital 330 na pasku",
-        "prosty bottom timer nurkowy",
-        "komputer nurkowy na pasku scubapro",
-        "zapasowy komputer nurkowy na rękę",
-        "bottom timer do nurkowania rekreacyjnego"
+        "przyrząd nurkowy głębokość czas SCUBAPRO",
+        "backup bottom timer nurkowy"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 583,
-    "validator_tokens_out": 238,
-    "validated_at": "2026-02-23T09:12:32.597514+00:00"
+    "validator_tokens_in": 375,
+    "validator_tokens_out": 334,
+    "validated_at": "2026-02-23T08:53:29.771827+00:00"
   },
   "3434": {
     "product_name": "MARES Icon HD",
@@ -922,60 +925,57 @@
       "komputer z nadajnikiem ciśnienia",
       "komputer z interfejsem do pc",
       "komputer z algorytmem rgbm",
-      "komputer na egipt safari",
-      "komputer nurkowy z polskim menu",
-      "komputer nurkowy na zimne wody",
-      "mares icon hd",
-      "komputer nurkowy mares icon",
-      "komputer nurkowy z kolorowym wyświetlaczem",
-      "komputer nurkowy hd",
-      "komputer nurkowy z dużym ekranem",
-      "komputer nurkowy nitrox trimix",
-      "komputer nurkowy wielogazowy",
-      "komputer do nurkowania technicznego mares",
-      "komputer nurkowy z kompasem",
-      "komputer nurkowy na bałtyk",
-      "komputer nurkowy na wraki"
+      "komputer nurkowy z polskim menu mares",
+      "komputer nurkowy podświetlany czytelny wyświetlacz",
+      "mares icon hd komputer nurkowy",
+      "komputer nurkowy mares kolorowy ekran",
+      "mares icon hd cena",
+      "komputer nurkowy z kolorowym wyświetlaczem hd",
+      "komputer nurkowy mares air integration",
+      "komputer nurkowy z tryb nitrox trimix",
+      "komputer nurkowy dekompresyjny mares",
+      "mares icon hd opinie",
+      "komputer nurkowy na nadgarstek mares",
+      "komputer nurkowy wielogazowy mares"
     ],
     "validation": {
       "keep": [
         "komputer nurkowy kolorowy duży",
         "komputer z nadajnikiem ciśnienia",
         "komputer z interfejsem do pc",
-        "komputer z algorytmem rgbm",
-        "komputer na egipt safari"
+        "komputer z algorytmem rgbm"
       ],
       "remove": [
-        "komputer podświetlany na noc"
+        "komputer na zimne wody",
+        "komputer na egipt safari"
       ],
       "fix": [
         {
           "old": "komputer z polskim menu",
-          "new": "komputer nurkowy z polskim menu"
+          "new": "komputer nurkowy z polskim menu Mares"
         },
         {
-          "old": "komputer na zimne wody",
-          "new": "komputer nurkowy na zimne wody"
+          "old": "komputer podświetlany na noc",
+          "new": "komputer nurkowy podświetlany czytelny wyświetlacz"
         }
       ],
       "add": [
-        "mares icon hd",
-        "komputer nurkowy mares icon",
-        "komputer nurkowy z kolorowym wyświetlaczem",
-        "komputer nurkowy hd",
-        "komputer nurkowy z dużym ekranem",
-        "komputer nurkowy nitrox trimix",
-        "komputer nurkowy wielogazowy",
-        "komputer do nurkowania technicznego mares",
-        "komputer nurkowy z kompasem",
-        "komputer nurkowy na Bałtyk",
-        "komputer nurkowy na wraki"
+        "Mares Icon HD komputer nurkowy",
+        "komputer nurkowy Mares kolorowy ekran",
+        "Mares Icon HD cena",
+        "komputer nurkowy z kolorowym wyświetlaczem HD",
+        "komputer nurkowy Mares air integration",
+        "komputer nurkowy z tryb nitrox trimix",
+        "komputer nurkowy dekompresyjny Mares",
+        "Mares Icon HD opinie",
+        "komputer nurkowy na nadgarstek Mares",
+        "komputer nurkowy wielogazowy Mares"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 545,
-    "validator_tokens_out": 270,
-    "validated_at": "2026-02-23T09:12:39.536852+00:00"
+    "validator_tokens_in": 337,
+    "validator_tokens_out": 364,
+    "validated_at": "2026-02-23T08:53:45.614880+00:00"
   },
   "3627": {
     "product_name": "Obudowa z gumkami do Uwatec Digital / Aladin Prime / Tecg 2G",
@@ -996,54 +996,55 @@
     "tokens_out": 94,
     "timestamp": "2026-02-23T08:50:07.894026+00:00",
     "validated_phrases": [
-      "gumowa obudowa do aladina",
-      "mocowanie na gumkach do komputera",
       "gumki bungee do komputera nurkowego",
-      "adapter paska na bungee do aladina",
       "mocowanie bungee do komputera na rękę",
-      "obudowa elastomerowa do komputera uwatec",
-      "obudowa ochronna do aladin tec 2g",
-      "obudowa bungee do uwatec digital",
-      "obudowa z gumkami do aladin prime",
-      "obudowa bungee do aladin tec 2g",
-      "obudowa tecline do komputera uwatec",
-      "zamiennik obudowy do aladina na bungee",
-      "obudowa na gumkach do komputera nurkowego"
+      "obudowa do aladin prime na gumkach",
+      "obudowa na gumkach do komputera nurkowego",
+      "obudowa do uwatec digital tech 2g",
+      "obudowa bungee do aladin prime",
+      "obudowa z gumkami do uwatec digital",
+      "obudowa tecline do aladin tech 2g",
+      "obudowa bungee mount uwatec",
+      "obudowa z gumkami do komputera nurkowego",
+      "bumper do aladin prime na gumkach"
     ],
     "validation": {
       "keep": [
-        "gumowa obudowa do aladina",
-        "mocowanie na gumkach do komputera",
         "gumki bungee do komputera nurkowego",
-        "adapter paska na bungee do aladina",
         "mocowanie bungee do komputera na rękę"
       ],
       "remove": [
-        "uchwyt na rękę do aladin prime"
+        "uchwyt na rękę do aladin prime",
+        "etui elastomerowe do komputera uwatec",
+        "adapter paska na bungee do aladina"
       ],
       "fix": [
         {
-          "old": "etui elastomerowe do komputera uwatec",
-          "new": "obudowa elastomerowa do komputera uwatec"
+          "old": "gumowa obudowa do aladina",
+          "new": "obudowa do aladin prime na gumkach"
+        },
+        {
+          "old": "mocowanie na gumkach do komputera",
+          "new": "obudowa na gumkach do komputera nurkowego"
         },
         {
           "old": "obudowa ochronna do uwatec 2g",
-          "new": "obudowa ochronna do aladin tec 2g"
+          "new": "obudowa do uwatec digital tech 2g"
         }
       ],
       "add": [
-        "obudowa bungee do uwatec digital",
-        "obudowa z gumkami do aladin prime",
-        "obudowa bungee do aladin tec 2g",
-        "obudowa tecline do komputera uwatec",
-        "zamiennik obudowy do aladina na bungee",
-        "obudowa na gumkach do komputera nurkowego"
+        "obudowa bungee do aladin prime",
+        "obudowa z gumkami do uwatec digital",
+        "obudowa tecline do aladin tech 2g",
+        "obudowa bungee mount uwatec",
+        "obudowa z gumkami do komputera nurkowego",
+        "bumper do aladin prime na gumkach"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 593,
-    "validator_tokens_out": 266,
-    "validated_at": "2026-02-23T09:12:48.345405+00:00"
+    "validator_tokens_in": 385,
+    "validator_tokens_out": 329,
+    "validated_at": "2026-02-23T08:53:56.495481+00:00"
   },
   "3844": {
     "product_name": "SCUBAPRO Digital 330 - w obudowie z gumkami",
@@ -1066,47 +1067,51 @@
     "validated_phrases": [
       "bottomtimer na gumkach",
       "zapasowy timer nurkowy",
-      "miernik głębokości i czasu",
       "cyfrowy głębokościomierz nurkowy",
       "prosty komputer do backupu",
-      "timer do nurkowania technicznego",
-      "bottomtimer na zimną wodę",
+      "miernik głębokości i czasu nurkowy",
       "scubapro digital 330",
       "bottom timer scubapro",
-      "digital 330 z gumkami",
+      "scubapro digital 330 gumki",
+      "komputer nurkowy digital 330",
+      "bottom timer z gumkami",
+      "scubapro bottomtimer",
       "backup komputer nurkowy",
-      "bottomtimer w obudowie",
-      "scubapro bottom timer na rękę",
-      "komputer nurkowy backup techniczne"
+      "digital 330 obudowa gumki"
     ],
     "validation": {
       "keep": [
         "bottomtimer na gumkach",
         "zapasowy timer nurkowy",
-        "miernik głębokości i czasu",
         "cyfrowy głębokościomierz nurkowy",
-        "prosty komputer do backupu",
-        "timer do nurkowania technicznego",
-        "bottomtimer na zimną wodę"
+        "prosty komputer do backupu"
       ],
       "remove": [
-        "bottom timer zegarkowy"
+        "bottom timer zegarkowy",
+        "bottomtimer na zimną wodę",
+        "timer do nurkowania technicznego"
       ],
-      "fix": [],
+      "fix": [
+        {
+          "old": "miernik głębokości i czasu",
+          "new": "miernik głębokości i czasu nurkowy"
+        }
+      ],
       "add": [
         "scubapro digital 330",
         "bottom timer scubapro",
-        "digital 330 z gumkami",
+        "scubapro digital 330 gumki",
+        "komputer nurkowy digital 330",
+        "bottom timer z gumkami",
+        "scubapro bottomtimer",
         "backup komputer nurkowy",
-        "bottomtimer w obudowie",
-        "scubapro bottom timer na rękę",
-        "komputer nurkowy backup techniczne"
+        "digital 330 obudowa gumki"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 562,
-    "validator_tokens_out": 172,
-    "validated_at": "2026-02-23T09:12:56.684141+00:00"
+    "validator_tokens_in": 354,
+    "validator_tokens_out": 205,
+    "validated_at": "2026-02-23T08:54:20.988998+00:00"
   },
   "4296": {
     "product_name": "MARES New Matrix",
@@ -1128,57 +1133,52 @@
     "timestamp": "2026-02-23T08:50:11.179650+00:00",
     "validated_phrases": [
       "komputer nurkowy zegarkowy nitrox",
-      "zegarkowy komputer z rgbm",
       "komputer do nitroksu deko",
       "zegarkowy komputer z podświetleniem",
       "monochromatyczny komputer nurkowy zegarek",
-      "komputer nurkowy zegarkowy mares",
+      "zegarkowy komputer nurkowy rgbm mares",
       "mares new matrix",
       "komputer nurkowy mares matrix",
       "mares matrix komputer zegarkowy",
-      "komputer nurkowy rekreacyjny zegarkowy",
-      "komputer nurkowy na wakacje egipt",
+      "komputer nurkowy na nadgarstek mares",
+      "tani komputer nurkowy zegarkowy",
+      "komputer nurkowy mares do rekreacji",
       "mały komputer nurkowy na rękę",
-      "komputer nurkowy do podróży",
-      "komputer nurkowy z algorytmem rgbm mares",
-      "tani komputer nurkowy mares",
-      "komputer nurkowy na bałtyk"
+      "komputer nurkowy z trybem freediving mares"
     ],
     "validation": {
       "keep": [
         "komputer nurkowy zegarkowy nitrox",
-        "zegarkowy komputer z rgbm",
         "komputer do nitroksu deko",
         "zegarkowy komputer z podświetleniem",
         "monochromatyczny komputer nurkowy zegarek"
       ],
       "remove": [
         "komputer na gorące nitroksy",
-        "komputer na zimną wodę polska"
+        "komputer na zimną wodę polska",
+        "komputer nurkowy z kompasem"
       ],
       "fix": [
         {
-          "old": "komputer nurkowy z kompasem",
-          "new": "komputer nurkowy zegarkowy mares"
+          "old": "zegarkowy komputer z rgbm",
+          "new": "zegarkowy komputer nurkowy RGBM Mares"
         }
       ],
       "add": [
-        "mares new matrix",
-        "komputer nurkowy mares matrix",
+        "Mares New Matrix",
+        "komputer nurkowy Mares Matrix",
         "mares matrix komputer zegarkowy",
-        "komputer nurkowy rekreacyjny zegarkowy",
-        "komputer nurkowy na wakacje egipt",
+        "komputer nurkowy na nadgarstek Mares",
+        "tani komputer nurkowy zegarkowy",
+        "komputer nurkowy Mares do rekreacji",
         "mały komputer nurkowy na rękę",
-        "komputer nurkowy do podróży",
-        "komputer nurkowy z algorytmem rgbm mares",
-        "tani komputer nurkowy mares",
-        "komputer nurkowy na bałtyk"
+        "komputer nurkowy z trybem freediving Mares"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 557,
-    "validator_tokens_out": 256,
-    "validated_at": "2026-02-23T09:13:07.824913+00:00"
+    "validator_tokens_in": 349,
+    "validator_tokens_out": 307,
+    "validated_at": "2026-02-23T08:54:28.651808+00:00"
   },
   "4480": {
     "product_name": "SCUBAPRO Wąż HP adapter  (przedłużka) do nadajnika UWATEC",
@@ -1207,11 +1207,10 @@
       "wężyk hp do nadajnika uwatec",
       "adapter hp między pierwszy stopień a nadajnik",
       "scubapro przedłużka hp uwatec",
-      "adapter hp scubapro do transmitera",
-      "wąż hp przedłużka do nadajnika scubapro",
-      "przedłużka wysokiego ciśnienia do transmitera uwatec",
-      "adapter do bezprzewodowego nadajnika uwatec",
-      "wąż hp do komputera nurkowego scubapro"
+      "adapter hp scubapro nadajnik",
+      "wąż hp adapter uwatec transmiter",
+      "przedłużka wysokiego ciśnienia do transmitera scubapro",
+      "wąż hp do nadajnika bezprzewodowego scubapro"
     ],
     "validation": {
       "keep": [
@@ -1236,17 +1235,16 @@
       ],
       "add": [
         "scubapro przedłużka hp uwatec",
-        "adapter hp scubapro do transmitera",
-        "wąż hp przedłużka do nadajnika scubapro",
-        "przedłużka wysokiego ciśnienia do transmitera uwatec",
-        "adapter do bezprzewodowego nadajnika uwatec",
-        "wąż hp do komputera nurkowego scubapro"
+        "adapter hp scubapro nadajnik",
+        "wąż hp adapter uwatec transmiter",
+        "przedłużka wysokiego ciśnienia do transmitera scubapro",
+        "wąż hp do nadajnika bezprzewodowego scubapro"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 588,
-    "validator_tokens_out": 259,
-    "validated_at": "2026-02-23T09:13:16.331717+00:00"
+    "validator_tokens_in": 380,
+    "validator_tokens_out": 305,
+    "validated_at": "2026-02-23T08:54:36.609782+00:00"
   },
   "4626": {
     "product_name": "SCUBAPRO Chromis",
@@ -1272,14 +1270,14 @@
       "komputer do freedivingu apnea",
       "komputer nurkowy z podświetleniem",
       "komputer tryb gauge głębokościomierz",
-      "komputer na wyjazd egipt nitrox",
-      "komputer nurkowy nitrox",
-      "komputer nurkowy na wody polskie",
-      "scubapro chromis komputer",
-      "komputer nurkowy scubapro z trybem freediving",
-      "mały komputer nurkowy na nadgarstek",
-      "komputer nurkowy na podróż kompaktowy",
-      "komputer nurkowy z wymienną baterią",
+      "komputer nurkowy nitrox do 100%",
+      "scubapro chromis komputer nurkowy",
+      "komputer nurkowy scubapro chromis",
+      "chromis komputer zegarkowy",
+      "komputer nurkowy na nadgarstek scubapro",
+      "mały komputer nurkowy zegarkowy",
+      "komputer nurkowy z trybem freediving",
+      "komputer nurkowy wielogazowy scubapro",
       "komputer nurkowy rekreacyjny scubapro"
     ],
     "validation": {
@@ -1288,33 +1286,33 @@
         "zegarkowy komputer do nurkowania",
         "komputer do freedivingu apnea",
         "komputer nurkowy z podświetleniem",
-        "komputer tryb gauge głębokościomierz",
+        "komputer tryb gauge głębokościomierz"
+      ],
+      "remove": [
+        "komputer na zimne wody polska",
         "komputer na wyjazd egipt nitrox"
       ],
-      "remove": [],
       "fix": [
         {
           "old": "komputer na nitrox 100%",
-          "new": "komputer nurkowy nitrox"
-        },
-        {
-          "old": "komputer na zimne wody polska",
-          "new": "komputer nurkowy na wody polskie"
+          "new": "komputer nurkowy nitrox do 100%"
         }
       ],
       "add": [
-        "scubapro chromis komputer",
-        "komputer nurkowy scubapro z trybem freediving",
-        "mały komputer nurkowy na nadgarstek",
-        "komputer nurkowy na podróż kompaktowy",
-        "komputer nurkowy z wymienną baterią",
+        "scubapro chromis komputer nurkowy",
+        "komputer nurkowy scubapro chromis",
+        "chromis komputer zegarkowy",
+        "komputer nurkowy na nadgarstek scubapro",
+        "mały komputer nurkowy zegarkowy",
+        "komputer nurkowy z trybem freediving",
+        "komputer nurkowy wielogazowy scubapro",
         "komputer nurkowy rekreacyjny scubapro"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 564,
-    "validator_tokens_out": 239,
-    "validated_at": "2026-02-23T09:13:23.850896+00:00"
+    "validator_tokens_in": 356,
+    "validator_tokens_out": 311,
+    "validated_at": "2026-02-23T08:54:43.013597+00:00"
   },
   "4627": {
     "product_name": "SCUBAPRO Interfejs USB Chromis",
@@ -1339,17 +1337,15 @@
       "interfejs do zgrywania logbooka",
       "kabel do zrzutu nurkowań",
       "kabel do kompa nurkowego pc",
-      "przewód do połączenia z laptopem",
       "kabel do odczytu pamięci nurkowań",
+      "scubapro chromis kabel usb",
       "interfejs usb scubapro chromis",
-      "kabel usb scubapro",
       "kabel do scubapro chromis",
-      "przewód usb do komputera nurkowego scubapro",
-      "interfejs usb do komputera nurkowego",
-      "kabel do ściągania nurkowań scubapro",
-      "podłączenie komputera nurkowego do pc",
-      "scubapro chromis kabel",
-      "interfejs do pobrania danych z komputera nurkowego"
+      "scubapro chromis interfejs do komputera",
+      "kabel usb scubapro",
+      "interfejs usb do komputera nurkowego scubapro",
+      "kabel do połączenia komputera nurkowego z pc",
+      "scubapro chromis przesył danych"
     ],
     "validation": {
       "keep": [
@@ -1357,30 +1353,29 @@
         "interfejs do zgrywania logbooka",
         "kabel do zrzutu nurkowań",
         "kabel do kompa nurkowego pc",
-        "przewód do połączenia z laptopem",
         "kabel do odczytu pamięci nurkowań"
       ],
       "remove": [
         "interfejs do komputera na rękę",
+        "przewód do połączenia z laptopem",
         "interfejs usb do logbooków"
       ],
       "fix": [],
       "add": [
+        "scubapro chromis kabel usb",
         "interfejs usb scubapro chromis",
-        "kabel usb scubapro",
         "kabel do scubapro chromis",
-        "przewód usb do komputera nurkowego scubapro",
-        "interfejs usb do komputera nurkowego",
-        "kabel do ściągania nurkowań scubapro",
-        "podłączenie komputera nurkowego do pc",
-        "scubapro chromis kabel",
-        "interfejs do pobrania danych z komputera nurkowego"
+        "scubapro chromis interfejs do komputera",
+        "kabel usb scubapro",
+        "interfejs usb do komputera nurkowego scubapro",
+        "kabel do połączenia komputera nurkowego z pc",
+        "scubapro chromis przesył danych"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 569,
-    "validator_tokens_out": 239,
-    "validated_at": "2026-02-23T09:13:49.987544+00:00"
+    "validator_tokens_in": 361,
+    "validator_tokens_out": 278,
+    "validated_at": "2026-02-23T08:54:50.962413+00:00"
   },
   "4574": {
     "product_name": "Automat TECLINE V2 Ice I-stopień L+P",
@@ -1406,18 +1401,15 @@
       "automat pod lód en250a",
       "pierwszy stopień lewy prawy",
       "automat do twinsetu lewy prawy",
-      "automat do jaskini i wraków",
       "automat na bałtyk i jeziora",
-      "pierwszy stopień 2 porty hp lp",
-      "tecline v2 ice",
-      "automat ice twinset",
-      "automat oddechowy do zimnej wody",
-      "pierwszy stopień din ice",
-      "automat techniczny zimna woda",
-      "automat en250a cold water",
-      "automat membranowy zimna woda",
-      "pierwszy stopień membranowy tecline",
-      "automat do nurkowania podlodowego"
+      "pierwszy stopień 2 porty hp 4 porty lp",
+      "tecline v2 ice pierwszy stopień",
+      "automat oddechowy ice tecline",
+      "pierwszy stopień din do zimnej wody",
+      "automat tecline do nurkowania pod lodem",
+      "pierwszy stopień membranowy zimna woda",
+      "automat oddechowy na zimne wody tecline",
+      "tecline v2 ice automat twinset"
     ],
     "validation": {
       "keep": [
@@ -1426,32 +1418,31 @@
         "automat pod lód en250a",
         "pierwszy stopień lewy prawy",
         "automat do twinsetu lewy prawy",
-        "automat do jaskini i wraków",
         "automat na bałtyk i jeziora"
       ],
-      "remove": [],
+      "remove": [
+        "automat do jaskini i wraków"
+      ],
       "fix": [
         {
           "old": "pierwszy stopień 1 port hp",
-          "new": "pierwszy stopień 2 porty hp lp"
+          "new": "pierwszy stopień 2 porty hp 4 porty lp"
         }
       ],
       "add": [
-        "tecline v2 ice",
-        "automat ice twinset",
-        "automat oddechowy do zimnej wody",
-        "pierwszy stopień din ice",
-        "automat techniczny zimna woda",
-        "automat en250a cold water",
-        "automat membranowy zimna woda",
-        "pierwszy stopień membranowy tecline",
-        "automat do nurkowania podlodowego"
+        "tecline v2 ice pierwszy stopień",
+        "automat oddechowy ice tecline",
+        "pierwszy stopień din do zimnej wody",
+        "automat tecline do nurkowania pod lodem",
+        "pierwszy stopień membranowy zimna woda",
+        "automat oddechowy na zimne wody tecline",
+        "tecline v2 ice automat twinset"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 557,
-    "validator_tokens_out": 214,
-    "validated_at": "2026-02-23T09:13:58.068154+00:00"
+    "validator_tokens_in": 349,
+    "validator_tokens_out": 277,
+    "validated_at": "2026-02-23T08:54:57.502063+00:00"
   },
   "4805": {
     "product_name": "TECLINE V1 Ice Tec1 SemiTec I",
@@ -1477,19 +1468,18 @@
       "automat do bałtyku",
       "automat do kamieniołomu",
       "automat do jezior górskich",
-      "automat oddechowy do konfiguracji mono",
-      "automat techniczny mono",
+      "zestaw automatów tecline mono",
+      "automat oddechowy do nurkowania mono",
       "tecline v1 ice",
-      "automat oddechowy zimna woda",
-      "automat ice tecline",
-      "automat environmentally sealed",
-      "automat z membraną suchą",
+      "automat oddechowy environmentally sealed",
+      "automat oddechowy na zimną wodę",
+      "tecline tec1 semitec",
+      "automat membranowy tecline",
+      "automat oddechowy ice tecline",
       "automat do nurkowania podlodowego",
-      "automat oddechowy techniczny zimna woda",
-      "automat tec1 semitec",
-      "automat zamrażający się",
-      "automat odporny na zamarzanie",
-      "automat do nurkowania w zimie"
+      "automat oddechowy zimna woda tecline",
+      "automat niezamarzający",
+      "automat tecline zestaw stage"
     ],
     "validation": {
       "keep": [
@@ -1505,31 +1495,30 @@
       "fix": [
         {
           "old": "zestaw automatów mono",
-          "new": "automat oddechowy do konfiguracji mono"
+          "new": "zestaw automatów tecline mono"
         },
         {
           "old": "automat techniczny do mono",
-          "new": "automat techniczny mono"
+          "new": "automat oddechowy do nurkowania mono"
         }
       ],
       "add": [
         "tecline v1 ice",
-        "automat oddechowy zimna woda",
-        "automat ice tecline",
-        "automat environmentally sealed",
-        "automat z membraną suchą",
+        "automat oddechowy environmentally sealed",
+        "automat oddechowy na zimną wodę",
+        "tecline tec1 semitec",
+        "automat membranowy tecline",
+        "automat oddechowy ice tecline",
         "automat do nurkowania podlodowego",
-        "automat oddechowy techniczny zimna woda",
-        "automat tec1 semitec",
-        "automat zamrażający się",
-        "automat odporny na zamarzanie",
-        "automat do nurkowania w zimie"
+        "automat oddechowy zimna woda tecline",
+        "automat niezamarzający",
+        "automat tecline zestaw stage"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 541,
-    "validator_tokens_out": 235,
-    "validated_at": "2026-02-23T09:14:04.879851+00:00"
+    "validator_tokens_in": 333,
+    "validator_tokens_out": 289,
+    "validated_at": "2026-02-23T08:55:05.638240+00:00"
   },
   "5577": {
     "product_name": "Beuchat Boat Set, mały zestaw nurkowy",
@@ -1553,55 +1542,50 @@
       "mały zestaw automat oddechowy",
       "zapasowy automat na łódź",
       "awaryjny zestaw do nurkowania",
-      "kompaktowy automat do bagażu",
       "automat do krótkiego zejścia pod wodę",
-      "mały zestaw nurkowy na wyjazd w polskę",
-      "kompaktowy zestaw nurkowy na wyjazd do egiptu",
+      "kompaktowy automat oddechowy podróżny",
       "beuchat boat set",
+      "beuchat zestaw awaryjny",
       "zestaw nurkowy na łódź",
-      "mały automat oddechowy zapasowy",
-      "zestaw awaryjny automat oddechowy na łódź",
-      "kompaktowy zestaw nurkowy podróżny",
-      "octopus awaryjny na łódź",
-      "zestaw nurkowy do snorkelingu z łodzi",
-      "mini zestaw do nurkowania z łodzi"
+      "automat oddechowy zapasowy na jacht",
+      "mały automat oddechowy beuchat",
+      "pony set nurkowy",
+      "bail out automat oddechowy",
+      "zestaw ratunkowy do nurkowania z łodzi"
     ],
     "validation": {
       "keep": [
         "mały zestaw automat oddechowy",
         "zapasowy automat na łódź",
         "awaryjny zestaw do nurkowania",
-        "kompaktowy automat do bagażu",
         "automat do krótkiego zejścia pod wodę"
       ],
       "remove": [
-        "automat na zimne wody"
+        "automat na zimne wody",
+        "automat do nurkowania w polsce",
+        "zestaw automat do egiptu"
       ],
       "fix": [
         {
-          "old": "automat do nurkowania w polsce",
-          "new": "mały zestaw nurkowy na wyjazd w Polskę"
-        },
-        {
-          "old": "zestaw automat do egiptu",
-          "new": "kompaktowy zestaw nurkowy na wyjazd do Egiptu"
+          "old": "kompaktowy automat do bagażu",
+          "new": "kompaktowy automat oddechowy podróżny"
         }
       ],
       "add": [
-        "beuchat boat set",
+        "Beuchat Boat Set",
+        "beuchat zestaw awaryjny",
         "zestaw nurkowy na łódź",
-        "mały automat oddechowy zapasowy",
-        "zestaw awaryjny automat oddechowy na łódź",
-        "kompaktowy zestaw nurkowy podróżny",
-        "octopus awaryjny na łódź",
-        "zestaw nurkowy do snorkelingu z łodzi",
-        "mini zestaw do nurkowania z łodzi"
+        "automat oddechowy zapasowy na jacht",
+        "mały automat oddechowy beuchat",
+        "pony set nurkowy",
+        "bail out automat oddechowy",
+        "zestaw ratunkowy do nurkowania z łodzi"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 562,
-    "validator_tokens_out": 269,
-    "validated_at": "2026-02-23T09:14:15.753094+00:00"
+    "validator_tokens_in": 354,
+    "validator_tokens_out": 285,
+    "validated_at": "2026-02-23T08:55:11.783324+00:00"
   },
   "5983": {
     "product_name": "AQUALUNG Legend 3 + Octopus Legend  / LEG3ND",
@@ -1625,53 +1609,50 @@
       "automat oddechowy na zimne wody",
       "automat do nurkowania w polsce",
       "automat z octopusem zestaw",
-      "automat pod nitrox rekreacja",
       "automat na bałtyk i jeziora",
-      "automat na egipt safari",
-      "automat oddechowy 2 hp 4 lp porty",
-      "automat oddechowy din yoke",
-      "aqualung legend 3 zestaw",
-      "automat oddechowy aqualung z octopusem",
-      "automat membranowy do zimnej wody",
-      "automat oddechowy zbalansowany rekreacyjny",
-      "leg3nd automat nurkowy",
-      "automat oddechowy na wyjazd nurkowy",
-      "automat aqualung legend octopus zestaw"
+      "automat oddechowy nitrox kompatybilny",
+      "aqualung legend 3 automat oddechowy",
+      "aqualung leg3nd zestaw automat octopus",
+      "automat oddechowy aqualung legend octopus",
+      "automat membranowy aqualung",
+      "automat oddechowy zbalansowany zestaw",
+      "aqualung legend 3 opinie",
+      "automat oddechowy do nurkowania rekreacyjnego zestaw",
+      "automat aqualung legend z octopusem"
     ],
     "validation": {
       "keep": [
         "automat oddechowy na zimne wody",
         "automat do nurkowania w polsce",
         "automat z octopusem zestaw",
-        "automat pod nitrox rekreacja",
-        "automat na bałtyk i jeziora",
+        "automat na bałtyk i jeziora"
+      ],
+      "remove": [
+        "automat 2 hp 4 lp",
+        "automat do butli din",
         "automat na egipt safari"
       ],
-      "remove": [],
       "fix": [
         {
-          "old": "automat 2 hp 4 lp",
-          "new": "automat oddechowy 2 hp 4 lp porty"
-        },
-        {
-          "old": "automat do butli din",
-          "new": "automat oddechowy din yoke"
+          "old": "automat pod nitrox rekreacja",
+          "new": "automat oddechowy nitrox kompatybilny"
         }
       ],
       "add": [
-        "aqualung legend 3 zestaw",
-        "automat oddechowy aqualung z octopusem",
-        "automat membranowy do zimnej wody",
-        "automat oddechowy zbalansowany rekreacyjny",
-        "leg3nd automat nurkowy",
-        "automat oddechowy na wyjazd nurkowy",
-        "automat aqualung legend octopus zestaw"
+        "aqualung legend 3 automat oddechowy",
+        "aqualung leg3nd zestaw automat octopus",
+        "automat oddechowy aqualung legend octopus",
+        "automat membranowy aqualung",
+        "automat oddechowy zbalansowany zestaw",
+        "aqualung legend 3 opinie",
+        "automat oddechowy do nurkowania rekreacyjnego zestaw",
+        "automat aqualung legend z octopusem"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 565,
-    "validator_tokens_out": 245,
-    "validated_at": "2026-02-23T09:14:24.093230+00:00"
+    "validator_tokens_in": 357,
+    "validator_tokens_out": 297,
+    "validated_at": "2026-02-23T08:55:17.689869+00:00"
   },
   "6065": {
     "product_name": "AQUALUNG Legend 3 DIN (1+2 stopień)",
@@ -1693,36 +1674,36 @@
     "timestamp": "2026-02-23T08:50:25.643894+00:00",
     "validated_phrases": [
       "automat oddechowy din na zimne wody",
-      "automat do nurkowania w polsce",
-      "automat na jeziora i bałtyk",
       "zestaw automat 1+2 stopień",
       "automat do nitroksu rekreacyjny",
-      "automat oddechowy z dwoma portami hp",
+      "automat oddechowy z systemem acd aqualung",
+      "automat oddechowy din z portem hp",
       "automat oddechowy 4 porty lp",
       "aqualung legend 3 din",
-      "automat oddechowy din aqualung",
-      "automat legend 3 zestaw",
-      "automat oddechowy membranowy din",
-      "automat oddechowy do wody zimnej din",
-      "automat oddechowy rekreacyjny din",
-      "automat 1 i 2 stopień din komplet",
-      "automat oddechowy zbalansowany din"
+      "automat oddechowy aqualung legend",
+      "automat oddechowy din zbalansowany",
+      "automat legend 3 pierwszy i drugi stopień",
+      "automat oddechowy din do wody zimnej aqualung",
+      "automat aqualung legend zestaw kompletny"
     ],
     "validation": {
       "keep": [
         "automat oddechowy din na zimne wody",
-        "automat do nurkowania w polsce",
-        "automat na jeziora i bałtyk",
         "zestaw automat 1+2 stopień",
         "automat do nitroksu rekreacyjny"
       ],
       "remove": [
-        "automat z acd zabezpieczeniem"
+        "automat do nurkowania w polsce",
+        "automat na jeziora i bałtyk"
       ],
       "fix": [
         {
+          "old": "automat z acd zabezpieczeniem",
+          "new": "automat oddechowy z systemem acd aqualung"
+        },
+        {
           "old": "automat z dwoma portami hp",
-          "new": "automat oddechowy z dwoma portami hp"
+          "new": "automat oddechowy din z portem hp"
         },
         {
           "old": "automat 4 porty lp din",
@@ -1731,19 +1712,17 @@
       ],
       "add": [
         "aqualung legend 3 din",
-        "automat oddechowy din aqualung",
-        "automat legend 3 zestaw",
-        "automat oddechowy membranowy din",
-        "automat oddechowy do wody zimnej din",
-        "automat oddechowy rekreacyjny din",
-        "automat 1 i 2 stopień din komplet",
-        "automat oddechowy zbalansowany din"
+        "automat oddechowy aqualung legend",
+        "automat oddechowy din zbalansowany",
+        "automat legend 3 pierwszy i drugi stopień",
+        "automat oddechowy din do wody zimnej aqualung",
+        "automat aqualung legend zestaw kompletny"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 570,
-    "validator_tokens_out": 255,
-    "validated_at": "2026-02-23T09:14:31.800387+00:00"
+    "validator_tokens_in": 362,
+    "validator_tokens_out": 306,
+    "validated_at": "2026-02-23T08:55:23.694182+00:00"
   },
   "6066": {
     "product_name": "AQUALUNG Legend 3 MBS DIN (1+2 Stopień)",
@@ -1766,30 +1745,28 @@
     "validated_phrases": [
       "automat oddechowy na zimne wody",
       "automat do jezior i bałtyku",
-      "automat do nurkowania technicznego",
+      "automat do egiptu din",
       "automat oddechowy din do nurkowania w polsce",
-      "automat oddechowy 4 porty lp",
-      "automat din na wyjazd do egiptu",
+      "automat oddechowy 4 porty lp din",
       "aqualung legend 3 mbs",
-      "automat oddechowy aqualung legend",
-      "automat din aqualung",
-      "legend 3 mbs din",
+      "automat oddechowy aqualung legend din",
+      "automat oddechowy mbs aqualung",
+      "automat aqualung legend 3 pierwszy stopień din",
       "automat oddechowy din membranowy",
-      "automat mbs aqualung",
-      "automat oddechowy do zimnej wody din",
-      "automat membranowy na zimne wody",
-      "automat oddechowy premium din",
+      "automat oddechowy do wód zimnych din",
+      "aqualung legend mbs automat komplet",
       "regulator oddechowy aqualung legend 3"
     ],
     "validation": {
       "keep": [
         "automat oddechowy na zimne wody",
         "automat do jezior i bałtyku",
-        "automat do nurkowania technicznego"
+        "automat do egiptu din"
       ],
       "remove": [
         "automat z acd",
-        "pierwszy stopień din 2hp"
+        "pierwszy stopień din 2hp",
+        "automat do nurkowania technicznego"
       ],
       "fix": [
         {
@@ -1798,30 +1775,24 @@
         },
         {
           "old": "automat 4 porty lp",
-          "new": "automat oddechowy 4 porty lp"
-        },
-        {
-          "old": "automat do egiptu din",
-          "new": "automat din na wyjazd do egiptu"
+          "new": "automat oddechowy 4 porty lp din"
         }
       ],
       "add": [
         "aqualung legend 3 mbs",
-        "automat oddechowy aqualung legend",
-        "automat din aqualung",
-        "legend 3 mbs din",
+        "automat oddechowy aqualung legend din",
+        "automat oddechowy mbs aqualung",
+        "automat aqualung legend 3 pierwszy stopień din",
         "automat oddechowy din membranowy",
-        "automat mbs aqualung",
-        "automat oddechowy do zimnej wody din",
-        "automat membranowy na zimne wody",
-        "automat oddechowy premium din",
+        "automat oddechowy do wód zimnych din",
+        "aqualung legend mbs automat komplet",
         "regulator oddechowy aqualung legend 3"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 554,
-    "validator_tokens_out": 267,
-    "validated_at": "2026-02-23T09:14:39.668679+00:00"
+    "validator_tokens_in": 346,
+    "validator_tokens_out": 296,
+    "validated_at": "2026-02-23T08:55:30.295824+00:00"
   },
   "6326": {
     "product_name": "AQUALUNG Legend 3 Elite + Octo Legend 3 + Manometr + Torba",
@@ -1847,16 +1818,16 @@
       "automat z manometrem i torbą",
       "automat do nurkowania w polsce",
       "automat pod suchy skafander",
-      "automat din do bałtyku",
       "automat do egiptu i bałtyku",
-      "aqualung legend 3 zestaw",
-      "automat oddechowy aqualung legend",
-      "zestaw automatów aqualung",
+      "automat oddechowy do bałtyku",
+      "aqualung legend 3 elite zestaw",
+      "automat aqualung legend zestaw z octopusem",
+      "zestaw automatów aqualung legend 3",
+      "automat oddechowy zestaw kompletny",
       "automat membranowy aqualung",
-      "automat oddechowy zestaw z torbą",
-      "automat oddechowy na wody umiarkowane i zimne",
-      "automat legend 3 elite octo",
-      "zestaw automat oddechowy do nurkowania rekreacyjnego"
+      "aqualung legend 3 octo manometr",
+      "automat oddechowy do zimnej wody zestaw",
+      "automat aqualung legend elite"
     ],
     "validation": {
       "keep": [
@@ -1865,28 +1836,32 @@
         "automat z manometrem i torbą",
         "automat do nurkowania w polsce",
         "automat pod suchy skafander",
-        "automat din do bałtyku",
         "automat do egiptu i bałtyku"
       ],
       "remove": [
         "automat 2 hp 4 lp"
       ],
-      "fix": [],
+      "fix": [
+        {
+          "old": "automat din do bałtyku",
+          "new": "automat oddechowy do bałtyku"
+        }
+      ],
       "add": [
-        "aqualung legend 3 zestaw",
-        "automat oddechowy aqualung legend",
-        "zestaw automatów aqualung",
+        "aqualung legend 3 elite zestaw",
+        "automat aqualung legend zestaw z octopusem",
+        "zestaw automatów aqualung legend 3",
+        "automat oddechowy zestaw kompletny",
         "automat membranowy aqualung",
-        "automat oddechowy zestaw z torbą",
-        "automat oddechowy na wody umiarkowane i zimne",
-        "automat legend 3 elite octo",
-        "zestaw automat oddechowy do nurkowania rekreacyjnego"
+        "aqualung legend 3 octo manometr",
+        "automat oddechowy do zimnej wody zestaw",
+        "automat aqualung legend elite"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 574,
-    "validator_tokens_out": 216,
-    "validated_at": "2026-02-23T09:14:47.543539+00:00"
+    "validator_tokens_in": 366,
+    "validator_tokens_out": 299,
+    "validated_at": "2026-02-23T08:55:38.079193+00:00"
   },
   "6563": {
     "product_name": "TECLINE V1 Ice I-stopień - Military Line",
@@ -1913,16 +1888,13 @@
       "pierwszy stopień do nurkowań technicznych",
       "pierwszy stopień do jaskiń",
       "pierwszy stopień do bałtyku",
-      "pierwszy stopień pod suchy skafander",
-      "pierwszy stopień din do zimnej wody",
-      "tecline v1 ice",
-      "pierwszy stopień environmentally sealed",
-      "pierwszy stopień zamknięty na zimną wodę",
-      "automat oddechowy military line",
-      "tecline military line pierwszy stopień",
-      "pierwszy stopień do wraków",
-      "pierwszy stopień ice rating",
-      "pierwszy stopień do nurkowań zimowych"
+      "tecline v1 ice pierwszy stopień",
+      "pierwszy stopień membranowy zimne wody",
+      "i stopień tecline ice",
+      "automat oddechowy na zimną wodę pierwszy stopień",
+      "pierwszy stopień do wody poniżej 10 stopni",
+      "pierwszy stopień military line tecline",
+      "pierwszy stopień odporny na zamarzanie"
     ],
     "validation": {
       "keep": [
@@ -1931,31 +1903,27 @@
         "pierwszy stopień do nurkowań podlodowych",
         "pierwszy stopień do nurkowań technicznych",
         "pierwszy stopień do jaskiń",
-        "pierwszy stopień do bałtyku",
+        "pierwszy stopień do bałtyku"
+      ],
+      "remove": [
+        "automat oddechowy i stopień din",
         "pierwszy stopień pod suchy skafander"
       ],
-      "remove": [],
-      "fix": [
-        {
-          "old": "automat oddechowy i stopień din",
-          "new": "pierwszy stopień din do zimnej wody"
-        }
-      ],
+      "fix": [],
       "add": [
-        "tecline v1 ice",
-        "pierwszy stopień environmentally sealed",
-        "pierwszy stopień zamknięty na zimną wodę",
-        "automat oddechowy military line",
-        "tecline military line pierwszy stopień",
-        "pierwszy stopień do wraków",
-        "pierwszy stopień ice rating",
-        "pierwszy stopień do nurkowań zimowych"
+        "tecline v1 ice pierwszy stopień",
+        "pierwszy stopień membranowy zimne wody",
+        "I stopień tecline ice",
+        "automat oddechowy na zimną wodę pierwszy stopień",
+        "pierwszy stopień do wody poniżej 10 stopni",
+        "pierwszy stopień military line tecline",
+        "pierwszy stopień odporny na zamarzanie"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 556,
-    "validator_tokens_out": 201,
-    "validated_at": "2026-02-23T09:14:53.178037+00:00"
+    "validator_tokens_in": 348,
+    "validator_tokens_out": 244,
+    "validated_at": "2026-02-23T08:55:43.956186+00:00"
   },
   "6649": {
     "product_name": "AQUALUNG Helix Pro + Octopus",
@@ -1977,56 +1945,52 @@
     "timestamp": "2026-02-23T08:50:33.153703+00:00",
     "validated_phrases": [
       "automat oddechowy na zimne wody",
-      "automat membranowy din do polski",
       "automat z octopusem zestaw",
       "automat do nurkowania w bałtyku",
       "automat rekreacyjny egipt i polska",
-      "automat pod nitrox din 300bar",
-      "automat oddechowy 2 hp 4 lp portów",
+      "automat membranowy din yoke do polski",
+      "automat oddechowy nitrox ready din 300bar",
       "aqualung helix pro zestaw z octopusem",
-      "automat oddechowy membranowy zimna woda",
-      "automat helix pro din yoke",
-      "automat oddechowy do nurkowania rekreacyjnego",
-      "automat membranowy overbalanced",
-      "zestaw automat główny i octopus aqualung",
-      "automat oddechowy na wody umiarkowane i zimne",
-      "automat do nurkowania w chorwacji",
-      "automat oddechowy na safari nurkowe"
+      "automat oddechowy aqualung zestaw rekreacyjny",
+      "automat aqualung helix pro octopus",
+      "automat oddechowy zbalansowany membranowy zestaw",
+      "automat oddechowy z zapasowym drugiego stopnia",
+      "zestaw automatów aqualung do nurkowania rekreacyjnego"
     ],
     "validation": {
       "keep": [
         "automat oddechowy na zimne wody",
-        "automat membranowy din do polski",
         "automat z octopusem zestaw",
         "automat do nurkowania w bałtyku",
-        "automat rekreacyjny egipt i polska",
-        "automat pod nitrox din 300bar"
+        "automat rekreacyjny egipt i polska"
       ],
       "remove": [
-        "automat z acd do zimnej wody"
+        "automat z acd do zimnej wody",
+        "automat 2x hp 4x lp"
       ],
       "fix": [
         {
-          "old": "automat 2x hp 4x lp",
-          "new": "automat oddechowy 2 hp 4 lp portów"
+          "old": "automat membranowy din do polski",
+          "new": "automat membranowy din yoke do polski"
+        },
+        {
+          "old": "automat pod nitrox din 300bar",
+          "new": "automat oddechowy nitrox ready din 300bar"
         }
       ],
       "add": [
         "aqualung helix pro zestaw z octopusem",
-        "automat oddechowy membranowy zimna woda",
-        "automat helix pro din yoke",
-        "automat oddechowy do nurkowania rekreacyjnego",
-        "automat membranowy overbalanced",
-        "zestaw automat główny i octopus aqualung",
-        "automat oddechowy na wody umiarkowane i zimne",
-        "automat do nurkowania w chorwacji",
-        "automat oddechowy na safari nurkowe"
+        "automat oddechowy aqualung zestaw rekreacyjny",
+        "automat aqualung helix pro octopus",
+        "automat oddechowy zbalansowany membranowy zestaw",
+        "automat oddechowy z zapasowym drugiego stopnia",
+        "zestaw automatów aqualung do nurkowania rekreacyjnego"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 566,
-    "validator_tokens_out": 265,
-    "validated_at": "2026-02-23T09:15:02.810074+00:00"
+    "validator_tokens_in": 358,
+    "validator_tokens_out": 322,
+    "validated_at": "2026-02-23T08:55:50.822354+00:00"
   },
   "6650": {
     "product_name": "AQUALUNG Helix Pro + Octopus + Manometr + Torba",
@@ -2047,53 +2011,59 @@
     "tokens_out": 74,
     "timestamp": "2026-02-23T08:50:34.893852+00:00",
     "validated_phrases": [
-      "automat oddechowy na zimne wody",
       "zestaw automat octopus manometr",
-      "automat do nurkowania w polsce",
       "automat na bałtyk i jeziora",
-      "automat rekreacyjny din nitrox",
-      "automat membranowy aqualung acd",
-      "automat z portami hp i lp",
+      "automat oddechowy na zimną wodę aqualung",
+      "automat membranowy aqualung helix pro",
+      "automat oddechowy nitrox ready din yoke",
+      "automat oddechowy bałtyk zimna woda",
       "aqualung helix pro zestaw",
-      "automat oddechowy aqualung zestaw z octopusem",
-      "zestaw automatów do nurkowania rekreacyjnego",
-      "automat aqualung helix pro",
-      "automat oddechowy komplet z manometrem",
-      "automat na wody umiarkowane i zimne"
+      "zestaw automatów aqualung z octopusem",
+      "automat oddechowy aqualung komplet",
+      "aqualung helix pro octopus manometr torba",
+      "automat oddechowy zestaw rekreacyjny",
+      "aqualung helix pro opinie"
     ],
     "validation": {
       "keep": [
-        "automat oddechowy na zimne wody",
         "zestaw automat octopus manometr",
-        "automat do nurkowania w polsce",
-        "automat na bałtyk i jeziora",
-        "automat rekreacyjny din nitrox"
+        "automat na bałtyk i jeziora"
       ],
       "remove": [
-        "automat z torbą serwisową"
+        "automat z dwoma portami hp",
+        "automat z torbą serwisową",
+        "automat do nurkowania w polsce"
       ],
       "fix": [
         {
-          "old": "automat membranowy din acd",
-          "new": "automat membranowy aqualung acd"
+          "old": "automat oddechowy na zimne wody",
+          "new": "automat oddechowy na zimną wodę aqualung"
         },
         {
-          "old": "automat z dwoma portami hp",
-          "new": "automat z portami hp i lp"
+          "old": "automat membranowy din acd",
+          "new": "automat membranowy aqualung helix pro"
+        },
+        {
+          "old": "automat rekreacyjny din nitrox",
+          "new": "automat oddechowy nitrox ready din yoke"
+        },
+        {
+          "old": "automat na bałtyk i jeziora",
+          "new": "automat oddechowy bałtyk zimna woda"
         }
       ],
       "add": [
         "aqualung helix pro zestaw",
-        "automat oddechowy aqualung zestaw z octopusem",
-        "zestaw automatów do nurkowania rekreacyjnego",
-        "automat aqualung helix pro",
-        "automat oddechowy komplet z manometrem",
-        "automat na wody umiarkowane i zimne"
+        "zestaw automatów aqualung z octopusem",
+        "automat oddechowy aqualung komplet",
+        "aqualung helix pro octopus manometr torba",
+        "automat oddechowy zestaw rekreacyjny",
+        "aqualung helix pro opinie"
       ]
     },
     "validator_model": "claude-opus-4-6",
-    "validator_tokens_in": 571,
-    "validator_tokens_out": 232,
-    "validated_at": "2026-02-23T09:15:16.093170+00:00"
+    "validator_tokens_in": 363,
+    "validator_tokens_out": 341,
+    "validated_at": "2026-02-23T08:55:58.852168+00:00"
   }
 }

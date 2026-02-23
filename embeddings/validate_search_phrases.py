@@ -45,6 +45,13 @@ OCEŃ każdą frazę:
 - POPRAW: fraza wymaga korekty (podaj poprawioną wersję)
 - DODAJ: brakuje oczywistej frazy (podaj brakujące)
 
+WAŻNE: NIE usuwaj fraz zawierających kontekst użycia, nawet jeśli pasują do wielu produktów:
+- Geografia: Egipt, Bałtyk, Polska, Chorwacja, safari, Morze Czerwone, jeziora, kamieniołom
+- Warunki: zimna woda, ciepła woda, tropiki, pod lód
+- Typ nurkowania: rekreacja, techniczne, jaskinie, wraki, sidemount, freediving
+- Przeznaczenie: podróż, shore diving, z łodzi
+Te frazy pomagają klientowi trafić w odpowiednią kategorię produktów. Usuwaj TYLKO frazy faktycznie mylące (produkt do zimnej wody opisany jako "na egipt") lub identyczne z nazwą produktu.
+
 FORMAT odpowiedzi (TYLKO JSON, bez komentarzy):
 {{"keep": ["fraza1", "fraza2"], "remove": ["fraza3"], "fix": [{{"old": "fraza4", "new": "poprawiona"}}], "add": ["nowa fraza"]}}"""
 
