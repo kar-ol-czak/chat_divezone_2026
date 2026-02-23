@@ -32,7 +32,7 @@ TEMPERATURE = 0.7
 MAX_TOKENS = 200
 MAX_RETRIES = 3
 CONCURRENT_LIMIT = 10  # maks równoległych requestów
-CHECKPOINT_INTERVAL = 50  # zapis co 50 produktów
+CHECKPOINT_INTERVAL = 100  # zapis co 100 produktów
 
 PROMPT_TEMPLATE = """Jesteś ekspertem nurkowym, instruktorem płetwonurkowania oraz sprzedawcą sprzętu
 nurkowego z 20-letnim stażem pracującym dla divezone.pl, największego sklepu
