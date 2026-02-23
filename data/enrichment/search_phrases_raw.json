@@ -1,0 +1,572 @@
+{
+  "2278": {
+    "product_name": "SCUBAPRO Everflex 5/4mm Damski",
+    "category_name": "Skafandry Na ZIMNE wody",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "pianka damska 5mm długa",
+      "skafander damski na zimne wody",
+      "wetsuit damski 5/4mm",
+      "pianka 5mm na bałtyk",
+      "pianka damska na jeziora",
+      "skafander neoprenowy 5mm polska",
+      "pianka damska do egiptu zimą",
+      "długa pianka nurkowa damska 5mm"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 562,
+    "tokens_out": 89,
+    "timestamp": "2026-02-23T08:49:33.612180+00:00"
+  },
+  "3197": {
+    "product_name": "SCUBAPRO Definition 7mm Damski",
+    "category_name": "Skafandry Na ZIMNE wody",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "pianka damska 7mm zimna woda",
+      "skafander mokry damski 7 mm",
+      "wetsuit damski 7mm długi",
+      "pianka 7mm na bałtyk",
+      "pianka damska 7mm jeziora",
+      "skafander 7mm polska wiosna jesień",
+      "pianka 7mm na egipt zima",
+      "skafander mokry 7mm rekreacyjny"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 541,
+    "tokens_out": 94,
+    "timestamp": "2026-02-23T08:49:36.295381+00:00"
+  },
+  "3198": {
+    "product_name": "SCUBAPRO Definition Vest 6mm Damski",
+    "category_name": "Skafandry Na ZIMNE wody",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "kamizelka neoprenowa 6mm damska",
+      "docieplenie pod piankę 7mm",
+      "ocieplacz neoprenowy pod skafander",
+      "bezrękawnik neoprenowy nurkowy damski",
+      "vest neoprenowy na zimną wodę",
+      "docieplenie do pianki polska",
+      "warstwa pod skafander egipt zimą",
+      "docieplenie do suchego skafandra damskie"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 556,
+    "tokens_out": 97,
+    "timestamp": "2026-02-23T08:49:39.256569+00:00"
+  },
+  "4170": {
+    "product_name": "SCUBAPRO Definition 5mm Damski",
+    "category_name": "Skafandry Na ZIMNE wody",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "pianka damska 5 mm długa",
+      "skafander damski 5 mm na bałtyk",
+      "wetsuit damski 5 mm zimna woda",
+      "pianka 5 mm na polskie jeziora",
+      "damski skafander neoprenowy 5 mm",
+      "pianka damska 5 mm egipt zima",
+      "skafander półsuchy damski 5 mm",
+      "pianka nurkowa 5 mm rekreacyjna damska"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 555,
+    "tokens_out": 102,
+    "timestamp": "2026-02-23T08:49:42.123599+00:00"
+  },
+  "4171": {
+    "product_name": "SCUBAPRO Definition 5mm Męski",
+    "category_name": "Skafandry Na ZIMNE wody",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "pianka 5mm męska długa",
+      "skafander neoprenowy 5 mm męski",
+      "wetsuit 5mm na zimne wody",
+      "pianka nurkowa 5mm polska",
+      "pianka 5mm bałtyk jeziora",
+      "pianka 5mm egipt wiosna jesień",
+      "kombinezon nurkowy 5mm rekreacyjny",
+      "pianka męska do chłodnej wody"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 557,
+    "tokens_out": 99,
+    "timestamp": "2026-02-23T08:49:44.899959+00:00"
+  },
+  "4243": {
+    "product_name": "Scubapro OneFlex Overal 5mm",
+    "category_name": "Skafandry Na ZIMNE wody",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "pianka 5mm na bałtyk",
+      "skafander mokry 5 mm",
+      "wetsuit 5mm zimne wody",
+      "pianka nurkowa 5mm polska",
+      "pianka 5mm damska nurkowa",
+      "pianka 5mm męska nurkowa",
+      "pianka 5mm na jeziora",
+      "pianka 5mm do egiptu"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 518,
+    "tokens_out": 85,
+    "timestamp": "2026-02-23T08:49:46.439565+00:00"
+  },
+  "4244": {
+    "product_name": "Scubapro OneFlex Overal 7mm",
+    "category_name": "Skafandry Na ZIMNE wody",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "pianka 7mm na zimne wody",
+      "skafander mokry 7mm polska",
+      "wetsuit 7 mm bałtyk",
+      "pianka nurkowa 7mm jeziora",
+      "ciepła pianka 7mm rekreacja",
+      "pianka 7mm męska",
+      "pianka 7mm damska",
+      "mokry kombinezon 7mm egipt zimą"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 519,
+    "tokens_out": 87,
+    "timestamp": "2026-02-23T08:49:48.209323+00:00"
+  },
+  "4245": {
+    "product_name": "Scubapro OneFlex Vest 5mm ocieplacz rozmiar L",
+    "category_name": "Skafandry Na ZIMNE wody",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "ocieplacz neoprenowy 5mm l",
+      "kamizelka neoprenowa 5 mm pod piankę",
+      "bezrękawnik neoprenowy do zimnej wody",
+      "docieplenie pod suchy skafander 5mm",
+      "ocieplacz pod piankę 7mm",
+      "neoprenowa kamizelka na bałtyk",
+      "ocieplacz pod piankę egipt zimą",
+      "bezrękawnik neoprenowy męski l"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 526,
+    "tokens_out": 111,
+    "timestamp": "2026-02-23T08:49:50.678516+00:00"
+  },
+  "4699": {
+    "product_name": "FOURTH ELEMENT Proteus 5mm Męski",
+    "category_name": "Skafandry Na ZIMNE wody",
+    "brand_name": "FOURTH ELEMENT",
+    "phrases": [
+      "pianka 5mm męska zimna woda",
+      "skafander neoprenowy 5 mm męski",
+      "wetsuit 5mm na bałtyk",
+      "pianka do nurkowania polska 5mm",
+      "ciepła pianka 5mm na jeziora",
+      "pianka 5mm egipt zima",
+      "skafander neoprenowy męski rekreacyjny",
+      "pianka męska superstretch 5mm"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 510,
+    "tokens_out": 98,
+    "timestamp": "2026-02-23T08:49:53.585793+00:00"
+  },
+  "4700": {
+    "product_name": "FOURTH ELEMENT Proteus 5mm Damski",
+    "category_name": "Skafandry Na ZIMNE wody",
+    "brand_name": "FOURTH ELEMENT",
+    "phrases": [
+      "pianka damska 5mm zimne wody",
+      "skafander neoprenowy damski 5 mm",
+      "wetsuit damski 5mm bałtyk",
+      "pianka 5mm na jeziora",
+      "pianka damska na polskę 5mm",
+      "pianka 5mm egipt wiosna jesień",
+      "ciepła pianka damska 5mm",
+      "pianka męska 5mm zimne wody"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 510,
+    "tokens_out": 97,
+    "timestamp": "2026-02-23T08:49:55.395367+00:00"
+  },
+  "451": {
+    "product_name": "SUUNTO Bezprzewodowy miernik ciśnienia w butli",
+    "category_name": "Komputery SUUNTO",
+    "brand_name": "SUUNTO",
+    "phrases": [
+      "bezprzewodowy nadajnik do butli",
+      "transmiter ciśnienia do komputera",
+      "sonda ciśnienia powietrza",
+      "monitorowanie powietrza w butli",
+      "air integration do komputera",
+      "nadajnik do vyper air",
+      "transmiter do d4i d6i",
+      "kontrola zużycia gazu nurkowanie"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 526,
+    "tokens_out": 83,
+    "timestamp": "2026-02-23T08:49:57.320013+00:00"
+  },
+  "2308": {
+    "product_name": "SCUBAPRO Nadajnik Smart+ Galileo",
+    "category_name": "Komputery Nurkowe",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "nadajnik do komputera nurkowego",
+      "bezprzewodowa integracja powietrza",
+      "nadajnik ciśnienia do butli",
+      "transmiter do manometru bez węża",
+      "nadajnik do galileo luna",
+      "nadajnik do galileo sol",
+      "nadajnik do komputera a2",
+      "nadajnik do nurkowań w polsce"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 510,
+    "tokens_out": 88,
+    "timestamp": "2026-02-23T08:50:00.002264+00:00"
+  },
+  "2339": {
+    "product_name": "SCUBAPRO Digital 330 - na pasku",
+    "category_name": "Komputery SCUBAPRO",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "zegarkowy bottom timer na pasek",
+      "zapasowy miernik głębokości czas",
+      "cyfrowy głębokościomierz nurkowy zegarek",
+      "timer nurkowy na rękę",
+      "prosty komputer nurkowy bez nitroksu",
+      "monochromatyczny zegarkowy komputer nurkowy",
+      "miernik głębokości do nurkowań technicznych",
+      "bottomtimer do zimnej wody polska egipt"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 560,
+    "tokens_out": 96,
+    "timestamp": "2026-02-23T08:50:03.324472+00:00"
+  },
+  "3434": {
+    "product_name": "MARES Icon HD",
+    "category_name": "Komputery MARES",
+    "brand_name": "MARES",
+    "phrases": [
+      "komputer nurkowy kolorowy duży",
+      "komputer z polskim menu",
+      "komputer z nadajnikiem ciśnienia",
+      "komputer podświetlany na noc",
+      "komputer z interfejsem do pc",
+      "komputer z algorytmem rgbm",
+      "komputer na zimne wody",
+      "komputer na egipt safari"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 556,
+    "tokens_out": 73,
+    "timestamp": "2026-02-23T08:50:05.559164+00:00"
+  },
+  "3627": {
+    "product_name": "Obudowa z gumkami do Uwatec Digital / Aladin Prime / Tecg 2G",
+    "category_name": "Komputery Nurkowe",
+    "brand_name": "TECLINE",
+    "phrases": [
+      "gumowa obudowa do aladina",
+      "etui elastomerowe do komputera uwatec",
+      "uchwyt na rękę do aladin prime",
+      "mocowanie na gumkach do komputera",
+      "gumki bungee do komputera nurkowego",
+      "adapter paska na bungee do aladina",
+      "obudowa ochronna do uwatec 2g",
+      "mocowanie bungee do komputera na rękę"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 525,
+    "tokens_out": 94,
+    "timestamp": "2026-02-23T08:50:07.894026+00:00"
+  },
+  "3844": {
+    "product_name": "SCUBAPRO Digital 330 - w obudowie z gumkami",
+    "category_name": "Komputery SCUBAPRO",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "bottom timer zegarkowy",
+      "bottomtimer na gumkach",
+      "zapasowy timer nurkowy",
+      "miernik głębokości i czasu",
+      "cyfrowy głębokościomierz nurkowy",
+      "prosty komputer do backupu",
+      "timer do nurkowania technicznego",
+      "bottomtimer na zimną wodę"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 566,
+    "tokens_out": 69,
+    "timestamp": "2026-02-23T08:50:09.507131+00:00"
+  },
+  "4296": {
+    "product_name": "MARES New Matrix",
+    "category_name": "Komputery MARES",
+    "brand_name": "MARES",
+    "phrases": [
+      "komputer nurkowy zegarkowy nitrox",
+      "zegarkowy komputer z rgbm",
+      "komputer do nitroksu deko",
+      "komputer na gorące nitroksy",
+      "komputer nurkowy z kompasem",
+      "zegarkowy komputer z podświetleniem",
+      "monochromatyczny komputer nurkowy zegarek",
+      "komputer na zimną wodę polska"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 563,
+    "tokens_out": 83,
+    "timestamp": "2026-02-23T08:50:11.179650+00:00"
+  },
+  "4480": {
+    "product_name": "SCUBAPRO Wąż HP adapter  (przedłużka) do nadajnika UWATEC",
+    "category_name": "Komputery Nurkowe",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "przedłużka hp do nadajnika",
+      "wąż wysokiego ciśnienia do transmitera",
+      "adapter hp do transmitera komputera",
+      "przedłużka do portu hp automatu",
+      "wężyk hp 10 cm do nadajnika",
+      "przedłużka do nadajnika ciśnienia",
+      "adapter wąż hp do pierwszego stopnia",
+      "przedłużka do transmitera bezprzewodowego"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 524,
+    "tokens_out": 94,
+    "timestamp": "2026-02-23T08:50:13.141281+00:00"
+  },
+  "4626": {
+    "product_name": "SCUBAPRO Chromis",
+    "category_name": "Komputery SCUBAPRO",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "komputer nurkowy zegarkowy",
+      "zegarkowy komputer do nurkowania",
+      "komputer na nitrox 100%",
+      "komputer do freedivingu apnea",
+      "komputer nurkowy z podświetleniem",
+      "komputer tryb gauge głębokościomierz",
+      "komputer na zimne wody polska",
+      "komputer na wyjazd egipt nitrox"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 647,
+    "tokens_out": 80,
+    "timestamp": "2026-02-23T08:50:15.094301+00:00"
+  },
+  "4627": {
+    "product_name": "SCUBAPRO Interfejs USB Chromis",
+    "category_name": "Komputery SCUBAPRO",
+    "brand_name": "SCUBAPRO",
+    "phrases": [
+      "kabel usb do komputera nurkowego",
+      "interfejs do zgrywania logbooka",
+      "kabel do zrzutu nurkowań",
+      "kabel do kompa nurkowego pc",
+      "interfejs do komputera na rękę",
+      "przewód do połączenia z laptopem",
+      "kabel do odczytu pamięci nurkowań",
+      "interfejs usb do logbooków"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 467,
+    "tokens_out": 89,
+    "timestamp": "2026-02-23T08:50:17.132845+00:00"
+  },
+  "4574": {
+    "product_name": "Automat TECLINE V2 Ice I-stopień L+P",
+    "category_name": "Automaty Oddechowe",
+    "brand_name": "TECLINE",
+    "phrases": [
+      "automat na zimne wody",
+      "pierwszy stopień do zimnej wody",
+      "automat pod lód en250a",
+      "pierwszy stopień lewy prawy",
+      "automat do twinsetu lewy prawy",
+      "pierwszy stopień 1 port hp",
+      "automat do jaskini i wraków",
+      "automat na bałtyk i jeziora"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 533,
+    "tokens_out": 78,
+    "timestamp": "2026-02-23T08:50:19.056373+00:00"
+  },
+  "4805": {
+    "product_name": "TECLINE V1 Ice Tec1 SemiTec I",
+    "category_name": "Automaty Oddechowe",
+    "brand_name": "TECLINE",
+    "phrases": [
+      "automat do zimnej wody",
+      "automat pod lód",
+      "zestaw automatów mono",
+      "automat techniczny do mono",
+      "automat din do polski",
+      "automat do bałtyku",
+      "automat do kamieniołomu",
+      "automat do jezior górskich"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 521,
+    "tokens_out": 56,
+    "timestamp": "2026-02-23T08:50:20.625491+00:00"
+  },
+  "5577": {
+    "product_name": "Beuchat Boat Set, mały zestaw nurkowy",
+    "category_name": "Automaty Oddechowe",
+    "brand_name": "Beuchat",
+    "phrases": [
+      "mały zestaw automat oddechowy",
+      "zapasowy automat na łódź",
+      "awaryjny zestaw do nurkowania",
+      "kompaktowy automat do bagażu",
+      "automat na zimne wody",
+      "automat do nurkowania w polsce",
+      "zestaw automat do egiptu",
+      "automat do krótkiego zejścia pod wodę"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 518,
+    "tokens_out": 76,
+    "timestamp": "2026-02-23T08:50:22.528427+00:00"
+  },
+  "5983": {
+    "product_name": "AQUALUNG Legend 3 + Octopus Legend  / LEG3ND",
+    "category_name": "Automaty Oddechowe",
+    "brand_name": "AQUALUNG",
+    "phrases": [
+      "automat oddechowy na zimne wody",
+      "automat do nurkowania w polsce",
+      "automat z octopusem zestaw",
+      "automat 2 hp 4 lp",
+      "automat do butli din",
+      "automat pod nitrox rekreacja",
+      "automat na bałtyk i jeziora",
+      "automat na egipt safari"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 536,
+    "tokens_out": 68,
+    "timestamp": "2026-02-23T08:50:24.052236+00:00"
+  },
+  "6065": {
+    "product_name": "AQUALUNG Legend 3 DIN (1+2 stopień)",
+    "category_name": "Automaty Oddechowe",
+    "brand_name": "AQUALUNG",
+    "phrases": [
+      "automat oddechowy din na zimne wody",
+      "automat do nurkowania w polsce",
+      "automat na jeziora i bałtyk",
+      "automat z acd zabezpieczeniem",
+      "zestaw automat 1+2 stopień",
+      "automat z dwoma portami hp",
+      "automat 4 porty lp din",
+      "automat do nitroksu rekreacyjny"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 537,
+    "tokens_out": 78,
+    "timestamp": "2026-02-23T08:50:25.643894+00:00"
+  },
+  "6066": {
+    "product_name": "AQUALUNG Legend 3 MBS DIN (1+2 Stopień)",
+    "category_name": "Automaty Oddechowe",
+    "brand_name": "AQUALUNG",
+    "phrases": [
+      "automat oddechowy na zimne wody",
+      "regulator din do polski",
+      "automat z acd",
+      "pierwszy stopień din 2hp",
+      "automat 4 porty lp",
+      "automat do jezior i bałtyku",
+      "automat do egiptu din",
+      "automat do nurkowania technicznego"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 542,
+    "tokens_out": 67,
+    "timestamp": "2026-02-23T08:50:27.292638+00:00"
+  },
+  "6326": {
+    "product_name": "AQUALUNG Legend 3 Elite + Octo Legend 3 + Manometr + Torba",
+    "category_name": "Automaty Oddechowe",
+    "brand_name": "AQUALUNG",
+    "phrases": [
+      "automat oddechowy na zimne wody",
+      "zestaw automat z octopusem",
+      "automat z manometrem i torbą",
+      "automat do nurkowania w polsce",
+      "automat pod suchy skafander",
+      "automat din do bałtyku",
+      "automat 2 hp 4 lp",
+      "automat do egiptu i bałtyku"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 551,
+    "tokens_out": 76,
+    "timestamp": "2026-02-23T08:50:29.025347+00:00"
+  },
+  "6563": {
+    "product_name": "TECLINE V1 Ice I-stopień - Military Line",
+    "category_name": "Automaty Oddechowe",
+    "brand_name": "TECLINE",
+    "phrases": [
+      "pierwszy stopień na zimne wody",
+      "pierwszy stopień do polskich jezior",
+      "automat oddechowy i stopień din",
+      "pierwszy stopień pod suchy skafander",
+      "pierwszy stopień do nurkowań podlodowych",
+      "pierwszy stopień do nurkowań technicznych",
+      "pierwszy stopień do jaskiń",
+      "pierwszy stopień do bałtyku"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 505,
+    "tokens_out": 94,
+    "timestamp": "2026-02-23T08:50:31.076754+00:00"
+  },
+  "6649": {
+    "product_name": "AQUALUNG Helix Pro + Octopus",
+    "category_name": "Automaty Oddechowe",
+    "brand_name": "AQUALUNG",
+    "phrases": [
+      "automat oddechowy na zimne wody",
+      "automat membranowy din do polski",
+      "automat z octopusem zestaw",
+      "automat z acd do zimnej wody",
+      "automat 2x hp 4x lp",
+      "automat do nurkowania w bałtyku",
+      "automat rekreacyjny egipt i polska",
+      "automat pod nitrox din 300bar"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 539,
+    "tokens_out": 80,
+    "timestamp": "2026-02-23T08:50:33.153703+00:00"
+  },
+  "6650": {
+    "product_name": "AQUALUNG Helix Pro + Octopus + Manometr + Torba",
+    "category_name": "Automaty Oddechowe",
+    "brand_name": "AQUALUNG",
+    "phrases": [
+      "automat oddechowy na zimne wody",
+      "automat membranowy din acd",
+      "zestaw automat octopus manometr",
+      "automat do nurkowania w polsce",
+      "automat na bałtyk i jeziora",
+      "automat rekreacyjny din nitrox",
+      "automat z dwoma portami hp",
+      "automat z torbą serwisową"
+    ],
+    "model": "gpt-5.2",
+    "tokens_in": 543,
+    "tokens_out": 74,
+    "timestamp": "2026-02-23T08:50:34.893852+00:00"
+  }
+}
