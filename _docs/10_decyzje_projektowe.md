@@ -405,3 +405,32 @@ ALTER TABLE divechat_product_embeddings
 
 -- Wypełnienie z PrestaShop MySQL (jednorazowo, w extract_products.py)
 ```
+
+
+### ADR-028: Security — Redis vs MySQL dla rate limitera (2026-02-23)
+**Status:** Odłożony
+**Kontekst:** Raport Gemini rekomenduje Redis dla rate limitingu (connection pool exhaustion). Raport GPT sugeruje przebudowę limitów.
+**Decyzja:** Zostajemy przy MySQL z atomowym INSERT ON DUPLICATE KEY UPDATE.
+**Dlaczego:** Przy ~100-500 czatów/dzień to jedno proste zapytanie SQL per request. Redis dodaje nową zależność infrastrukturalną (instalacja, monitoring, failover) za zerowy zwrot przy tej skali. Czat jest osadzony w sklepie za HMAC-em, nie jest publicznym API.
+**Kiedy wrócimy:** Gdy średni ruch czatu przekroczy 5000 req/h lub gdy monitoring pokaże bottleneck MySQL.
+
+### ADR-029: Security — sól rotacyjna IP hash vs stała (2026-02-23)
+**Status:** Odłożony
+**Kontekst:** Gemini argumentuje że stała sól + SHA-256 = rainbow table na IPv4 (~4.3 mld adresów).
+**Decyzja:** Stała sól, przeniesiona z kodu do zmiennej środowiskowej (AICHAT_IP_SALT).
+**Dlaczego:** Atak wymaga dostępu do bazy MySQL I soli jednocześnie. Jeśli atakujący ma oba — ma pełny dostęp do sklepu i IP hash jest najmniejszym problemem. Sól rotacyjna łamie korelację rate limitingu (stary hash ≠ nowy hash = reset limitu o północy).
+**Kiedy wrócimy:** Przy audycie RODO lub gdy pojawi się wymóg prawny.
+
+### ADR-030: Security — LLM-as-a-judge vs regex/listy (2026-02-23)
+**Status:** Odłożony
+**Kontekst:** Gemini proponuje dodatkowy model klasyfikacyjny zamiast regex/list do detekcji profanity, injection, off-topic.
+**Decyzja:** V1 z regex + listami + system prompt jako główną barierą.
+**Dlaczego:** Dodaje ~200-500ms latency, koszt API per request, nowy punkt awarii. System prompt zawiera silne instrukcje scope. Narzędzia mają ograniczoną sprawczość (read-only na danych publicznych). Regex łapie nisko wiszące owoce.
+**Kiedy wrócimy:** Jeśli w logach security_log zobaczymy powtarzające się udane obejścia scope/injection.
+
+### ADR-031: Security — ograniczenia regex injection guard i scope guard (2026-02-23)
+**Status:** Akceptacja ryzyka
+**Kontekst:** Oba raporty (GPT, Gemini) słusznie wskazują że regex i listy słów są łatwe do obejścia (FlipAttack, homoglify, low-resource languages, dopisanie słowa nurkowego).
+**Decyzja:** Implementujemy jako tanie warstwy defense-in-depth z pełną świadomością ograniczeń.
+**Dlaczego:** Główna ochrona to: (1) system prompt z silnymi instrukcjami, (2) narzędzia read-only na danych publicznych, (3) max_tokens=600 ogranicza wartość wyciągniętej odpowiedzi, (4) budżety per sesja. Regex i scope guard łapią nisko wiszące owoce (skrypt kiddies, ciekawscy). Koszt implementacji minimalny.
+**Kiedy wrócimy:** Nigdy jako jedyna warstwa; LLM classifier jeśli logi pokażą potrzebę.

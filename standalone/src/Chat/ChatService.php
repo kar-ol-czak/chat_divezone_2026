@@ -284,7 +284,7 @@ final class ChatService
         $minSim = !empty($similarities) ? min($similarities) : null;
         $gap = empty($items) || ($maxSim !== null && $maxSim < $threshold);
 
-        return [
+        $diag = [
             'tool' => $toolCall->name,
             'query_text' => $toolCall->arguments['query'] ?? null,
             'result_count' => count($items),
@@ -292,6 +292,13 @@ final class ChatService
             'min_similarity' => $minSim !== null ? round($minSim, 3) : null,
             'knowledge_gap' => $gap,
         ];
+
+        // Dołącz search_plan jeśli obecny
+        if (!empty($toolCall->arguments['search_plan'])) {
+            $diag['search_plan'] = $toolCall->arguments['search_plan'];
+        }
+
+        return $diag;
     }
 
     /**

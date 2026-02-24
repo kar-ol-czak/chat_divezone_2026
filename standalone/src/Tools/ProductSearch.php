@@ -8,7 +8,8 @@ use DiveChat\AI\EmbeddingService;
 use DiveChat\Database\PostgresConnection;
 
 /**
- * Wyszukiwanie hybrydowe produktów: 3 tory (semantic + FTS + trigram) + RRF fusion.
+ * Wyszukiwanie hybrydowe produktów: 5 torów (3× semantic + FTS + trigram) + RRF fusion.
+ * Semantic: embedding_name (nawigacyjne), embedding_desc (eksploracyjne), embedding_jargon (slang).
  * Dane z divechat_product_embeddings (PostgreSQL/pgvector).
  */
 final class ProductSearch implements ToolInterface
@@ -29,10 +30,9 @@ final class ProductSearch implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Wyszukuje produkty w ofercie divezone.pl metodą semantyczną (embedding similarity). '
-             . 'WAŻNE: Parametr query musi zawierać nazewnictwo sklepu divezone.pl, NIE słowa klienta ani podręcznikową terminologię. '
-             . 'Przed wyszukaniem przetłumacz potrzebę klienta na nazwy kategorii i produktów sklepu (patrz NAZEWNICTWO SKLEPU w system prompcie). '
-             . 'Uwzględniaj w query typ, przeznaczenie i kontekst z rozmowy.';
+        return 'Wyszukaj produkty w sklepie divezone.pl. ZAWSZE wypełnij search_plan przed wyszukaniem. '
+             . 'Parametr query musi zawierać nazewnictwo sklepu, NIE słowa klienta. '
+             . 'Patrz sekcja JAK SZUKAĆ PRODUKTÓW w system prompcie.';
     }
 
     public function getParametersSchema(): array
@@ -42,36 +42,56 @@ final class ProductSearch implements ToolInterface
             'properties' => [
                 'query' => [
                     'type' => 'string',
-                    'description' => 'Zapytanie w terminologii produktowej sklepu (NIE słowa klienta). '
-                        . 'Przetłumacz potrzebę klienta na parametry produktu: typ, grubość, przeznaczenie. '
-                        . 'Np. "skafander mokry 7mm damski" lub "automat oddechowy zimna woda DIN"',
+                    'description' => 'Tekst zapytania w terminologii sklepu (NIE słowa klienta).',
+                ],
+                'search_plan' => [
+                    'type' => 'object',
+                    'description' => 'Plan wyszukiwania — ZAWSZE wypełnij przed szukaniem.',
+                    'properties' => [
+                        'intent' => [
+                            'type' => 'string',
+                            'enum' => ['navigational', 'exploratory'],
+                            'description' => 'navigational: klient zna produkt/markę/model. exploratory: szuka porady, nie wie czego dokładnie szuka.',
+                        ],
+                        'reasoning' => [
+                            'type' => 'string',
+                            'description' => '1-2 zdania: co klient potrzebuje, dlaczego taki query, jaka kategoria.',
+                        ],
+                        'exact_keywords' => [
+                            'type' => 'array',
+                            'items' => ['type' => 'string'],
+                            'description' => 'Nazwy własne, modele, marki do literalnego dopasowania. Np: ["Shearwater", "Teric"]',
+                        ],
+                    ],
+                    'required' => ['intent', 'reasoning'],
                 ],
                 'category' => [
                     'type' => 'string',
-                    'description' => 'Filtr kategorii, np. "Maski", "Automaty", "Komputery nurkowe"',
+                    'description' => 'Nazwa kategorii ze sklepu. WYMAGANE przy intent=exploratory.',
                 ],
-                'min_price' => [
-                    'type' => 'number',
-                    'description' => 'Minimalna cena w PLN',
-                ],
-                'max_price' => [
-                    'type' => 'number',
-                    'description' => 'Maksymalna cena w PLN',
-                ],
-                'brand' => [
-                    'type' => 'string',
-                    'description' => 'Filtr marki, np. "SCUBAPRO", "TECLINE"',
-                ],
-                'in_stock_only' => [
-                    'type' => 'boolean',
-                    'description' => 'Czy pokazywać tylko produkty dostępne od ręki. Domyślnie false (pokazuj też produkty na zamówienie). Ustaw true tylko gdy klient wyraźnie potrzebuje natychmiastowej dostawy.',
+                'filters' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'price_min' => ['type' => 'number', 'description' => 'Minimalna cena PLN'],
+                        'price_max' => ['type' => 'number', 'description' => 'Maksymalna cena PLN'],
+                        'brand' => ['type' => 'string', 'description' => 'Filtr marki'],
+                        'in_stock_only' => [
+                            'type' => 'boolean',
+                            'description' => 'Tylko produkty dostępne od ręki. Domyślnie false.',
+                        ],
+                        'exclude_categories' => [
+                            'type' => 'array',
+                            'items' => ['type' => 'string'],
+                            'description' => 'Kategorie do WYKLUCZENIA. Używaj gdy klient mówi "nie szukam X".',
+                        ],
+                    ],
                 ],
                 'limit' => [
                     'type' => 'integer',
-                    'description' => 'Liczba wyników (domyślnie 5, max 10)',
+                    'description' => 'Liczba wyników (1-10, domyślnie 5).',
                 ],
             ],
-            'required' => ['query'],
+            'required' => ['query', 'search_plan'],
         ];
     }
 
@@ -79,9 +99,14 @@ final class ProductSearch implements ToolInterface
     {
         $query = $params['query'] ?? '';
         $limit = min((int) ($params['limit'] ?? 5), 10);
+        $searchPlan = $params['search_plan'] ?? [];
+        $filtersInput = $params['filters'] ?? [];
 
-        // Wspólne filtry
-        $filters = $this->buildFilters($params);
+        // Migracja starych parametrów (backward compat)
+        $normalized = $this->normalizeParams($params, $filtersInput);
+
+        // Wspólne filtry SQL
+        $filters = $this->buildFilters($normalized);
 
         // Embedding
         $embedding = $this->embeddingService->getEmbedding($query);
@@ -90,23 +115,54 @@ final class ProductSearch implements ToolInterface
         // Ekspansja synonimów dla FTS
         $expandedQuery = $this->synonymExpander->expandForFts($query);
 
-        // 3 tory wyszukiwania
-        $semantic = $this->searchSemantic($vectorStr, $filters);
-        $fulltext = $expandedQuery !== '' ? $this->searchFullText($expandedQuery, $filters) : [];
-        $trigram = $this->searchTrigram($query, $filters);
+        // exact_keywords boost: doklejenie do trigram query
+        $exactKeywords = $searchPlan['exact_keywords'] ?? [];
+        $trigramQuery = !empty($exactKeywords) ? implode(' ', $exactKeywords) : $query;
 
-        // Fuzja RRF
-        $merged = $this->mergeRRF($semantic, $fulltext, $trigram, $limit);
+        // 5 torów wyszukiwania: 3× semantic (name, desc, jargon) + FTS + trigram
+        $semanticName = $this->searchSemanticColumn('embedding_name', $vectorStr, $filters);
+        $semanticDesc = $this->searchSemanticColumn('embedding_desc', $vectorStr, $filters);
+        $semanticJargon = $this->searchSemanticColumn('embedding_jargon', $vectorStr, $filters);
+        $fulltext = $expandedQuery !== '' ? $this->searchFullText($expandedQuery, $filters) : [];
+        $trigram = $this->searchTrigram($trigramQuery, $filters);
+
+        // Fuzja RRF (5 torów)
+        $merged = $this->mergeRRF($semanticName, $semanticDesc, $semanticJargon, $fulltext, $trigram, $limit);
+
+        // Dołącz search_plan do debug info
+        if (!empty($searchPlan)) {
+            $merged['search_debug']['search_plan'] = $searchPlan;
+        }
 
         if (empty($merged['products'])) {
-            return ['products' => [], 'message' => 'Nie znaleziono produktów pasujących do zapytania.'];
+            return [
+                'products' => [],
+                'message' => 'Nie znaleziono produktów pasujących do zapytania.',
+                'search_debug' => $merged['search_debug'] ?? [],
+            ];
         }
 
         return $merged;
     }
 
     /**
+     * Normalizuje parametry: obsługuje nowy format (filters object) i stary (flat params).
+     */
+    private function normalizeParams(array $params, array $filtersInput): array
+    {
+        return [
+            'category' => $params['category'] ?? null,
+            'min_price' => $filtersInput['price_min'] ?? $params['min_price'] ?? null,
+            'max_price' => $filtersInput['price_max'] ?? $params['max_price'] ?? null,
+            'brand' => $filtersInput['brand'] ?? $params['brand'] ?? null,
+            'in_stock_only' => $filtersInput['in_stock_only'] ?? $params['in_stock_only'] ?? false,
+            'exclude_categories' => $filtersInput['exclude_categories'] ?? [],
+        ];
+    }
+
+    /**
      * Buduje wspólne warunki WHERE + parametry dla 3 torów.
+     * Obsługuje parent_category_name (ADR-027) i exclude_categories.
      * @return array{where: string, params: list<mixed>}
      */
     private function buildFilters(array $params): array
@@ -118,24 +174,43 @@ final class ProductSearch implements ToolInterface
             $conditions[] = 'in_stock = true';
         }
 
-        if (isset($params['category'])) {
+        // ADR-027: filtr category działa na parent i child
+        if (!empty($params['category'])) {
             $sqlParams[] = $params['category'];
-            $conditions[] = "category_name ILIKE '%' || ? || '%'";
+            $sqlParams[] = $params['category'];
+            $conditions[] = "(category_name ILIKE '%' || ? || '%' OR parent_category_name ILIKE '%' || ? || '%')";
         }
 
-        if (isset($params['min_price'])) {
+        if (!empty($params['min_price'])) {
             $sqlParams[] = (float) $params['min_price'];
             $conditions[] = 'price >= ?';
         }
 
-        if (isset($params['max_price'])) {
+        if (!empty($params['max_price'])) {
             $sqlParams[] = (float) $params['max_price'];
             $conditions[] = 'price <= ?';
         }
 
-        if (isset($params['brand'])) {
+        if (!empty($params['brand'])) {
             $sqlParams[] = $params['brand'];
             $conditions[] = "brand_name ILIKE '%' || ? || '%'";
+        }
+
+        // exclude_categories: wykluczenie po category_name i parent_category_name
+        $excludeCats = $params['exclude_categories'] ?? [];
+        if (!empty($excludeCats)) {
+            $placeholders = implode(',', array_fill(0, count($excludeCats), '?'));
+            foreach ($excludeCats as $cat) {
+                $sqlParams[] = $cat;
+            }
+            $conditions[] = "category_name NOT IN ({$placeholders})";
+
+            // Wyklucz też po parent
+            $placeholders2 = implode(',', array_fill(0, count($excludeCats), '?'));
+            foreach ($excludeCats as $cat) {
+                $sqlParams[] = $cat;
+            }
+            $conditions[] = "(parent_category_name IS NULL OR parent_category_name NOT IN ({$placeholders2}))";
         }
 
         return [
@@ -145,19 +220,21 @@ final class ProductSearch implements ToolInterface
     }
 
     /**
-     * Tor 1: Embedding cosine similarity (pgvector).
+     * Tor semantyczny na wskazanej kolumnie wektorowej (pgvector cosine).
+     * @param string $column Nazwa kolumny: embedding_name, embedding_desc, embedding_jargon
      * @return list<array{ps_product_id: int, rank: int, similarity: float}>
      */
-    private function searchSemantic(string $vectorStr, array $filters): array
+    private function searchSemanticColumn(string $column, string $vectorStr, array $filters): array
     {
         $params = [$vectorStr, ...$filters['params'], $vectorStr];
         $trackLimit = self::TRACK_LIMIT;
 
         $sql = "SELECT ps_product_id,
-                       1 - (embedding <=> ?::vector) AS similarity
+                       1 - ({$column} <=> ?::vector) AS similarity
                 FROM divechat_product_embeddings
                 WHERE {$filters['where']}
-                ORDER BY embedding <=> ?::vector
+                  AND {$column} IS NOT NULL
+                ORDER BY {$column} <=> ?::vector
                 LIMIT {$trackLimit}";
 
         $rows = $this->db->fetchAll($sql, $params);
@@ -254,48 +331,44 @@ final class ProductSearch implements ToolInterface
     }
 
     /**
-     * Reciprocal Rank Fusion: łączy wyniki 3 torów.
+     * Reciprocal Rank Fusion: łączy wyniki 5 torów.
      * RRF score = sum(1 / (K + rank_i)) dla każdego toru.
      * @return array{products: list<array>, count: int, search_debug: array}
      */
-    private function mergeRRF(array $semantic, array $fulltext, array $trigram, int $limit): array
-    {
+    private function mergeRRF(
+        array $semanticName,
+        array $semanticDesc,
+        array $semanticJargon,
+        array $fulltext,
+        array $trigram,
+        int $limit,
+    ): array {
         $k = self::RRF_K;
         $scores = [];
         $trackInfo = [];
 
-        // Semantic scores
-        foreach ($semantic as $item) {
-            $id = $item['ps_product_id'];
-            $scores[$id] = ($scores[$id] ?? 0.0) + 1.0 / ($k + $item['rank']);
-            $trackInfo[$id]['semantic_rank'] = $item['rank'];
-            $trackInfo[$id]['semantic_sim'] = $item['similarity'];
-        }
+        $tracks = [
+            'name'    => ['data' => $semanticName,   'score_key' => 'similarity'],
+            'desc'    => ['data' => $semanticDesc,    'score_key' => 'similarity'],
+            'jargon'  => ['data' => $semanticJargon,  'score_key' => 'similarity'],
+            'fts'     => ['data' => $fulltext,        'score_key' => 'ts_rank'],
+            'trigram'  => ['data' => $trigram,          'score_key' => 'trgm_score'],
+        ];
 
-        // Fulltext scores
-        foreach ($fulltext as $item) {
-            $id = $item['ps_product_id'];
-            $scores[$id] = ($scores[$id] ?? 0.0) + 1.0 / ($k + $item['rank']);
-            $trackInfo[$id]['fulltext_rank'] = $item['rank'];
-            $trackInfo[$id]['fulltext_ts_rank'] = $item['ts_rank'];
-        }
-
-        // Trigram scores
-        foreach ($trigram as $item) {
-            $id = $item['ps_product_id'];
-            $scores[$id] = ($scores[$id] ?? 0.0) + 1.0 / ($k + $item['rank']);
-            $trackInfo[$id]['trigram_rank'] = $item['rank'];
-            $trackInfo[$id]['trigram_score'] = $item['trgm_score'];
+        foreach ($tracks as $trackName => $track) {
+            foreach ($track['data'] as $item) {
+                $id = $item['ps_product_id'];
+                $scores[$id] = ($scores[$id] ?? 0.0) + 1.0 / ($k + $item['rank']);
+                $trackInfo[$id]["{$trackName}_rank"] = $item['rank'];
+                $trackInfo[$id]["{$trackName}_score"] = $item[$track['score_key']];
+            }
         }
 
         if (empty($scores)) {
             return ['products' => [], 'count' => 0, 'search_debug' => []];
         }
 
-        // Sortuj po RRF score malejąco
         arsort($scores);
-
-        // Top N product IDs
         $topIds = array_slice(array_keys($scores), 0, $limit);
 
         if (empty($topIds)) {
@@ -312,7 +385,6 @@ final class ProductSearch implements ToolInterface
             $topIds
         );
 
-        // Indeksuj po ID
         $rowsById = [];
         foreach ($rows as $row) {
             $rowsById[(int) $row['ps_product_id']] = $row;
@@ -321,6 +393,8 @@ final class ProductSearch implements ToolInterface
         // Buduj wyniki w kolejności RRF
         $products = [];
         $debugItems = [];
+        $trackNames = array_keys($tracks);
+
         foreach ($topIds as $id) {
             if (!isset($rowsById[$id])) {
                 continue;
@@ -330,19 +404,16 @@ final class ProductSearch implements ToolInterface
             $info = $trackInfo[$id] ?? [];
 
             // Dominujący tor
-            $dominant = 'semantic';
+            $dominant = 'name';
             $bestContrib = 0;
-            if (isset($info['semantic_rank'])) {
-                $contrib = 1.0 / ($k + $info['semantic_rank']);
-                if ($contrib > $bestContrib) { $bestContrib = $contrib; $dominant = 'semantic'; }
-            }
-            if (isset($info['fulltext_rank'])) {
-                $contrib = 1.0 / ($k + $info['fulltext_rank']);
-                if ($contrib > $bestContrib) { $bestContrib = $contrib; $dominant = 'fulltext'; }
-            }
-            if (isset($info['trigram_rank'])) {
-                $contrib = 1.0 / ($k + $info['trigram_rank']);
-                if ($contrib > $bestContrib) { $bestContrib = $contrib; $dominant = 'trigram'; }
+            foreach ($trackNames as $tn) {
+                if (isset($info["{$tn}_rank"])) {
+                    $contrib = 1.0 / ($k + $info["{$tn}_rank"]);
+                    if ($contrib > $bestContrib) {
+                        $bestContrib = $contrib;
+                        $dominant = $tn;
+                    }
+                }
             }
 
             $products[] = [
@@ -361,8 +432,10 @@ final class ProductSearch implements ToolInterface
                 'product_id' => $id,
                 'rrf_score' => round($rrfScore, 6),
                 'dominant_track' => $dominant,
-                'semantic_rank' => $info['semantic_rank'] ?? null,
-                'fulltext_rank' => $info['fulltext_rank'] ?? null,
+                'name_rank' => $info['name_rank'] ?? null,
+                'desc_rank' => $info['desc_rank'] ?? null,
+                'jargon_rank' => $info['jargon_rank'] ?? null,
+                'fts_rank' => $info['fts_rank'] ?? null,
                 'trigram_rank' => $info['trigram_rank'] ?? null,
             ];
         }
@@ -372,8 +445,10 @@ final class ProductSearch implements ToolInterface
             'count' => count($products),
             'search_debug' => [
                 'tracks' => [
-                    'semantic_count' => count($semantic),
-                    'fulltext_count' => count($fulltext),
+                    'name_count' => count($semanticName),
+                    'desc_count' => count($semanticDesc),
+                    'jargon_count' => count($semanticJargon),
+                    'fts_count' => count($fulltext),
                     'trigram_count' => count($trigram),
                 ],
                 'rrf_k' => $k,
