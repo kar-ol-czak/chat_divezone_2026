@@ -151,11 +151,12 @@ def validate(prompt: str) -> ValidationResult:
     usage = response.usage
     tokens_input = usage.input_tokens if usage else 0
     tokens_output = usage.output_tokens if usage else 0
-    # Thinking tokens sa w cache_read lub osobnym polu
+    # Anthropic API: output_tokens JUZ ZAWIERA thinking tokens (koszt jest poprawny).
+    # tokens_thinking jest informacyjny — liczymy z content blokow (przyblizenie ~4 znaki/token).
     tokens_thinking = 0
-    if usage and hasattr(usage, "cache_creation_input_tokens"):
-        tokens_thinking = getattr(usage, "cache_creation_input_tokens", 0)
-    # Anthropic API: thinking tokens sa czescia output_tokens
+    for block in response.content:
+        if block.type == "thinking":
+            tokens_thinking += len(block.thinking) // 4
 
     cost = calculate_cost(VALIDATION_MODEL, tokens_input, tokens_output)
 

@@ -38,6 +38,8 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # Generacja: GPT-5.2 thinking
 GENERATION_MODEL = "gpt-5.2"
+# UWAGA: GPT-5.2 default = none. Jawne ustawienie jest KRYTYCZNE.
+# Opcje: none, low, medium, high, xhigh
 GENERATION_REASONING_EFFORT = "high"
 GENERATION_TEMPERATURE = 0.4
 GENERATION_MAX_OUTPUT_TOKENS = 16_000
