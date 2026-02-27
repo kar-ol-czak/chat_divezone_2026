@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Encyklopedia Pipeline — Dashboard</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --bg2: #1a1d27;
+  --bg3: #242836;
+  --border: #2e3348;
+  --text: #e2e4eb;
+  --text2: #9ca3b8;
+  --accent: #6c8aff;
+  --pass: #22c55e;
+  --warn: #eab308;
+  --fail: #ef4444;
+  --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Layout */
+.header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 24px; }
+.header h1 { font-size: 16px; font-weight: 600; white-space: nowrap; }
+.header .status { font-size: 13px; color: var(--text2); }
+.main { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+/* Tabs */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+.tab { padding: 10px 20px; cursor: pointer; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; font-size: 14px; color: var(--text2); transition: all 0.15s; }
+.tab:hover { background: var(--bg2); color: var(--text); }
+.tab.active { background: var(--bg2); color: var(--accent); border-color: var(--border); font-weight: 600; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Groups grid */
+.groups-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.group-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; cursor: pointer; transition: all 0.15s; }
+.group-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.group-card h3 { font-size: 15px; margin-bottom: 8px; }
+.group-card .meta { font-size: 13px; color: var(--text2); }
+.group-card .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.badge-pass { background: rgba(34,197,94,0.15); color: var(--pass); }
+.badge-warn { background: rgba(234,179,8,0.15); color: var(--warn); }
+.badge-fail { background: rgba(239,68,68,0.15); color: var(--fail); }
+.badge-pending { background: rgba(108,138,255,0.15); color: var(--accent); }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; padding: 10px 12px; background: var(--bg2); border-bottom: 1px solid var(--border); color: var(--text2); font-weight: 600; white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+tr:hover td { background: var(--bg2); }
+.num { text-align: right; font-family: var(--mono); font-size: 12px; }
+.total-row td { font-weight: 700; background: var(--bg3); border-top: 2px solid var(--border); }
+
+/* Group detail */
+.group-header { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+.group-header h2 { font-size: 20px; }
+.back-btn { padding: 6px 14px; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; color: var(--text2); cursor: pointer; font-size: 13px; }
+.back-btn:hover { background: var(--bg2); color: var(--text); }
+.inner-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 20px; flex-wrap: wrap; }
+.inner-tab { padding: 8px 16px; cursor: pointer; font-size: 13px; color: var(--text2); border-radius: 4px 4px 0 0; }
+.inner-tab:hover { background: var(--bg2); color: var(--text); }
+.inner-tab.active { background: var(--bg2); color: var(--accent); font-weight: 600; }
+.inner-content { display: none; }
+.inner-content.active { display: block; }
+
+/* Definition cards */
+.def-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+.def-card h3 { font-size: 15px; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.def-card .en-name { color: var(--text2); font-weight: 400; font-size: 13px; }
+.def-card .definition { margin: 12px 0; padding: 12px; background: var(--bg3); border-radius: 6px; font-size: 14px; line-height: 1.6; }
+.def-section { margin-top: 12px; }
+.def-section h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2); margin-bottom: 6px; }
+.syn-group { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.syn-label { font-size: 11px; color: var(--text2); min-width: 80px; padding-top: 3px; }
+.syn-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+.syn-exact { background: rgba(108,138,255,0.15); color: #93b0ff; }
+.syn-near { background: rgba(139,92,246,0.15); color: #b794f6; }
+.syn-potoczne { background: rgba(34,197,94,0.15); color: var(--pass); }
+.syn-archaiczne { background: rgba(156,163,184,0.15); color: var(--text2); }
+.syn-bledne { background: rgba(239,68,68,0.15); color: var(--fail); }
+.nmz-item { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.nmz-item:last-child { border-bottom: none; }
+.nmz-concept { font-weight: 600; color: var(--accent); }
+.brands-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.brand-tag { padding: 2px 8px; background: var(--bg3); border-radius: 4px; font-size: 12px; }
+.faq-item { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.faq-item:last-child { border-bottom: none; }
+.faq-q { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.faq-a { font-size: 13px; color: var(--text2); }
+.ai-note { margin-top: 12px; padding: 12px; background: rgba(234,179,8,0.08); border: 1px solid rgba(234,179,8,0.2); border-radius: 6px; font-size: 13px; }
+
+/* Markdown / code viewer */
+.md-viewer { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; font-family: var(--mono); font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; max-height: 80vh; overflow-y: auto; }
+
+/* JSON viewer */
+.json-viewer { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 20px; font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 80vh; overflow-y: auto; }
+
+/* Loading / empty */
+.loading { text-align: center; padding: 40px; color: var(--text2); }
+.empty { text-align: center; padding: 40px; color: var(--text2); font-style: italic; }
+
+/* Verdict inline */
+.verdict { font-weight: 700; font-size: 12px; padding: 2px 10px; border-radius: 4px; }
+.verdict-pass { background: rgba(34,197,94,0.15); color: var(--pass); }
+.verdict-warn { background: rgba(234,179,8,0.15); color: var(--warn); }
+.verdict-fail { background: rgba(239,68,68,0.15); color: var(--fail); }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .main { padding: 12px; }
+  .groups-grid { grid-template-columns: 1fr; }
+  .inner-tabs { gap: 0; }
+  .inner-tab { padding: 6px 10px; font-size: 12px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Encyklopedia Pipeline</h1>
+  <span class="status" id="headerStatus">Ladowanie...</span>
+</div>
+
+<div class="main">
+  <!-- Main tabs -->
+  <div class="tabs" id="mainTabs">
+    <div class="tab active" data-tab="groups">Grupy</div>
+    <div class="tab" data-tab="logs">Logi</div>
+    <div class="tab" data-tab="costs">Koszty</div>
+  </div>
+
+  <!-- Groups tab -->
+  <div class="tab-content active" id="tab-groups">
+    <div class="groups-grid" id="groupsGrid"></div>
+  </div>
+
+  <!-- Logs tab -->
+  <div class="tab-content" id="tab-logs">
+    <div id="logsTable"></div>
+  </div>
+
+  <!-- Costs tab -->
+  <div class="tab-content" id="tab-costs">
+    <div id="costsTable"></div>
+  </div>
+
+  <!-- Group detail (hidden by default) -->
+  <div class="tab-content" id="tab-detail" style="display:none;">
+    <div class="group-header">
+      <button class="back-btn" onclick="showMainTabs()">&#8592; Wstecz</button>
+      <h2 id="detailTitle"></h2>
+    </div>
+    <div class="inner-tabs" id="innerTabs"></div>
+    <div id="innerContent"></div>
+  </div>
+</div>
+
+<script>
+// ===========================================================================
+// CONFIG
+// ===========================================================================
+const GROUPS = ['A','B','C','D','E','F','G','H','I','J','K','L','M'];
+const GROUP_NAMES = {
+  A:'Oddychanie', B:'Butle i zawory', C:'Kontrola plywalnosci',
+  D:'Instrumenty i nawigacja', E:'Maski i fajki', F:'Ochrona termiczna - mokra',
+  G:'Ochrona termiczna - sucha', H:'Obuwie i pletwy', I:'Bezpieczenstwo i sygnalizacja',
+  J:'Oswietlenie i foto/video', K:'Klipsy, mocowania, transport',
+  L:'Konserwacja i akcesoria', M:'Lifestyle, edukacja, inne'
+};
+
+// Specjalne sciezki dla grup A i B (dane historyczne)
+// Symlink: generate_encyclopedia/data -> ../data
+const LEGACY_JSON = {
+  A: 'data/encyclopedia/grupa_A_oddychanie.json',
+  B: 'data/encyclopedia/grupa_B_butle_zawory.json'
+};
+
+// Stan aplikacji
+const state = { groups: {}, logs: [], currentGroup: null };
+
+// ===========================================================================
+// DATA LOADING
+// ===========================================================================
+async function fetchText(url) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    return await r.text();
+  } catch { return null; }
+}
+
+async function fetchJSON(url) {
+  const text = await fetchText(url);
+  if (!text) return null;
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+async function loadGroupData(g) {
+  const base = `output/grupa_${g}`;
+  const data = { id: g, name: GROUP_NAMES[g] || g };
+
+  // JSON definitions
+  data.json = await fetchJSON(`${base}/grupa_${g}_final.json`)
+            || await fetchJSON(`${base}/grupa_${g}_original.json`)
+            || (LEGACY_JSON[g] ? await fetchJSON(LEGACY_JSON[g]) : null);
+
+  // Markdown / text files
+  data.validated = await fetchText(`${base}/grupa_${g}_validated.md`);
+  data.promptGen = await fetchText(`${base}/prompt_generation.md`);
+  data.responseGen = await fetchText(`${base}/response_generation.md`);
+  data.promptVal = await fetchText(`${base}/prompt_validation.md`);
+  data.responseVal = await fetchText(`${base}/response_validation.md`);
+
+  // Log file - load from index
+  data.log = null;
+  if (state.logIndex) {
+    const logFiles = state.logIndex.filter(f => f.startsWith(`grupa_${g}_`));
+    logFiles.sort().reverse(); // najnowszy na poczatku
+    if (logFiles.length > 0) {
+      data.log = await fetchJSON(`output/logs/${logFiles[0]}`);
+    }
+  }
+
+  // Parse verdicts from validated text
+  data.verdicts = {};
+  if (data.validated) {
+    const re = /##\s*(?:\[?\d+\]?\s*)?(\w+)\s*[-—]+\s*(?:WERDYKT:\s*)?(PASS z uwagami|PASS|FAIL)/gi;
+    let m;
+    while ((m = re.exec(data.validated)) !== null) {
+      data.verdicts[m[1]] = m[2];
+    }
+  }
+
+  data.conceptCount = data.json ? data.json.length : 0;
+  data.hasData = !!(data.json || data.validated || data.promptGen);
+
+  return data;
+}
+
+async function loadAllLogs() {
+  const logs = [];
+  for (const g of GROUPS) {
+    if (state.groups[g] && state.groups[g].log) {
+      logs.push(state.groups[g].log);
+    }
+  }
+  return logs;
+}
+
+// ===========================================================================
+// RENDERING - Main tabs
+// ===========================================================================
+function renderGroupsGrid() {
+  const grid = document.getElementById('groupsGrid');
+  let html = '';
+  for (const g of GROUPS) {
+    const data = state.groups[g];
+    if (!data) continue;
+
+    // Determine status
+    let statusBadge = '';
+    if (data.json && Object.keys(data.verdicts).length > 0) {
+      const vals = Object.values(data.verdicts);
+      const fails = vals.filter(v => v === 'FAIL').length;
+      const warns = vals.filter(v => v.includes('uwag')).length;
+      const pass = vals.filter(v => v === 'PASS').length;
+      if (fails > 0) statusBadge = `<span class="badge badge-fail">${fails} FAIL</span>`;
+      else if (warns > 0) statusBadge = `<span class="badge badge-warn">${pass} PASS, ${warns} uwag</span>`;
+      else statusBadge = `<span class="badge badge-pass">${pass} PASS</span>`;
+    } else if (data.json) {
+      statusBadge = `<span class="badge badge-pass">${data.conceptCount} pojec</span>`;
+    } else if (data.promptGen) {
+      statusBadge = '<span class="badge badge-pending">prompt ready</span>';
+    } else {
+      statusBadge = '<span class="badge badge-pending">brak danych</span>';
+    }
+
+    const cost = data.log ? `$${data.log.total_cost_usd.toFixed(2)}` : '';
+
+    html += `
+      <div class="group-card" onclick="showGroupDetail('${g}')">
+        <h3>Grupa ${g}: ${data.name} ${statusBadge}</h3>
+        <div class="meta">
+          ${data.conceptCount ? data.conceptCount + ' definicji' : 'brak JSON'}
+          ${cost ? ' | ' + cost : ''}
+          ${data.validated ? ' | walidacja' : ''}
+        </div>
+      </div>`;
+  }
+  grid.innerHTML = html || '<div class="empty">Brak danych. Uruchom pipeline.</div>';
+}
+
+function renderLogsTable() {
+  const container = document.getElementById('logsTable');
+  const allLogs = [];
+
+  for (const g of GROUPS) {
+    const data = state.groups[g];
+    if (data && data.log) allLogs.push({ group: g, ...data.log });
+  }
+
+  if (allLogs.length === 0) {
+    container.innerHTML = '<div class="empty">Brak logow. Uruchom pipeline z --group X.</div>';
+    return;
+  }
+
+  allLogs.sort((a, b) => (b.timestamp_start || '').localeCompare(a.timestamp_start || ''));
+
+  let html = '<table><thead><tr>';
+  html += '<th>Grupa</th><th>Data</th>';
+  html += '<th>Model gen.</th><th class="num">In</th><th class="num">Out</th><th class="num">Reason.</th><th class="num">Koszt</th>';
+  html += '<th>Model wal.</th><th class="num">In</th><th class="num">Out</th><th class="num">Think.</th><th class="num">Koszt</th>';
+  html += '<th class="num">Laczny</th><th>Werdykt</th>';
+  html += '</tr></thead><tbody>';
+
+  for (const log of allLogs) {
+    const gen = log.steps?.find(s => s.step === 'generation') || {};
+    const val = log.steps?.find(s => s.step === 'validation') || {};
+    const verd = log.steps?.find(s => s.step === 'verdict_parse') || {};
+    const date = log.timestamp_start ? log.timestamp_start.slice(0, 16).replace('T', ' ') : '-';
+
+    let verdictHtml = '-';
+    if (verd.pass_count !== undefined) {
+      const parts = [];
+      if (verd.pass_count) parts.push(`<span style="color:var(--pass)">${verd.pass_count}P</span>`);
+      if (verd.pass_with_notes_count) parts.push(`<span style="color:var(--warn)">${verd.pass_with_notes_count}U</span>`);
+      if (verd.fail_count) parts.push(`<span style="color:var(--fail)">${verd.fail_count}F</span>`);
+      verdictHtml = parts.join(' ');
+    }
+
+    html += `<tr>
+      <td><strong>Grupa ${log.group}</strong></td><td>${date}</td>
+      <td>${gen.model || '-'}</td>
+      <td class="num">${fmt(gen.tokens_input)}</td><td class="num">${fmt(gen.tokens_output)}</td>
+      <td class="num">${fmt(gen.tokens_reasoning)}</td><td class="num">${fmtCost(gen.cost_usd)}</td>
+      <td>${val.model || '-'}</td>
+      <td class="num">${fmt(val.tokens_input)}</td><td class="num">${fmt(val.tokens_output)}</td>
+      <td class="num">${fmt(val.tokens_thinking)}</td><td class="num">${fmtCost(val.cost_usd)}</td>
+      <td class="num"><strong>${fmtCost(log.total_cost_usd)}</strong></td>
+      <td>${verdictHtml}</td>
+    </tr>`;
+  }
+
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function renderCostsTable() {
+  const container = document.getElementById('costsTable');
+  let totalGenCost = 0, totalValCost = 0, totalCost = 0;
+  let totalGenIn = 0, totalGenOut = 0, totalGenReason = 0;
+  let totalValIn = 0, totalValOut = 0, totalValThink = 0;
+  const rows = [];
+
+  for (const g of GROUPS) {
+    const data = state.groups[g];
+    if (!data || !data.log) continue;
+    const log = data.log;
+    const gen = log.steps?.find(s => s.step === 'generation') || {};
+    const val = log.steps?.find(s => s.step === 'validation') || {};
+
+    const genCost = gen.cost_usd || 0;
+    const valCost = val.cost_usd || 0;
+    const total = log.total_cost_usd || 0;
+
+    totalGenCost += genCost;
+    totalValCost += valCost;
+    totalCost += total;
+    totalGenIn += gen.tokens_input || 0;
+    totalGenOut += gen.tokens_output || 0;
+    totalGenReason += gen.tokens_reasoning || 0;
+    totalValIn += val.tokens_input || 0;
+    totalValOut += val.tokens_output || 0;
+    totalValThink += val.tokens_thinking || 0;
+
+    rows.push({ group: g, genCost, valCost, total });
+  }
+
+  if (rows.length === 0) {
+    container.innerHTML = '<div class="empty">Brak danych kosztowych. Uruchom pipeline.</div>';
+    return;
+  }
+
+  let html = '<h3 style="margin-bottom:16px">Koszty per grupa</h3>';
+  html += '<table><thead><tr><th>Grupa</th><th class="num">Generacja</th><th class="num">Walidacja</th><th class="num">Laczny</th></tr></thead><tbody>';
+
+  for (const r of rows) {
+    html += `<tr><td><strong>Grupa ${r.group}</strong>: ${GROUP_NAMES[r.group]}</td>
+      <td class="num">${fmtCost(r.genCost)}</td><td class="num">${fmtCost(r.valCost)}</td>
+      <td class="num"><strong>${fmtCost(r.total)}</strong></td></tr>`;
+  }
+
+  html += `<tr class="total-row"><td>TOTAL</td>
+    <td class="num">${fmtCost(totalGenCost)}</td><td class="num">${fmtCost(totalValCost)}</td>
+    <td class="num"><strong>${fmtCost(totalCost)}</strong></td></tr>`;
+  html += '</tbody></table>';
+
+  html += '<h3 style="margin:24px 0 16px">Tokeny per model</h3>';
+  html += '<table><thead><tr><th>Model</th><th class="num">Input</th><th class="num">Output</th><th class="num">Reasoning/Thinking</th><th class="num">Koszt</th></tr></thead><tbody>';
+  html += `<tr><td>gpt-5.2</td><td class="num">${fmt(totalGenIn)}</td><td class="num">${fmt(totalGenOut)}</td><td class="num">${fmt(totalGenReason)}</td><td class="num">${fmtCost(totalGenCost)}</td></tr>`;
+  html += `<tr><td>claude-opus-4-6</td><td class="num">${fmt(totalValIn)}</td><td class="num">${fmt(totalValOut)}</td><td class="num">${fmt(totalValThink)}</td><td class="num">${fmtCost(totalValCost)}</td></tr>`;
+  html += `<tr class="total-row"><td>TOTAL</td><td class="num">${fmt(totalGenIn+totalValIn)}</td><td class="num">${fmt(totalGenOut+totalValOut)}</td><td class="num">${fmt(totalGenReason+totalValThink)}</td><td class="num"><strong>${fmtCost(totalCost)}</strong></td></tr>`;
+  html += '</tbody></table>';
+
+  container.innerHTML = html;
+}
+
+// ===========================================================================
+// RENDERING - Group detail
+// ===========================================================================
+function showGroupDetail(g) {
+  state.currentGroup = g;
+  const data = state.groups[g];
+  if (!data) return;
+
+  // Hide main tabs, show detail
+  document.getElementById('mainTabs').style.display = 'none';
+  for (const el of document.querySelectorAll('.tab-content')) el.style.display = 'none';
+  document.getElementById('tab-detail').style.display = 'block';
+  document.getElementById('detailTitle').textContent = `Grupa ${g}: ${data.name}`;
+
+  // Build inner tabs
+  const tabs = [];
+  if (data.json) tabs.push({ id: 'defs', label: 'Definicje' });
+  if (data.validated) tabs.push({ id: 'validated', label: 'Walidacja' });
+  if (data.promptGen) tabs.push({ id: 'pgen', label: 'Prompt gen.' });
+  if (data.responseGen) tabs.push({ id: 'rgen', label: 'Odpowiedz gen.' });
+  if (data.promptVal) tabs.push({ id: 'pval', label: 'Prompt wal.' });
+  if (data.responseVal) tabs.push({ id: 'rval', label: 'Odpowiedz wal.' });
+  if (data.log) tabs.push({ id: 'log', label: 'Log' });
+
+  if (tabs.length === 0) {
+    document.getElementById('innerTabs').innerHTML = '';
+    document.getElementById('innerContent').innerHTML = '<div class="empty">Brak danych dla tej grupy.</div>';
+    return;
+  }
+
+  const tabsHtml = tabs.map((t, i) =>
+    `<div class="inner-tab${i === 0 ? ' active' : ''}" data-inner="${t.id}">${t.label}</div>`
+  ).join('');
+  document.getElementById('innerTabs').innerHTML = tabsHtml;
+
+  // Attach inner tab events
+  for (const el of document.querySelectorAll('.inner-tab')) {
+    el.addEventListener('click', () => {
+      for (const t of document.querySelectorAll('.inner-tab')) t.classList.remove('active');
+      el.classList.add('active');
+      renderInnerContent(g, el.dataset.inner);
+    });
+  }
+
+  // Render first tab
+  renderInnerContent(g, tabs[0].id);
+}
+
+function renderInnerContent(g, tabId) {
+  const data = state.groups[g];
+  const container = document.getElementById('innerContent');
+
+  switch (tabId) {
+    case 'defs':
+      container.innerHTML = renderDefinitions(data);
+      break;
+    case 'validated':
+      container.innerHTML = `<div class="md-viewer">${escHtml(data.validated)}</div>`;
+      break;
+    case 'pgen':
+      container.innerHTML = `<div class="md-viewer">${escHtml(data.promptGen)}</div>`;
+      break;
+    case 'rgen':
+      container.innerHTML = data.responseGen
+        ? `<div class="md-viewer">${escHtml(data.responseGen)}</div>`
+        : '<div class="empty">Brak odpowiedzi generacji (dry-run?)</div>';
+      break;
+    case 'pval':
+      container.innerHTML = data.promptVal
+        ? `<div class="md-viewer">${escHtml(data.promptVal)}</div>`
+        : '<div class="empty">Brak promptu walidacji</div>';
+      break;
+    case 'rval':
+      container.innerHTML = data.responseVal
+        ? `<div class="md-viewer">${escHtml(data.responseVal)}</div>`
+        : '<div class="empty">Brak odpowiedzi walidacji</div>';
+      break;
+    case 'log':
+      container.innerHTML = data.log
+        ? `<div class="json-viewer">${escHtml(JSON.stringify(data.log, null, 2))}</div>`
+        : '<div class="empty">Brak logu</div>';
+      break;
+  }
+}
+
+function renderDefinitions(data) {
+  if (!data.json || data.json.length === 0) return '<div class="empty">Brak definicji JSON</div>';
+
+  let html = '';
+  for (const entry of data.json) {
+    const verdict = data.verdicts[entry.id];
+    let verdictHtml = '';
+    if (verdict) {
+      const cls = verdict === 'PASS' ? 'verdict-pass' : verdict.includes('uwag') ? 'verdict-warn' : 'verdict-fail';
+      verdictHtml = `<span class="verdict ${cls}">${verdict}</span>`;
+    }
+
+    html += `<div class="def-card">
+      <h3>
+        <span style="color:var(--accent);font-family:var(--mono);font-size:13px">${escHtml(entry.id)}</span>
+        ${escHtml(entry.nazwa_pl || '')}
+        <span class="en-name">${escHtml(entry.nazwa_en || '')}</span>
+        ${verdictHtml}
+      </h3>
+
+      <div class="definition">${escHtml(entry.definicja || '')}</div>
+
+      ${renderSynonyms(entry.synonimy_pl, 'PL')}
+      ${renderSynonymsEn(entry.synonimy_en)}
+      ${renderNieMylic(entry.nie_mylic_z)}
+      ${renderList('Parametry zakupowe', entry.parametry_zakupowe)}
+      ${renderBrands(entry.marki_w_sklepie)}
+      ${renderList('Podtypy', entry.podtypy)}
+      ${renderList('Powiazane produkty', entry.powiazane_produkty)}
+      ${renderFaq(entry.faq)}
+      ${entry.uwagi_dla_ai ? `<div class="ai-note"><strong>Uwagi dla AI:</strong> ${escHtml(entry.uwagi_dla_ai)}</div>` : ''}
+    </div>`;
+  }
+
+  return html;
+}
+
+function renderSynonyms(syn, lang) {
+  if (!syn) return '';
+  const types = [
+    ['exact', 'Exact', 'syn-exact'],
+    ['near', 'Near', 'syn-near'],
+    ['potoczne', 'Potoczne', 'syn-potoczne'],
+    ['archaiczne', 'Archaiczne', 'syn-archaiczne'],
+    ['bledne_ale_popularne', 'Bledne ale popularne', 'syn-bledne'],
+  ];
+
+  let html = '<div class="def-section"><h4>Synonimy PL</h4>';
+  for (const [key, label, cls] of types) {
+    const items = syn[key];
+    if (!items || items.length === 0) continue;
+    html += `<div class="syn-group"><span class="syn-label">${label}:</span>`;
+    for (const s of items) html += `<span class="syn-tag ${cls}">${escHtml(s)}</span>`;
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderSynonymsEn(syn) {
+  if (!syn) return '';
+  const types = [['exact', 'Exact', 'syn-exact'], ['near', 'Near', 'syn-near']];
+  let html = '<div class="def-section"><h4>Synonimy EN</h4>';
+  for (const [key, label, cls] of types) {
+    const items = syn[key];
+    if (!items || items.length === 0) continue;
+    html += `<div class="syn-group"><span class="syn-label">${label}:</span>`;
+    for (const s of items) html += `<span class="syn-tag ${cls}">${escHtml(s)}</span>`;
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderNieMylic(items) {
+  if (!items || items.length === 0) return '';
+  let html = '<div class="def-section"><h4>Nie mylic z</h4>';
+  for (const item of items) {
+    html += `<div class="nmz-item"><span class="nmz-concept">${escHtml(item.concept || '')}</span> — ${escHtml(item.dlaczego || '')}</div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderList(title, items) {
+  if (!items || items.length === 0) return '';
+  let html = `<div class="def-section"><h4>${title}</h4><ul style="margin-left:16px;font-size:13px">`;
+  for (const item of items) html += `<li>${escHtml(item)}</li>`;
+  html += '</ul></div>';
+  return html;
+}
+
+function renderBrands(items) {
+  if (!items || items.length === 0) return '';
+  let html = '<div class="def-section"><h4>Marki w sklepie</h4><div class="brands-list">';
+  for (const b of items) html += `<span class="brand-tag">${escHtml(b)}</span>`;
+  html += '</div></div>';
+  return html;
+}
+
+function renderFaq(items) {
+  if (!items || items.length === 0) return '';
+  let html = '<div class="def-section"><h4>FAQ</h4>';
+  for (const f of items) {
+    html += `<div class="faq-item"><div class="faq-q">${escHtml(f.pytanie || '')}</div><div class="faq-a">${escHtml(f.odpowiedz || '')}</div></div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+// ===========================================================================
+// NAVIGATION
+// ===========================================================================
+function showMainTabs() {
+  state.currentGroup = null;
+  document.getElementById('tab-detail').style.display = 'none';
+  document.getElementById('mainTabs').style.display = 'flex';
+  // Re-show active tab
+  const activeTab = document.querySelector('.tab.active');
+  if (activeTab) {
+    const id = 'tab-' + activeTab.dataset.tab;
+    document.getElementById(id).style.display = 'block';
+  }
+}
+
+// ===========================================================================
+// HELPERS
+// ===========================================================================
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmt(n) {
+  if (n === undefined || n === null || n === 0) return '-';
+  return Number(n).toLocaleString('pl-PL');
+}
+
+function fmtCost(n) {
+  if (n === undefined || n === null || n === 0) return '-';
+  return '$' + Number(n).toFixed(4);
+}
+
+// ===========================================================================
+// TAB SWITCHING
+// ===========================================================================
+for (const tab of document.querySelectorAll('.tab')) {
+  tab.addEventListener('click', () => {
+    for (const t of document.querySelectorAll('.tab')) t.classList.remove('active');
+    tab.classList.add('active');
+    for (const c of document.querySelectorAll('.tab-content')) c.style.display = 'none';
+    document.getElementById('tab-detail').style.display = 'none';
+    document.getElementById('tab-' + tab.dataset.tab).style.display = 'block';
+  });
+}
+
+// ===========================================================================
+// INIT
+// ===========================================================================
+async function init() {
+  document.getElementById('headerStatus').textContent = 'Ladowanie danych...';
+
+  // Load log index first
+  state.logIndex = await fetchJSON('output/logs/index.json') || [];
+
+  let loaded = 0;
+  for (const g of GROUPS) {
+    state.groups[g] = await loadGroupData(g);
+    if (state.groups[g].hasData) loaded++;
+  }
+
+  renderGroupsGrid();
+  renderLogsTable();
+  renderCostsTable();
+
+  const totalConcepts = GROUPS.reduce((sum, g) => sum + (state.groups[g]?.conceptCount || 0), 0);
+  document.getElementById('headerStatus').textContent =
+    `${loaded}/${GROUPS.length} grup z danymi | ${totalConcepts} definicji`;
+}
+
+init();
+</script>
+</body>
+</html>

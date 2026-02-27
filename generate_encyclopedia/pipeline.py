@@ -377,6 +377,18 @@ class Pipeline:
         log_path.write_text(json.dumps(log_data, ensure_ascii=False, indent=2), encoding="utf-8")
         logger.info(f"Log zapisany: {log_path}")
 
+        # Aktualizuj index logow dla dashboardu
+        self._update_log_index()
+
+    def _update_log_index(self) -> None:
+        """Aktualizuje output/logs/index.json dla dashboardu."""
+        log_files = sorted(
+            [f.name for f in LOGS_DIR.glob("grupa_*.json") if f.name != "index.json"],
+            reverse=True,
+        )
+        index_path = LOGS_DIR / "index.json"
+        index_path.write_text(json.dumps(log_files, ensure_ascii=False), encoding="utf-8")
+
     def _print_report(self, group_id: str, steps: list[PipelineStep]) -> None:
         """Wyswietla raport na stdout."""
         from group_metadata import GROUP_NAMES
