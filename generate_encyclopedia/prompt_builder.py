@@ -95,18 +95,35 @@ GROUP_SAFETY_CHECKS: dict[str, list[str]] = {
 }
 
 
-def build_generation_prompt(metadata: GroupMetadata) -> str:
-    """Buduje prompt generacyjny z szablonu Jinja2 i metadanych grupy."""
+def build_generation_prompt(
+    metadata: GroupMetadata,
+    *,
+    sub_batch_concepts: list | None = None,
+    batch_number: int = 0,
+    total_batches: int = 0,
+) -> str:
+    """Buduje prompt generacyjny z szablonu Jinja2 i metadanych grupy.
+
+    Args:
+        metadata: metadane grupy
+        sub_batch_concepts: jesli sub-batch, lista Concept do wygenerowania
+        batch_number: numer batcha (1-based)
+        total_batches: laczna liczba batchy
+    """
     template = _env.get_template("generation.md.j2")
 
     has_bledne = metadata.group_id in GROUPS_WITH_BLEDNE
     extra_checks = GROUP_EXTRA_CHECKS.get(metadata.group_id, [])
 
+    is_sub_batch = sub_batch_concepts is not None
+    concepts = sub_batch_concepts if is_sub_batch else metadata.concepts
+    concept_count = len(concepts) if is_sub_batch else metadata.concept_count
+
     return template.render(
         group_id=metadata.group_id,
         group_name=metadata.group_name,
-        concept_count=metadata.concept_count,
-        concepts=metadata.concepts,
+        concept_count=concept_count,
+        concepts=concepts,
         v1_errors=metadata.v1_known_errors,
         brands_allowed=metadata.brands_allowed,
         brands_forbidden=metadata.brands_forbidden,
@@ -117,6 +134,11 @@ def build_generation_prompt(metadata: GroupMetadata) -> str:
         extra_checks=extra_checks,
         timestamp=datetime.now().strftime("%Y-%m-%d"),
         enumerate=enumerate,
+        # Sub-batch
+        is_sub_batch=is_sub_batch,
+        all_concepts=metadata.concepts if is_sub_batch else [],
+        batch_number=batch_number,
+        total_batches=total_batches,
     )
 
 

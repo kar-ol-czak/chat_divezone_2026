@@ -44,12 +44,15 @@ GENERATION_REASONING_EFFORT = "high"
 GENERATION_TEMPERATURE = 0.4
 GENERATION_MAX_OUTPUT_TOKENS = 16_000
 
-# Walidacja: Claude Opus 4.6 extended thinking
+# Sub-batche: grupy >8 pojec dzielone na czesci (limit 16k output tokens)
+MAX_CONCEPTS_PER_BATCH = 8
+
+# Walidacja: Claude Opus 4.6 adaptive thinking
 VALIDATION_MODEL = "claude-opus-4-6"
 VALIDATION_EXTENDED_THINKING = True
 VALIDATION_BUDGET_TOKENS = 16_000
 VALIDATION_TEMPERATURE = 1.0  # wymagane przez API przy extended thinking
-VALIDATION_MAX_TOKENS = 16_000
+VALIDATION_MAX_TOKENS = 32_000  # musi byc > budget_tokens
 
 # --- Retry ---
 MAX_RETRIES = 3

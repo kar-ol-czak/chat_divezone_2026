@@ -60,6 +60,15 @@ Dla kazdego pojecia wygeneruj obiekt JSON:
 }
 ```
 
+{% if is_sub_batch %}
+## KONTEKST: Batch {{ batch_number }}/{{ total_batches }}
+
+Pelna lista pojec grupy (uzywaj do nie_mylic_z i powiazane_produkty):
+{% for c in all_concepts %}{{ c.key }}{% if not loop.last %}, {% endif %}{% endfor %}
+
+Wygeneruj TYLKO ponizsze {{ concept_count }} pojec:
+{% endif %}
+
 ## LISTA {{ concept_count }} POJEC DO WYGENEROWANIA
 
 {% for concept in concepts %}

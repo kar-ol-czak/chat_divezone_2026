@@ -12,7 +12,6 @@ from config import (
     ANTHROPIC_API_KEY,
     GENERATION_MODEL,
     GENERATION_REASONING_EFFORT,
-    GENERATION_TEMPERATURE,
     GENERATION_MAX_OUTPUT_TOKENS,
     VALIDATION_MODEL,
     VALIDATION_EXTENDED_THINKING,
@@ -82,11 +81,11 @@ def generate(prompt: str) -> GenerationResult:
     start = time.time()
 
     def _call():
+        # GPT-5.2 z reasoning nie obsluguje parametru temperature
         return client.responses.create(
             model=GENERATION_MODEL,
             input=[{"role": "user", "content": prompt}],
             reasoning={"effort": GENERATION_REASONING_EFFORT},
-            temperature=GENERATION_TEMPERATURE,
             max_output_tokens=GENERATION_MAX_OUTPUT_TOKENS,
         )
 
@@ -122,21 +121,22 @@ def generate(prompt: str) -> GenerationResult:
 
 
 def validate(prompt: str) -> ValidationResult:
-    """Wysyla prompt do Claude Opus 4.6 extended thinking i zwraca wynik."""
+    """Wysyla prompt do Claude Opus 4.6 adaptive thinking i zwraca wynik."""
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     start = time.time()
 
     def _call():
-        return client.messages.create(
+        # Streaming wymagany dla max_tokens > 21333
+        # Opus 4.6: adaptive thinking (auto-budget, bez budget_tokens)
+        with client.messages.stream(
             model=VALIDATION_MODEL,
             max_tokens=VALIDATION_MAX_TOKENS,
-            temperature=VALIDATION_TEMPERATURE,
             thinking={
-                "type": "enabled",
-                "budget_tokens": VALIDATION_BUDGET_TOKENS,
+                "type": "adaptive",
             },
             messages=[{"role": "user", "content": prompt}],
-        )
+        ) as stream:
+            return stream.get_final_message()
 
     response = _retry_with_backoff(_call)
     duration = time.time() - start
