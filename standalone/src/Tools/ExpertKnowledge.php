@@ -8,11 +8,13 @@ use DiveChat\AI\EmbeddingService;
 use DiveChat\Database\PostgresConnection;
 
 /**
- * Wyszukiwanie semantyczne w bazie wiedzy eksperckiej.
- * Dane z divechat_knowledge (PostgreSQL/pgvector).
+ * Wyszukiwanie semantyczne w encyklopedii sprzętu nurkowego.
+ * Dane z encyclopedia_chunks (PostgreSQL/pgvector, 525 chunków, 105 haseł).
  */
 final class ExpertKnowledge implements ToolInterface
 {
+    private const EMBEDDING_DIM = 3072;
+
     public function __construct(
         private readonly EmbeddingService $embeddingService,
         private readonly PostgresConnection $db,
@@ -25,9 +27,10 @@ final class ExpertKnowledge implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Przeszukuje bazę wiedzy eksperckiej o nurkowaniu i sprzęcie nurkowym. '
-             . 'Zawiera poradniki doboru sprzętu, wyjaśnienia różnic między typami, porady dla nurków. '
-             . 'Używaj gdy klient pyta o doradztwo, porównania typów sprzętu lub ogólne pytania o nurkowanie.';
+        return 'Przeszukuje encyklopedię sprzętu nurkowego (105 haseł). '
+             . 'Zawiera definicje, podtypy, parametry zakupowe, FAQ klientów, cross-sell i porady sprzedawcy. '
+             . 'UŻYWAJ PRZED search_products gdy klient pyta o porady, porównania lub "jaki sprzęt wybrać". '
+             . 'Wynik daje kontekst ekspercki który pomaga lepiej dobrać produkty.';
     }
 
     public function getParametersSchema(): array
@@ -37,11 +40,26 @@ final class ExpertKnowledge implements ToolInterface
             'properties' => [
                 'query' => [
                     'type' => 'string',
-                    'description' => 'Pytanie lub temat do wyszukania, np. "jak dobrać maskę nurkową" lub "różnica między jacket a skrzydło BCD"',
+                    'description' => 'Pytanie lub temat do wyszukania w encyklopedii sprzętu nurkowego',
                 ],
-                'category' => [
+                'chunk_types' => [
+                    'type' => 'array',
+                    'items' => [
+                        'type' => 'string',
+                        'enum' => ['definition', 'synonyms', 'purchase', 'faq', 'seller'],
+                    ],
+                    'description' => 'Typy chunków do przeszukania. '
+                        . 'definition: co to jest, jak działa. '
+                        . 'synonyms: nazwy, slang, frazy wyszukiwania. '
+                        . 'purchase: parametry zakupowe, cross-sell, porównania. '
+                        . 'faq: odpowiedzi na typowe pytania klientów. '
+                        . 'seller: wewnętrzne porady sprzedawcy (nie cytuj klientowi). '
+                        . 'Domyślnie: ["definition", "faq", "purchase"].',
+                ],
+                'concept_key' => [
                     'type' => 'string',
-                    'description' => 'Filtr kategorii wiedzy, np. "maski", "automaty", "komputery", "ogólne"',
+                    'description' => 'Opcjonalny filtr na konkretne hasło, np. "AUTOMAT_ODDECHOWY". '
+                        . 'Użyj gdy wiesz dokładnie jakiego sprzętu dotyczy pytanie.',
                 ],
             ],
             'required' => ['query'],
@@ -51,42 +69,62 @@ final class ExpertKnowledge implements ToolInterface
     public function execute(array $params): array
     {
         $query = $params['query'] ?? '';
-        $category = $params['category'] ?? null;
+        $chunkTypes = $params['chunk_types'] ?? ['definition', 'faq', 'purchase'];
+        $conceptKey = $params['concept_key'] ?? null;
 
-        $embedding = $this->embeddingService->getEmbedding($query);
+        $embedding = $this->embeddingService->getEmbedding($query, self::EMBEDDING_DIM);
         $vectorStr = '[' . implode(',', $embedding) . ']';
 
-        $conditions = ['active = true', '1 - (embedding <=> ?::vector) > 0.5'];
-        $sqlParams = [$vectorStr];
+        // Budowanie warunków WHERE i parametrów
+        $conditions = [];
+        $sqlParams = [];
 
-        if ($category !== null) {
-            $sqlParams[] = $category;
-            $conditions[] = 'category ILIKE \'%\' || ? || \'%\'';
+        // Filtr chunk_type
+        if (!empty($chunkTypes)) {
+            $placeholders = implode(',', array_fill(0, count($chunkTypes), '?'));
+            $conditions[] = "chunk_type IN ({$placeholders})";
+            $sqlParams = array_merge($sqlParams, $chunkTypes);
         }
 
-        $where = implode(' AND ', $conditions);
+        // Filtr concept_key
+        if ($conceptKey !== null) {
+            $conditions[] = 'concept_key = ?';
+            $sqlParams[] = $conceptKey;
+        }
 
-        $sql = "SELECT question, content, category,
-                       1 - (embedding <=> ?::vector) AS similarity
-                FROM divechat_knowledge
-                WHERE {$where}
+        // Similarity threshold
+        $conditions[] = '1 - (embedding <=> ?::vector) > 0.45';
+        $sqlParams[] = $vectorStr;
+
+        $where = !empty($conditions) ? 'WHERE ' . implode(' AND ', $conditions) : '';
+
+        // Parametry: SELECT vector, filtry w WHERE (chunk_types + concept_key + threshold vector), ORDER BY vector
+        $sql = "SELECT concept_key, chunk_type, content, name_pl,
+                       1 - (embedding <=> ?::vector) AS similarity,
+                       metadata
+                FROM encyclopedia_chunks
+                {$where}
                 ORDER BY embedding <=> ?::vector
-                LIMIT 3";
+                LIMIT 5";
 
-        $sqlParams[] = $vectorStr; // dla SELECT
-        $sqlParams[] = $vectorStr; // dla ORDER BY
+        // SELECT vector + WHERE params + ORDER BY vector
+        $finalParams = [$vectorStr, ...$sqlParams, $vectorStr];
 
-        $results = $this->db->fetchAll($sql, $sqlParams);
+        $results = $this->db->fetchAll($sql, $finalParams);
 
         if (empty($results)) {
-            return ['knowledge' => [], 'message' => 'Nie znaleziono wiedzy na ten temat.'];
+            return [
+                'knowledge' => [],
+                'message' => 'Nie znaleziono wiedzy na ten temat w encyklopedii.',
+            ];
         }
 
         return [
             'knowledge' => array_map(fn(array $row) => [
-                'question' => $row['question'],
+                'concept_key' => $row['concept_key'],
+                'name' => $row['name_pl'],
+                'chunk_type' => $row['chunk_type'],
                 'content' => $row['content'],
-                'category' => $row['category'],
                 'similarity' => round((float) $row['similarity'], 3),
             ], $results),
             'count' => count($results),

@@ -13,6 +13,8 @@
 - TASK-003: Nowe Q&A + retest ✅ (37 wpisów)
 - TASK-004: Pipeline produktów ✅ (2670 produktów z embeddingami)
 - TASK-005: Czyszczenie Q&A z nazw marek — uruchomiony
+- TASK-013: Synonimy produktowe ⛔ ZABLOKOWANY (wymaga TASK-014)
+- TASK-014: Encyklopedia sprzętowa (GCIE + walidacja) 🔜 NASTĘPNY
 
 ### Model embeddingów (ADR-012)
 OpenAI text-embedding-3-large, dimensions=1536

@@ -434,3 +434,586 @@ ALTER TABLE divechat_product_embeddings
 **Decyzja:** Implementujemy jako tanie warstwy defense-in-depth z pełną świadomością ograniczeń.
 **Dlaczego:** Główna ochrona to: (1) system prompt z silnymi instrukcjami, (2) narzędzia read-only na danych publicznych, (3) max_tokens=600 ogranicza wartość wyciągniętej odpowiedzi, (4) budżety per sesja. Regex i scope guard łapią nisko wiszące owoce (skrypt kiddies, ciekawscy). Koszt implementacji minimalny.
 **Kiedy wrócimy:** Nigdy jako jedyna warstwa; LLM classifier jeśli logi pokażą potrzebę.
+
+### ADR-032: Synonimy produktowe — generowanie i storage (2026-02-24)
+
+**Kontekst:** Opisy produktów nie zawierają synonimów nazw produktowych (pianka = wetsuit = skafander mokry). To ogranicza zarówno SEO, wyszukiwarki AI, jak i nasz pgvector search.
+
+**Decyzja:**
+- Generowanie synonimów przez Claude API (batch, Sonnet 4.5) — PL i EN
+- Realizacja w instancji embeddings jako `generate_synonyms.py`
+- Storage: kolumny `synonyms_pl` i `synonyms_en` (JSONB) w `divechat_products`
+- Synonimy dołączane do tekstu przed wektoryzacją
+- Eksport CSV dla zewnętrznego projektu audytu opisów (flag `--export-csv`)
+- Koszt: ~$8-12 za cały katalog (~2600 produktów)
+
+**Alternatywy odrzucone:**
+- Narzędzia SEO (Senuto/Semrush): słabe w niszy nurkowej, drogie, wymagają ręcznej weryfikacji
+- Osobny projekt: duplikacja infrastruktury PostgreSQL, brak sensu skoro embeddings już ma pipeline
+
+**Status:** Do implementacji (ZABLOKOWANY — wymaga TASK-014, encyklopedia sprzętowa)
+
+
+### ADR-033: Encyklopedia sprzętowa — architektura GCIE + walidacja (2026-02-25)
+**Status:** Zatwierdzony
+**Kontekst:** AI generujący synonimy (TASK-013) halucynuje: myli kołowrotek ze szpulką, wymyśla "oddechówka", wrzuca "kiełbasa" zamiast "boja", klasyfikuje uprząż jako "aparat oddechowy". Potrzebna referencja terminologiczna jako Single Source of Truth. Analiza dwóch podejść: OpenAI Deep Research (evidence-first pipeline z claims layer) vs Gemini 3.1 Pro (GCIE z Context Caching). Cross-review przez oba modele potwierdził hybrydę.
+
+**Decyzja:** Architektura hybrydowa: Gemini GCIE jako silnik generacji + OpenAI-style walidacja.
+
+**Co bierzemy z Gemini GCIE:**
+- Context Caching: cały korpus (~650k tokenów) w cache, 40 iteracyjnych zapytań
+- Prompt Corpus-in-Context (bottom-heavy): dane na początku, instrukcje na końcu
+- Chain-of-Dictionary dla anglicyzmów (BCD, Jacket, Octopus)
+- thinking_level: HIGH
+- JSON Schema enforcement via API
+
+**Co bierzemy z OpenAI evidence-first:**
+- 7 automatycznych gate'ów walidacji (schema, język, unikalność, symetria, min 2 sources, cross-field)
+- Golden test set od dnia 1 (50+ par mylących, 100+ zapytań klientów)
+- Deterministyczny merge per typ pola (nie globalnie)
+- Testy regresji terminologicznej (kontrasty, PL/EN, wycieki synonimów)
+- Wersjonowanie wpisów, regression testing
+
+**Czego NIE bierzemy:**
+- Claims layer (OpenAI): overengineering na 40 kategorii, opcjonalnie w przyszłości
+- RAG/chunking/embeddingi (OpenAI): niepotrzebne przy full-context 1M
+- LlamaIndex/LangChain: custom Python wystarczy
+- Vendor lock-in na Gemini: fallback na Claude Opus z batchami po 5-10 kategorii
+
+**Schemat rekordu pojęcia (rozszerzony po cross-review):**
+- `concept_key`, `canonical_term_pl`, `canonical_term_en`
+- `definition_operational_pl` (1-2 zdania odróżniające od najbliższego mylonego pojęcia, OBOWIĄZKOWE)
+- `definition_pl`, `definition_en` (pełne definicje)
+- Typowane synonimy: `exact_synonym`, `near_synonym`, `colloquial`, `legacy_name`, `brand_term`, `anglicyzm`, `misleading_term`
+- Typowane relacje: `nie_mylic_z` (z `why` i `disambiguation_clues`), `nadrzedny`, `podrzedny`, `czesc_zestawu`, `wariant`
+- `evidence[]` z cytatami i source_id
+- `confidence`, `status`, `version`
+
+**Hierarchia źródeł (per typ pola):**
+- Definicje techniczne: PADI (EN) > IANTD OWD (PL) > CMAS (PL)
+- Synonimy potoczne PL: nurkomania.pl > divezone logi wyszukiwania
+- Nazwy handlowe: divezone kategorie i GSC
+
+**Scope MVP:** ~40 kategorii sprzętowych + golden set ~50 par mylących + ~100 zapytań klientów
+**Koszt:** ~$20-25 (Gemini API)
+**Czas:** 4-5 dni
+**Fallback:** Claude Opus z batchami po 5-10 kategorii jeśli >20% entries z needs_review
+
+**Zależności:** TASK-013 (synonimy) ZABLOKOWANY do czasu ukończenia TASK-014 (encyklopedia)
+**Implementacja:** TASK-014 (instancja embeddings)
+**Źródła analizy:** `_docs/20_synteza_encyklopedia_openai_vs_gemini.md`, `_docs/research_attachments/`
+
+
+
+---
+
+## ADR-034: Przegenerowanie encyklopedii od zera + encyklopedia blogowa (2026-02-27)
+
+**Kontekst:**
+Adversarial review przez 3 modele (Claude Opus 4.6, GPT-5.2 thinking, Gemini 3.1 Pro) ujawnił że 85% z 46 definicji zawiera błędy (od drobnych po krytyczne). Główne przyczyny:
+1. Za słaby model generujący (Gemini 2.5 Pro zamiast min. GPT-5.2/Opus 4.6)
+2. Pipeline nastawiony na throughput (46 naraz) zamiast accuracy (pojęcie po pojęciu)
+3. Walidacja sprawdzała strukturę, nie treść merytoryczną
+4. Brak adversarial self-check w procesie generacji
+
+Raport: `_docs/15_raport_adversarial_review.md`
+Źródła: `_docs/adversarial_review_encyklopedia-{Claude,GPT,Gemini}.md`
+
+**Decyzja:**
+1. PRZEGENEROWAĆ encyklopedię od zera (~90 kategorii zamiast 46)
+2. Nowy pipeline: generate → verify → challenge, pojęcie po pojęciu
+3. Model: do uzgodnienia z Karolem (minimum GPT-5.2 thinking lub Opus 4.6 extended)
+4. Adversarial review z 3 modeli służy jako "lista znanych błędów" w prompcie
+5. DUAL OUTPUT: ten sam korpus wiedzy generuje:
+   a) JSON dla AI czatu (definicje operacyjne, synonimy, relacje, misleading terms)
+   b) Artykuły blogowe dla divezone.pl/blog (encyklopedia nurkowania SEO)
+
+**Nowe kategorie do dodania (konsensus 2-3 modeli + decyzja Karola):**
+- Węże: WAZ_HP, WAZ_LP, WAZ_INFLATORA_BCD, WAZ_SUCHACZA
+- Suchy skafander: ZAWORY_SUCHEGO_SKAFANDRA, SYSTEM_SUCHYCH_REKAWIC
+- Narzędzia: LINE_CUTTER/SEKATOR, ANALIZATOR_TLENU, TRANSMITER_CISNIENIA
+- BCD: BP&W_SYSTEM (osobno od skrzydło=worek), DUMP_VALVE, GŁOWICA_INFLATORA
+- Ochrona termiczna: PIANKA_SHORTY, KAMIZELKA_OCIEPLAJACA
+- Balast: PAS_BALASTOWY, KIESZENIE_ZINTEGROWANE, TRYMOWKA
+- Maski: MASKA_WIELOSZYBOWA, PASEK_DO_MASKI, ANTIFOG/PREP
+- Automaty: ZESTAW_AUTOMATU (bundle SKU), ZESTAW_SERWISOWY
+- Złącza: DIN_232, DIN_300, INSERT_DIN_YOKE
+- Akcesoria: SZELKI_STAGE, SWIATLO_CHEMICZNE, KLEJ_NEOPRENOWY
+- Inne: LIFT_BAG, NOZYCE, KAMIZELKA_SNORKELING, SUSZARKA, INFLATOR_Z_AUTOMATEM
+- Pełna lista: ~90 kategorii (do zatwierdzenia w fazie 1 nowego pipeline)
+
+**Encyklopedia blogowa — wstępna koncepcja:**
+- Każda kategoria sprzętowa = artykuł na blogu divezone.pl
+- Treść: rozbudowana definicja, jak wybrać, na co zwrócić uwagę, FAQ
+- SEO: targetowanie fraz z GSC i Luigi's Box
+- Cross-linking: powiązane produkty, kategorie sklepowe
+- Format: WordPress/PrestaShop blog, Markdown → HTML
+- Scope: osobny TASK (TASK-016), zależny od ukończenia nowej encyklopedii
+
+**Zasada (NOWA, OBOWIĄZKOWA):**
+Wybór modelu AI dla krytycznych elementów projektu ZAWSZE konsultowany z Karolem.
+Minimum: GPT-5.2 thinking lub Opus 4.6 extended.
+Nigdy nie używać modeli starszych niż 6 miesięcy.
+
+**Odrzucone:**
+- Łatanie punktowe 46 istniejących definicji (85% z błędami = nie warto)
+- Zachowanie starych definicji dla 7 "czystych" (PASS 3/3) — dla spójności generujemy wszystko od zera
+
+**Status:** Do realizacji. Blokuje: TASK-013 (synonimy), TASK-016 (blog).
+
+---
+
+## ADR-035: Integracja DataForSEO do wzbogacenia encyklopedii i bloga (2026-02-27)
+
+**Kontekst:**
+Encyklopedia sprzętowa (~90 kategorii) wymaga realnych danych o frazach klientów.
+Modele AI znają terminologię techniczną ale nie wiedzą jakich potocznych fraz
+używają klienci w Google PL. Dane behawioralne (wolumeny, powiązane frazy)
+są niedostępne z żadnego innego źródła.
+
+**Decyzja:**
+1. Konto DataForSEO (pay-as-you-go, min. $50, saldo nie wygasa)
+2. Credentials w .env (DATAFORSEO_API_LOGIN, DATAFORSEO_API_PASSWORD, DATAFORSEO_API_PASSWORD-BASE64)
+3. Pobieramy dane PRZED generacją encyklopedii (wchodzą do promptu GPT-5.2)
+4. Dwa endpointy:
+   a) Keywords for Site (divezone.pl) — szeroki obraz, do 700 fraz, 1 request
+   b) Keywords for Keywords — 90 seed keywords w 5 batchach po 20, 5 requestów
+5. Łączny koszt: ~$7 z $50 budżetu
+
+**API DataForSEO — format potwierdzone testem:**
+- Endpoint: POST https://api.dataforseo.com/v3/keywords_data/google_ads/keywords_for_keywords/live
+- Auth: Basic (base64 login:password)
+- Poland: location_code=2616, language_code="pl"
+- Limit: do 20 keywords per request (keywords_for_keywords), do 700 wyników (keywords_for_site)
+- Koszt: $0.075 per request (keywords_for_keywords/live)
+- Response: keyword, search_volume, cpc, competition, competition_index, monthly_searches[]
+- Test "maska nurkowa": 4 wyniki, 170 vol/mies., dane sezonowe OK
+
+**Zastosowania danych DataForSEO:**
+1. Synonimy potoczne do encyklopedii AI (np. "maska nurkowa ze szkłami korekcyjnymi")
+2. Priorytetyzacja artykułów blogowych wg wolumenu (TASK-016)
+3. FAQ bazujące na realnych zapytaniach klientów
+4. Wzbogacenie product descriptions dla embeddingów
+
+**Rezerwa budżetowa ($43):**
+- Audyt pozycji divezone.pl (Ranked Keywords)
+- Analiza konkurencji (3-5 domen)
+- SERP analysis dla kluczowych fraz
+- Google Shopping / Merchant data
+- People Also Ask
+
+**Folder danych:** data/dataforseo/
+**Skrypt:** TASK-017 (instancja embeddings)
+
+
+---
+
+## TASK-017 — COMPLETED (2026-02-27)
+
+**Wyniki DataForSEO:**
+- 6 requestów API, koszt: $0.45 z $50 (0.9%)
+- 1404 unikalnych fraz (1111 z Keywords for Site, 293 nowych z batchów)
+- Top frazy: "maska do nurkowania" 12.1k, "maska do snorkelingu" 5.4k, "butla do nurkowania" 1.6k, "komputer nurkowy" 880
+- 39% fraz (549) nie zmatchowanych do kategorii heurystyką — dane kompletne w CSV/JSON
+
+**Pliki wynikowe:**
+- data/dataforseo/raw/ — 6 JSON-ów (3.3 MB)
+- data/dataforseo/processed/all_keywords.csv — 1404 fraz
+- data/dataforseo/processed/all_keywords.json
+- data/dataforseo/processed/raport_keywords.md
+
+**Obserwacje:**
+- Keywords for Site dał 4× więcej fraz niż batche — główne źródło danych
+- Klienci szukają "maska do nurkowania" (12.1k) nie "maska nurkowa" (170) — potoczne frazy z "do" dominują
+- "okulary do nurkowania" (1.3k) — klasyczny synonim potoczny, ważny dla czatu
+- "maska do nurkowania z tlenem" (720) — misleading term, maski nie mają tlenu
+- "akwalung" (1.6k) — archaiczny termin, wciąż popularny
+
+**Pozostały budżet DataForSEO: $49.55**
+
+
+---
+
+## FAZA 1 COMPLETED (2026-02-27)
+
+**Lista concept keys v2.2 ZATWIERDZONA:** 105 pojęć w 13 grupach (A-M).
+Plik: `_docs/FAZA1_concept_keys_v2.md`
+
+Źródła: oryginalne 46, adversarial review 3 modeli, DataForSEO 1404 fraz,
+weryfikacja vs pełna struktura kategorii divezone.pl (web fetch).
+
+**FAZA 2:** Pilot na Grupie A (Oddychanie, 15 pojęć).
+Generacja: GPT-5.2 thinking → Walidacja: Claude Opus 4.6 extended.
+
+**Zasoby do wykorzystania w FAZIE 2:**
+- `_docs/FAZA1_concept_keys_v2.md` — zatwierdzona lista 105 concept keys
+- `_docs/11_mapa_marek-reviewed.md` — poprawiona mapa marek (do użycia w definicjach)
+- `_docs/15_raport_adversarial_review.md` — znane błędy v1 (wchodzą do promptu)
+- `data/dataforseo/processed/all_keywords.csv` — 1404 fraz z Google PL
+- `_docs/wiedza_nurkowa/Review_GPT_i_Claude_Definicji/` — pełne review 3 modeli
+
+
+---
+
+## FAZA 2 PILOT: Prompty gotowe (2026-02-27)
+
+**Prompt generacyjny:** `_docs/PROMPT_encyklopedia_grupa_A.md`
+- Model: GPT-5.2 thinking (do uzgodnienia z Karolem)
+- Zawiera: 15 concept keys, format JSON, znane błędy v1, frazy DataForSEO, mapa marek, self-check
+
+**Prompt walidacyjny:** `_docs/PROMPT_walidacja_grupa_A.md`
+- Model: Claude Opus 4.6 extended (do uzgodnienia z Karolem)
+- Zawiera: kryteria walidacji (5 kategorii, 16 punktów), dane referencyjne, format werdyktów
+
+**Workflow:**
+1. Wklej PROMPT_encyklopedia_grupa_A.md do GPT-5.2 thinking → dostaniesz 15 JSON-ów
+2. Wklej output + PROMPT_walidacja_grupa_A.md do Claude Opus 4.6 → dostaniesz werdykty
+3. Popraw FAILe i powtórz walidację
+4. Zatwierdzone definicje → `data/encyclopedia/grupa_A_oddychanie.json`
+
+
+---
+
+## ADR-036: DIN jako jedyny standard, INT archaiczny (2026-02-27)
+
+**Kontekst:**
+AI modele traktują DIN i INT jako równorzędne standardy przyłączy automatów do butli.
+W rzeczywistości INT/yoke to martwy standard: nie produkowany od ~10 lat, w Europie
+nigdy nie był powszechny. Nawet w Egipcie od 15+ lat jest tylko DIN.
+
+**Decyzja:**
+1. DIN to JEDYNY aktualny standard. Wszystkie definicje, prompty i AI czat muszą to odzwierciedlać.
+2. INT wspominany wyłącznie jako archaiczny, z kontekstem "martwy standard, spotykany już tylko w egzotycznych lokalizacjach".
+3. Nigdy nie prezentować "DIN vs INT" jako parametru wyboru zakupowego.
+4. ADAPTER_DIN_INT zostaje w encyklopedii (sklep sprzedaje) ale z kontekstem "do starych butli".
+5. ZLACZE_INT zostaje w encyklopedii (klienci mogą pytać) ale z kontekstem archaicznym.
+
+**Dotyczy:** Wszystkich promptów generacyjnych, walidacyjnych, systemu czatu AI.
+
+
+---
+
+## ADR-037: Rewizja pipeline'u encyklopedii — deterministyczny Python + minimalny LLM (2026-02-28)
+
+**Kontekst:**
+Pipeline TASK-ENC-001 (4 warstwy LLM, „głuchy telefon") generował utratę danych:
+synonimy znikały, relacje się psuły, kodowanie niespójne, FAQ trafiały do złych pojęć.
+Prompt architektoniczny wysłany do 3 modeli: Claude Opus 4.6, OpenAI Deep Research,
+Gemini 3.1 Pro Research. Wszystkie potwierdziły diagnozę i rekomendowały hybrydę
+Python + minimalny LLM.
+
+**Źródła analizy:** `_docs/pytanie_architektoniczne/` (prompt + 3 odpowiedzi)
+
+**Konsensus 3/3 modeli:**
+1. Warstwa 3 (GPT-5.2 generujący od zera z ignorowaniem v1) = główna przyczyna utraty danych
+2. Deterministyczny Python powinien obsłużyć strukturę, relacje i walidację
+3. LLM minimalnie, tylko do pól wymagających inteligencji językowej
+4. Jedno wywołanie LLM per pojęcie zamiast kaskady czterech warstw
+5. Automatyczna walidacja (schema, dwustronność, encoding, kolizje synonimów)
+6. Redukcja kosztów ~85-90%
+
+**Decyzja: 5-krokowy pipeline**
+
+**Krok 1 — USUNIĘTY (ADR-037a, 2026-03-02):**
+~~Transformacja v1→v2~~ — PORZUCONY. V1 to dane LLM-generated z wadliwego pipeline'u
+(85% błędów w adversarial review). Bazowanie na nich propagowałoby te same błędy.
+
+**Krok 2 — Python lookup (jedyny krok deterministyczny):**
+Marki z `_docs/11_mapa_marek-reviewed.md` + baza MySQL.
+Frazy klientów z DataForSEO/Luigi's Box/GSC jako kandydaci synonimów.
+Wypełnia: marki_w_sklepie, kandydaci synonimów z danych klientów.
+Output wchodzi do promptu LLM jako twarde dane wzbogacające.
+
+**Krok 3 — LLM, jedno wywołanie per pojęcie:**
+Wszystkie 106 pojęć jedną ścieżką: Opus 4.6 extended, generowanie bezpośrednio
+ze źródeł ludzkich (PADI, IANTD, nurkomania) + dane z kroku 2 (marki, frazy).
+V1 NIE wchodzi do promptu. 100% human review.
+
+**Krok 4 — Python walidacja automatyczna:**
+Schema validation, dwustronność nie_mylic_z, kolizje synonimów, encoding UTF-8,
+brak samoodwołań, marki ⊂ whitelist, referencje → istniejące concept_key.
+Raport PASS/FAIL per pojęcie.
+
+**Krok 5 — Human review:**
+Wszystkie FAILe + 100% ścieżki B + losowa próba 20% ścieżki A.
+Focus: FAQ, podtypy, bledne_ale_popularne, uwagi_dla_ai.
+
+**Korekty schematu v2 (ZATWIERDZONE):**
+
+a) Evidence sidecar: osobny plik `encyclopedia_v2_evidence.json` mapujący
+   concept_id + pole + wartość → źródło. Nie zmienia kontraktu v2, daje traceability.
+
+b) Klucz `anglicyzmy` w `synonimy_pl`: nowy bucket na angielskie terminy
+   używane w polskim kontekście (wing, backplate, jacket, BCD, LPI itp.).
+   Reguła "zero English w polach PL" zmieniona na "anglicyzmy dopuszczalne
+   i jawnie otagowane".
+
+c) DUMP_VALVE split na DUMP_VALVE_BCD + DUMP_VALVE_DRYSUIT:
+   Uzasadnienie domenowe: w jackecie/skrzydle zawór obsługiwany ręcznie (przycisk),
+   w skafandrze suchym zawór sprężynowy z pokrętłem regulacji ciśnienia otwarcia.
+   Dwa zupełnie różne urządzenia choć służą do tego samego (opróżnianie gazu).
+
+**Modele LLM:**
+- Wszystkie 106 pojęć: Claude Opus 4.6 extended
+- Alternatywa/walidator: Gemini 3.1 Pro
+
+**Estymacja:**
+- Koszt LLM: ~$30-50 za całość (106 pojęć × Opus 4.6 extended)
+- Dev Python (lookup + walidacja): 1-2 dni
+- LLM execution: <2h
+- Human review: 3-5 dni (106 pojęć, 100% review)
+
+**Unikalne blind spoty z analizy 3 modeli (do adresowania):**
+- 59 pojęć bez v1 wymaga agresywniejszej walidacji (Claude)
+- Dual-purpose: baza AI vs encyklopedia publiczna to osobne produkty (OpenAI)
+- Schema evolution / delta tracking przy aktualizacjach (Gemini)
+- Ryzyko kanibalizacji SEO przy nakładających się wektorach (Gemini)
+- Polska kultura nurkowa (DIR, jaskinie) wymaga wyższej wagi polskich źródeł (Gemini)
+
+**Zastępuje:** ADR-033 (GCIE + walidacja), TASK-ENC-001 (stary pipeline do wyrzucenia)
+**Blokuje:** TASK-013 (synonimy), TASK-016 (blog)
+**Implementacja:** Nowy TASK-ENC-005 (instancja embeddings)
+
+
+---
+
+## ADR-038: Gemini 2.5 Pro jako generator encyklopedii (2026-03-03)
+
+**Kontekst:** Porównanie jakości wyjść NotebookLM vs Gemini 2.5 Pro na haśle AUTOMAT ODDECHOWY.
+Gemini daje: konkretne wartości (200/300 bar), FAQ w języku klienta ("Dlaczego automat sam wypuszcza bąble?"),
+praktyczne analogie (zbalansowany = wspomaganie kierownicy), uczciwy kontekst cenowy.
+
+**Decyzja:** Gemini 2.5 Pro zastępuje Opus 4.6 extended jako generator encyklopedii.
+NotebookLM v2 (130 haseł) służy jako draft wejściowy, nie jako fundament.
+
+**Ograniczenia Gemini do kontroli:**
+- Uproszczone podtypy (cold/warm water zamiast membrane/piston) — korygujemy przez dual subtypes (ADR-041)
+- Ryzyko halucynowanych synonimów — zamknięty uniwersum z tagami źródeł [GSC], [Luigi's Box], [DO WERYFIKACJI]
+- "Brak danych w źródłach" może ukrywać legalne terminy z PADI/IANTD — kwestionariusz eksperta adresuje
+
+**Zastępuje:** TASK-ENC-005 krok 3 (Opus 4.6 extended per pojęcie)
+
+---
+
+## ADR-039: Dane sprzedażowe MySQL jako kontekst dla encyklopedii (2026-03-03)
+
+**Kontekst:** Encyklopedia generowana bez wiedzy o tym co sklep faktycznie sprzedaje to encyklopedia generyczna.
+Dane z MySQL (8680 zamówień, 12 mies.) dają twarde fakty o cross-sellu i bestsellerach.
+
+**Decyzja:** Dwa pliki wchodzą do kontekstu Gemini:
+- `dane_sprzedazowe_crosssell_12m.md` — pary kategorii kupowane razem + % prawdopodobieństwa
+- `dane_sprzedazowe_bestsellery_12m.md` — top 5 produktów per kategoria z nazwami
+
+**Zastosowanie w haśle:**
+- Sekcja Cross-selling: oparta na twardych danych ("43.5% kupujących skrzydło kupuje też balast")
+- Sekcja FAQ: "Najpopularniejszy komputer w naszym sklepie to Shearwater Peregrine"
+- Sekcja Uwagi dla sprzedawcy: wiedza o bestsellerach per kategoria
+
+**Uzupełnienie na przyszłość:** TASK_sales_sync — cykliczna synchronizacja (CRON) danych
+sprzedażowych do PostgreSQL czatu, udostępniane przez function calling.
+
+---
+
+## ADR-040: Honest parameters — nie listuj cech standardowych (2026-03-03)
+
+**Kontekst:** 90%+ automatów w sklepie to: membranowe, zbalansowane, sucha komora, EN250A.
+Listowanie tych cech jako "parametrów zakupowych" sugeruje że istnieją produkty bez nich.
+
+**Decyzja:** Parametry zakupowe w encyklopedii zawierają TYLKO cechy które faktycznie
+różnicują produkty w ofercie sklepu. Cechy które posiada 90%+ produktów to standard rynkowy,
+nie parametr zakupowy. Mogą pojawić się w FAQ ("Czy wszystkie automaty mają suchą komorę?
+Tak, praktycznie wszystkie współczesne automaty.").
+
+**Przykłady zastosowania:**
+- Automat: liczba portów, ACD, pokrętło regulacji = różnicują → parametry
+- Automat: sucha komora, zbalansowanie, EN250A = standard → FAQ/notatka
+- Maska: szkło hartowane = standard → nie listuj
+- Pianka: grubość (3mm/5mm/7mm) = różnicuje → parametr
+
+---
+
+## ADR-041: Dual subtypes — klienckie + techniczne (2026-03-03)
+
+**Kontekst:** Klasyfikacja techniczna (membranowy/tłokowy, zbalansowany/niezbalansowany)
+opisuje rynek sprzed 10 lat. Klient w 2026 nie wybiera między tłokowym a membranowym,
+bo 90%+ to membranowe. Klient wybiera: na zimne/ciepłe wody, rekreacyjny/techniczny.
+
+**Decyzja:** Dwa poziomy podtypów w haśle encyklopedii:
+1. **Podtypy klienckie (PRIMARY):** odzwierciedlają realne decyzje zakupowe
+   (cold/warm water, recreational/technical, single/twin)
+2. **Podtypy techniczne (SECONDARY):** w FAQ lub notatkach edukacyjnych
+   ("Czy nadal produkowane są automaty tłokowe? Sporadycznie, ale...")
+
+---
+
+## ADR-042: DataForSEO zamiast Answer The Public (2026-03-03)
+
+**Kontekst:** ATP nie ma API. DataForSEO ma endpointy Google Autocomplete,
+People Also Ask, Related Searches. Konto DataForSEO już aktywne (saldo ~$49).
+
+**Decyzja:** Skrypt Python (TASK-ENC-006) odpytuje DataForSEO:
+- Google Autocomplete (pytania "jak...", "czy...", "jaki...")
+- People Also Ask (PAA) — dokładnie to co daje ATP, ale programatycznie
+- Related Searches — dodatkowe frazy
+
+Wyniki: CSV z pytaniami per seed keyword, wchodzą do Gemini jako źródło FAQ.
+Faza 1: test na 5 seedach, faza 2: pełne ~100 seedów.
+
+**Koszt szacowany:** $2-5 za pełny run (vs $99/mies. ATP)
+
+---
+
+## ADR-043: Dane z czatu AI jako organiczne źródło wiedzy (2026-03-03)
+
+**Kontekst:** Coraz więcej użytkowników szuka informacji przez ChatGPT/Perplexity
+zamiast Google. Dane z tych narzędzi nie są dostępne (brak eksportu zapytań).
+
+**Decyzja:** Po uruchomieniu czatu AI divezone.pl, każda rozmowa z klientem staje się
+źródłem danych o pytaniach klientów. Admin panel z tagowaniem konwersacji
+(wrong_product, wrong_info, common_question) tworzy organiczne "Answer The Public"
+oparte na realnych klientach sklepu nurkowego.
+
+**Implementacja:** Istniejący na roadmapie system tagowania (TASK-008 admin panel).
+Dodać: eksport popularnych pytań, analitykę trendów, identyfikację luk w wiedzy.
+
+Na teraz: DataForSEO + GSC + Luigi's Box + kwestionariusz eksperta wystarczą.
+
+
+---
+
+## ADR-044: Max 5 haseł na partię w Gemini (2026-03-05)
+
+**Kontekst:** Empiryczny test w rozmowie z Gemini 3.1 Pro. Partia 8 haseł (automaty, 
+I/II stopień, octopus, zestawy rek/twinset/stage/sidemount). Wynik:
+- Hasła 1-3: dobra jakość, czytelny język
+- Hasło 4: akceptowalne, lekka degradacja stylu
+- Hasła 5-6: poważna degradacja, kwiecisty bełkot
+- Hasła 7-8: nieczytelne, wymyślona terminologia ("ekskluzywna hybryda rutingowa")
+
+**Decyzja:** Bezwzględny limit 5 haseł na partię. Zasada #16 w prompcie Gemini.
+Po każdej partii: review + poprawki, dopiero potem następna.
+22 partii × 5 haseł = ~106 haseł. Estymacja: 5-8 sesji Gemini.
+
+**Dodatkowa obserwacja:** Wolna rozmowa (hasła 1 i 31 z początku sesji Gemini, 
+bez promptu batchowego) dała LEPSZĄ jakość niż batched generation z promptem.
+Rozważyć: wgranie pełnego kontekstu, ale generowanie 1-3 haseł per komenda.
+
+
+---
+
+### ADR-045: Gemini 3.1 Pro z enhanced promptem (#17-#20) jako generator encyklopedii
+**Data:** 2026-03-05 | **Status:** PRZYJĘTA
+
+**Kontekst:** Trzy rundy testów porównawczych na 3 hasłach (AUTOMAT, JACKET, SUCHY):
+- Test v1 (TASK-ENC-008a): Gemini 3.1 Pro vs Claude Opus 4.6 vs GPT-5.2 na baseline prompcie
+- Test v2 (TASK-ENC-008b): Gemini + zasady #17-#19 (cross-sell %, long-tail, concept keys)
+- Test v3 (TASK-ENC-008c): Gemini + zasada #20 (minimalna objętość, więcej podtypów/FAQ)
+
+Wyniki finalne (Gemini v3 vs Claude Opus 4.6):
+- Jakość strukturalna: 21/21 vs 20.5/21 — Gemini lepszy w podtypach klienckich
+- Objętość: ~6,000 vs ~10,883 chars/hasło — Gemini zwięźlejszy, bez paddingu
+- Koszt batch 106 haseł: ~$3-5 vs ~$40-50 (10× taniej)
+- Czas: ~40 min vs ~2h
+
+**Decyzja:** Gemini 3.1 Pro z zasadami #1-#20 jako jedyny model generacji.
+Prompt wzbogacony o 4 nowe zasady wynikające z review porównawczego:
+- #17: cross-sell z konkretnymi % z danych sprzedażowych
+- #18: sekcja fraz long-tail (min 8/hasło) po synonimach
+- #19: linkowanie concept keys (→ KEY) w tekście
+- #20: min 5,000-6,000 chars/hasło, min 5 FAQ, min 4 podtypy klienckie
+
+**Odrzucone alternatywy:**
+- Claude Opus 4.6: porównywalna jakość ale 10× droższy, 3× wolniejszy, padding ~40%
+- GPT-5.2: zbyt ostrożny z synonimami ("Brak danych"), mniej naturalny FAQ
+
+
+---
+
+### ADR-046: Przebudowa pipeline na Evidence Registry + JSON Schema + Validator
+**Data:** 2026-03-06 | **Status:** PRZYJĘTA
+
+**Kontekst:** Pipeline v1 (TASK-ENC-009) wygenerował 105 haseł, ale review wykazał
+krytyczny problem: ~80% haseł nie dostało danych z keywords/PAA (niekompletne mapowania
+CONCEPT_TO_SEEDS i CONCEPT_TO_PAA_GROUP). Gemini sfabrykował tagi źródłowe [PAA], [AC],
+[GSC, N vol] bez ostrzeżenia w ~80% haseł. Cross-validation z GPT-5.2 i Gemini 3.1 Pro
+potwierdziła potrzebę przebudowy.
+
+**Decyzja:** Nowy pipeline v2 (TASK-ENC-011):
+1. Evidence Registry — zamknięty zbiór EV-IDs budowany deterministycznie z plików CSV/MD
+2. 1 hasło per wywołanie API (eliminuje przeciek kontekstu między hasłami)
+3. Gemini JSON Schema output (model nie pisze markdown, nie tworzy tagów)
+4. Deterministic Validator — sprawdza każdy evidence_id, concept_key, reguły domenowe
+5. Markdown Renderer — Python generuje tagi deterministycznie z evidence registry
+6. Master Report z semaforami GREEN/YELLOW/RED
+
+**Kluczowe zasady:**
+- Model NIGDY nie tworzy tagów [GSC], [PAA], [AC] — zwraca tylko evidence_ids
+- 0 sfabrykowanych evidence_ids = batch BLOCKED (fail closed)
+- Tagi w markdownie budowane przez kod Python, nie przez LLM
+- Hash plików źródłowych + prompt version w manifeście (reprodukowalność)
+- quarantine/ folder dla RED haseł, oddzielony od final/
+
+**Koszt:** ~$15 za 105 wywołań (vs ~$3-4 w v1), ~2.5h czas generacji.
+Uzasadnienie: 5× droższe ale eliminuje 3 klasy błędów i daje deterministyczną
+pewność tagów źródłowych.
+
+**Źródło:** Cross-validation Gemini 3.1 Pro + GPT-5.2 (prompt_cross_validation_safeguards.md)
+Konsensus obu modeli: evidence registry + JSON Schema + fail closed.
+
+
+---
+
+### ADR-047: Integracja encyklopedii przez aktualizację ExpertKnowledge tool
+**Data:** 2026-03-06 | **Status:** PRZYJĘTA
+
+**Kontekst:** Encyklopedia (105 haseł, 525 chunków w encyclopedia_chunks) gotowa do 
+integracji z czatem AI. Istniejący ExpertKnowledge tool query'uje starą tabelę 
+divechat_knowledge. Rozważano: (A) aktualizacja ExpertKnowledge, (B) nowy osobny tool, 
+(C) merge z ProductSearch.
+
+**Decyzja:** Opcja A — aktualizacja ExpertKnowledge na nową tabelę encyclopedia_chunks.
+- Zachowuje obecny kontrakt (nazwa narzędzia, rejestracja w ToolRegistry)
+- Dodaje filtrowanie po chunk_type (definition/synonyms/purchase/faq/seller)
+- Dodaje opcjonalny filtr concept_key
+- SystemPrompt rozszerzony o workflow: encyklopedia → produkty
+
+**Uzasadnienie:**
+- ExpertKnowledge jest już zarejestrowane w ToolRegistry i obsługiwane przez ChatService diagnostykę
+- Osobny tool od ProductSearch bo inny cel (wiedza vs oferta)
+- AI decyduje o kolejności: eksploracyjne pytania → najpierw encyklopedia → potem produkty
+- chunk_types pozwala AI precyzyjnie wybrać typ wiedzy
+
+
+---
+
+### ADR-048: Real-time dane produktów z MySQL zamiast zamrożonych w pgvector
+**Data:** 2026-03-09 | **Status:** PRZYJĘTA
+
+**Kontekst:** ProductSearch zwracał ceny, stany i visibility z pgvector 
+(divechat_product_embeddings), zamrożone od daty embeddingu (20 lutego 2026).
+Zmiana in_stock_only na TRUE spowodowała 0 wyników bo stany były nieaktualne.
+Klient mógł zobaczyć cenę sprzed 3 tygodni.
+
+**Decyzja:** enrichWithMySQLData() — po RRF fusion, przed zwróceniem wyników,
+jedno query do MySQL PrestaShop pobiera aktualne: cenę brutto (netto × stawka VAT),
+quantity, active, visibility. Filtrowanie in_stock_only działa na real-time danych.
+Fallback na pgvector jeśli MySQL niedostępny.
+
+**Zasada:** pgvector = embeddingi + dane statyczne (nazwa, kategoria, marka).
+MySQL = dane runtime (cena, stan, visibility, active). Zero synchronizacji stanów.
+
+
+### ADR-049: Nie wysyłać search_debug do LLM + ukryć quantity (2026-03-10)
+**Decyzja:** `search_debug` (w tym `quantity`, `mysql_enrichment`, `candidates_before_mysql`) jest usuwany
+z tool result przed wysłaniem do modelu. Diagnostyka jest zbierana osobno w `buildSearchDiagnostic()`.
+Dodana reguła w SystemPrompt: "NIGDY nie podawaj klientowi ilości sztuk na stanie".
+**Powód:** Model widział `quantity` w `search_debug.mysql_enrichment` i podawał klientom dokładne ilości
+sztuk na stanie, co jest informacją wewnętrzną. Ponadto `search_debug` to ~2-5KB zbędnych tokenów per tool call.
+
+### ADR-050: Ceny promocyjne z pr_specific_price (2026-03-10)
+**Decyzja:** `enrichWithMySQLData()` dołączy `pr_specific_price` do query MySQL, żeby zwracać cenę
+po promocji/obniżce zamiast ceny bazowej. Logika: price override + reduction (percentage/amount)
+z walidacją dat, shop, group, from_quantity.
+**Ograniczenie:** Ceny na poziomie produktu (`id_product_attribute = 0`). Kombinacje z różnymi cenami
+to znane ograniczenie, akceptowalne w pierwszej iteracji.
+**Powód:** AI podawał cenę bazową sprzed obniżki, niezgodną z ceną widoczną na karcie produktu.

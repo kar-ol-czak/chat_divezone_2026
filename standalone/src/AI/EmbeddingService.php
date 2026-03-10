@@ -30,9 +30,10 @@ final class EmbeddingService
     /**
      * Generuje embedding dla tekstu.
      *
-     * @return float[] Wektor 1536-wymiarowy
+     * @param int $dimensions Wymiarowość wektora (1536 dla produktów, 3072 dla encyklopedii)
+     * @return float[] Wektor o zadanej wymiarowości
      */
-    public function getEmbedding(string $text): array
+    public function getEmbedding(string $text, int $dimensions = 1536): array
     {
         $options = [
             'headers' => [
@@ -42,7 +43,7 @@ final class EmbeddingService
             'json' => [
                 'model' => 'text-embedding-3-large',
                 'input' => $text,
-                'dimensions' => 1536,
+                'dimensions' => $dimensions,
             ],
         ];
 

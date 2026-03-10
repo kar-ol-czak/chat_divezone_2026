@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DiveChat\Tools;
 
 use DiveChat\AI\EmbeddingService;
+use DiveChat\Database\MysqlConnection;
 use DiveChat\Database\PostgresConnection;
 
 /**
@@ -77,7 +78,8 @@ final class ProductSearch implements ToolInterface
                         'brand' => ['type' => 'string', 'description' => 'Filtr marki'],
                         'in_stock_only' => [
                             'type' => 'boolean',
-                            'description' => 'Tylko produkty dostępne od ręki. Domyślnie false.',
+                            'description' => 'Filtruj tylko dostępne produkty. DOMYŚLNIE TRUE. '
+                                . 'Ustaw na false TYLKO gdy klient pyta o konkretny model który może być niedostępny.',
                         ],
                         'exclude_categories' => [
                             'type' => 'array',
@@ -126,8 +128,9 @@ final class ProductSearch implements ToolInterface
         $fulltext = $expandedQuery !== '' ? $this->searchFullText($expandedQuery, $filters) : [];
         $trigram = $this->searchTrigram($trigramQuery, $filters);
 
-        // Fuzja RRF (5 torów)
-        $merged = $this->mergeRRF($semanticName, $semanticDesc, $semanticJargon, $fulltext, $trigram, $limit);
+        // Fuzja RRF (5 torów) + real-time MySQL enrichment
+        $inStockOnly = !empty($normalized['in_stock_only']);
+        $merged = $this->mergeRRF($semanticName, $semanticDesc, $semanticJargon, $fulltext, $trigram, $limit, $inStockOnly);
 
         // Dołącz search_plan do debug info
         if (!empty($searchPlan)) {
@@ -155,7 +158,7 @@ final class ProductSearch implements ToolInterface
             'min_price' => $filtersInput['price_min'] ?? $params['min_price'] ?? null,
             'max_price' => $filtersInput['price_max'] ?? $params['max_price'] ?? null,
             'brand' => $filtersInput['brand'] ?? $params['brand'] ?? null,
-            'in_stock_only' => $filtersInput['in_stock_only'] ?? $params['in_stock_only'] ?? false,
+            'in_stock_only' => $filtersInput['in_stock_only'] ?? $params['in_stock_only'] ?? true,
             'exclude_categories' => $filtersInput['exclude_categories'] ?? [],
         ];
     }
@@ -170,9 +173,7 @@ final class ProductSearch implements ToolInterface
         $conditions = ['is_active = true'];
         $sqlParams = [];
 
-        if (!empty($params['in_stock_only'])) {
-            $conditions[] = 'in_stock = true';
-        }
+        // in_stock_only filtrowane post-hoc z real-time MySQL (nie z pgvector)
 
         // ADR-027: filtr category działa na parent i child
         if (!empty($params['category'])) {
@@ -342,6 +343,7 @@ final class ProductSearch implements ToolInterface
         array $fulltext,
         array $trigram,
         int $limit,
+        bool $inStockOnly = true,
     ): array {
         $k = self::RRF_K;
         $scores = [];
@@ -369,7 +371,102 @@ final class ProductSearch implements ToolInterface
         }
 
         arsort($scores);
-        $topIds = array_slice(array_keys($scores), 0, $limit);
+
+        // Pobierz większy zbiór kandydatów (zapas na filtrowanie po MySQL)
+        $candidateLimit = min(count($scores), $limit * 3);
+        $candidateIds = array_slice(array_keys($scores), 0, $candidateLimit);
+
+        // Pobierz nazwy produktów z pgvector (do debug logów)
+        $namesPlaceholders = implode(',', array_fill(0, count($candidateIds), '?'));
+        $nameRows = $this->db->fetchAll(
+            "SELECT ps_product_id, product_name FROM divechat_product_embeddings WHERE ps_product_id IN ({$namesPlaceholders})",
+            $candidateIds,
+        );
+        $namesById = [];
+        foreach ($nameRows as $row) {
+            $namesById[(int) $row['ps_product_id']] = $row['product_name'];
+        }
+
+        // Snapshot kandydatów PRZED MySQL enrichment (top 20)
+        $candidatesBeforeMySQL = [];
+        foreach (array_slice($candidateIds, 0, 20) as $id) {
+            $info = $trackInfo[$id] ?? [];
+            $candidatesBeforeMySQL[] = [
+                'id' => $id,
+                'name' => $namesById[$id] ?? 'unknown',
+                'rrf_score' => round($scores[$id], 6),
+                'tracks' => [
+                    'name' => $info['name_rank'] ?? null,
+                    'desc' => $info['desc_rank'] ?? null,
+                    'jargon' => $info['jargon_rank'] ?? null,
+                    'fts' => $info['fts_rank'] ?? null,
+                    'trigram' => $info['trigram_rank'] ?? null,
+                ],
+            ];
+        }
+
+        // Real-time dane z MySQL (cena, stan, visibility, active)
+        $mysqlData = $this->enrichWithMySQLData($candidateIds);
+
+        // Log MySQL enrichment
+        $mysqlLog = [
+            'success' => !empty($mysqlData),
+            'count' => count($mysqlData),
+            'products' => [],
+        ];
+        foreach ($candidateIds as $id) {
+            if (isset($mysqlData[$id])) {
+                $mysqlLog['products'][$id] = $mysqlData[$id];
+            }
+        }
+
+        // Boost dostępnych produktów z AKTUALNYCH danych MySQL
+        // Tylko gdy in_stock_only=true (exploratory). Przy navigational (in_stock_only=false)
+        // klient szuka konkretnego produktu — nie karzemy za brak stanu.
+        if ($inStockOnly) {
+            foreach ($scores as $id => &$score) {
+                if (isset($mysqlData[$id]) && !$mysqlData[$id]['in_stock']) {
+                    $score *= 0.3;
+                }
+            }
+            unset($score);
+            arsort($scores);
+        }
+
+        // Filtruj ukryte i nieaktywne produkty (MySQL real-time) + loguj odfiltrowane
+        $filteredOut = [];
+        $filteredIds = array_filter(array_keys($scores), function (int $id) use ($mysqlData, &$filteredOut, $namesById) {
+            $data = $mysqlData[$id] ?? null;
+            if ($data === null) {
+                return true; // brak danych MySQL = zachowaj (fallback na pgvector)
+            }
+            $keep = $data['active'] && $data['visible'];
+            if (!$keep) {
+                $filteredOut[] = [
+                    'id' => $id,
+                    'name' => $namesById[$id] ?? 'unknown',
+                    'reason' => !$data['active'] ? 'active=false' : 'visibility=none',
+                ];
+            }
+            return $keep;
+        });
+
+        // Filtruj in_stock_only z aktualnych danych MySQL
+        if ($inStockOnly) {
+            $filteredIds = array_filter($filteredIds, function (int $id) use ($mysqlData, &$filteredOut, $namesById) {
+                $inStock = $mysqlData[$id]['in_stock'] ?? false;
+                if (!$inStock) {
+                    $filteredOut[] = [
+                        'id' => $id,
+                        'name' => $namesById[$id] ?? 'unknown',
+                        'reason' => 'in_stock_only=true, quantity=0',
+                    ];
+                }
+                return $inStock;
+            });
+        }
+
+        $topIds = array_slice(array_values($filteredIds), 0, $limit);
 
         if (empty($topIds)) {
             return ['products' => [], 'count' => 0, 'search_debug' => []];
@@ -416,17 +513,26 @@ final class ProductSearch implements ToolInterface
                 }
             }
 
-            $products[] = [
+            $product = [
                 'id' => (int) $row['ps_product_id'],
                 'name' => $row['product_name'],
                 'brand' => $row['brand_name'],
                 'category' => $row['category_name'],
-                'price' => (float) $row['price'],
-                'in_stock' => (bool) $row['in_stock'],
+                // Real-time z MySQL (fallback na pgvector jeśli brak)
+                'price' => $mysqlData[$id]['price'] ?? (float) $row['price'],
+                'in_stock' => $mysqlData[$id]['in_stock'] ?? (bool) $row['in_stock'],
+                'availability' => $mysqlData[$id]['availability'] ?? ((bool) $row['in_stock'] ? 'in_stock' : 'unavailable'),
                 'url' => $row['product_url'],
                 'image_url' => $row['image_url'],
                 'similarity' => round($rrfScore, 4),
             ];
+
+            // Cena przed rabatem — AI może powiedzieć "przeceniony z X na Y"
+            if (isset($mysqlData[$id]['price_before_discount'])) {
+                $product['price_before_discount'] = $mysqlData[$id]['price_before_discount'];
+            }
+
+            $products[] = $product;
 
             $debugItems[] = [
                 'product_id' => $id,
@@ -437,6 +543,10 @@ final class ProductSearch implements ToolInterface
                 'jargon_rank' => $info['jargon_rank'] ?? null,
                 'fts_rank' => $info['fts_rank'] ?? null,
                 'trigram_rank' => $info['trigram_rank'] ?? null,
+                'mysql_price' => $mysqlData[$id]['price'] ?? null,
+                'mysql_price_before_discount' => $mysqlData[$id]['price_before_discount'] ?? null,
+                'mysql_in_stock' => $mysqlData[$id]['in_stock'] ?? null,
+                'mysql_availability' => $mysqlData[$id]['availability'] ?? null,
             ];
         }
 
@@ -452,8 +562,169 @@ final class ProductSearch implements ToolInterface
                     'trigram_count' => count($trigram),
                 ],
                 'rrf_k' => $k,
+                'candidates_before_mysql' => array_slice($candidatesBeforeMySQL, 0, 10),
+                'mysql_enrichment' => $mysqlLog,
+                'filtered_out' => $filteredOut,
                 'items' => $debugItems,
             ],
         ];
+    }
+
+    /**
+     * Wzbogaca wyniki wyszukiwania o aktualne dane z MySQL PrestaShop.
+     * Zastępuje zamrożone dane z pgvector real-time danymi (cena, stan, visibility).
+     *
+     * @param list<int> $productIds
+     * @return array<int, array{price: float, in_stock: bool, quantity: int, active: bool, visible: bool}>
+     */
+    private function enrichWithMySQLData(array $productIds): array
+    {
+        if (empty($productIds)) {
+            return [];
+        }
+
+        try {
+            $mysql = MysqlConnection::getInstance();
+        } catch (\Throwable $e) {
+            // MySQL niedostępny — fallback na dane z pgvector
+            error_log("[DiveChat] MySQL enrichment failed: {$e->getMessage()}");
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+
+        // Główne dane produktów (cena bazowa netto, stan, visibility)
+        $rows = $mysql->fetchAll(
+            "SELECT
+                p.id_product,
+                ps.price AS price_netto,
+                COALESCE(t.rate, 23) AS tax_rate,
+                COALESCE(sa.total_qty, 0) AS quantity,
+                CASE
+                    WHEN COALESCE(sa.total_qty, 0) > 0 THEN 'in_stock'
+                    WHEN COALESCE(sa.allow_oos, 0) = 1 THEN 'available_to_order'
+                    ELSE 'unavailable'
+                END AS availability,
+                ps.active,
+                ps.visibility
+            FROM pr_product p
+            JOIN pr_product_shop ps ON p.id_product = ps.id_product AND ps.id_shop = 1
+            LEFT JOIN (
+                SELECT id_product,
+                       MAX(quantity) as total_qty,
+                       MAX(out_of_stock) as allow_oos
+                FROM pr_stock_available
+                GROUP BY id_product
+            ) sa ON p.id_product = sa.id_product
+            LEFT JOIN pr_tax_rule tr ON p.id_tax_rules_group = tr.id_tax_rules_group
+                AND tr.id_country = 14
+            LEFT JOIN pr_tax t ON tr.id_tax = t.id_tax
+            WHERE p.id_product IN ({$placeholders})",
+            $productIds,
+        );
+
+        // Aktywne promocje z pr_specific_price (priorytetyzacja: bardziej specyficzny wygrywa)
+        $specificPrices = $this->fetchSpecificPrices($mysql, $productIds);
+
+        $dataById = [];
+        foreach ($rows as $row) {
+            $productId = (int) $row['id_product'];
+            $priceNetto = (float) $row['price_netto'];
+            $taxRate = (float) $row['tax_rate'];
+            $availability = $row['availability'] ?? 'unavailable';
+
+            // Oblicz cenę finalną netto z uwzględnieniem specific_price
+            $finalNetto = $priceNetto;
+            $hasPromo = false;
+
+            if (isset($specificPrices[$productId])) {
+                $sp = $specificPrices[$productId];
+                $hasPromo = true;
+
+                // Price override: sp.price > 0 zastępuje cenę bazową
+                $base = ($sp['sp_price'] > 0) ? $sp['sp_price'] : $priceNetto;
+
+                // Reduction
+                if ($sp['reduction'] > 0) {
+                    $finalNetto = match ($sp['reduction_type']) {
+                        'percentage' => $base * (1 - $sp['reduction']),
+                        'amount' => $base - $sp['reduction'],
+                        default => $base,
+                    };
+                } else {
+                    $finalNetto = $base;
+                }
+            }
+
+            $priceBrutto = round($finalNetto * (1 + $taxRate / 100), 2);
+            $baseBrutto = round($priceNetto * (1 + $taxRate / 100), 2);
+
+            $entry = [
+                'price' => $priceBrutto,
+                'in_stock' => $availability !== 'unavailable',
+                'availability' => $availability,
+                'quantity' => (int) $row['quantity'],
+                'active' => (bool) $row['active'],
+                'visible' => $row['visibility'] !== 'none',
+            ];
+
+            // Dodaj cenę przed rabatem jeśli produkt ma aktywną promocję
+            if ($hasPromo && $baseBrutto > $priceBrutto) {
+                $entry['price_before_discount'] = $baseBrutto;
+            }
+
+            $dataById[$productId] = $entry;
+        }
+
+        return $dataById;
+    }
+
+    /**
+     * Pobiera najlepszą aktywną specific_price per produkt.
+     * Priorytet PS: id_shop > 0 wygrywa z id_shop = 0, id_group > 0 wygrywa z id_group = 0.
+     *
+     * @param list<int> $productIds
+     * @return array<int, array{sp_price: float, reduction: float, reduction_type: string}>
+     */
+    private function fetchSpecificPrices(MysqlConnection $mysql, array $productIds): array
+    {
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+
+        $rows = $mysql->fetchAll(
+            "SELECT
+                sp.id_product,
+                sp.price AS sp_price,
+                sp.reduction,
+                sp.reduction_type,
+                sp.id_shop,
+                sp.id_group
+            FROM pr_specific_price sp
+            WHERE sp.id_product IN ({$placeholders})
+              AND sp.id_shop IN (0, 1)
+              AND sp.id_customer = 0
+              AND sp.id_group IN (0, 1)
+              AND sp.from_quantity <= 1
+              AND sp.id_product_attribute = 0
+              AND (sp.`from` = '0000-00-00 00:00:00' OR sp.`from` <= NOW())
+              AND (sp.`to` = '0000-00-00 00:00:00' OR sp.`to` >= NOW())
+            ORDER BY sp.id_shop DESC, sp.id_group DESC",
+            $productIds,
+        );
+
+        // Wybierz jedną (najwyższy priorytet) specific_price per produkt
+        $bestByProduct = [];
+        foreach ($rows as $row) {
+            $productId = (int) $row['id_product'];
+            if (isset($bestByProduct[$productId])) {
+                continue; // Pierwszy wiersz ma najwyższy priorytet (ORDER BY DESC)
+            }
+            $bestByProduct[$productId] = [
+                'sp_price' => (float) $row['sp_price'],
+                'reduction' => (float) $row['reduction'],
+                'reduction_type' => $row['reduction_type'],
+            ];
+        }
+
+        return $bestByProduct;
     }
 }

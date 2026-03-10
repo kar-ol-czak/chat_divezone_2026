@@ -47,16 +47,22 @@ SELECT
     m.name AS brand_name,
     ROUND(ps.price * (1 + COALESCE(t.rate, 23) / 100), 2) AS price_brutto,
     ps.active,
+    ps.visibility,
     COALESCE(sa.quantity, 0) AS quantity
 FROM pr_product p
 JOIN pr_product_lang pl ON p.id_product = pl.id_product AND pl.id_lang = 1
 JOIN pr_product_shop ps ON p.id_product = ps.id_product AND ps.id_shop = 1
 LEFT JOIN pr_category_lang cl ON p.id_category_default = cl.id_category AND cl.id_lang = 1
 LEFT JOIN pr_manufacturer m ON p.id_manufacturer = m.id_manufacturer
-LEFT JOIN pr_stock_available sa ON p.id_product = sa.id_product AND sa.id_product_attribute = 0
+LEFT JOIN (
+    SELECT id_product, MAX(quantity) as quantity
+    FROM pr_stock_available
+    GROUP BY id_product
+) sa ON p.id_product = sa.id_product
 LEFT JOIN pr_tax_rule tr ON p.id_tax_rules_group = tr.id_tax_rules_group AND tr.id_country = 14
 LEFT JOIN pr_tax t ON tr.id_tax = t.id_tax
 WHERE ps.active = 1
+  AND ps.visibility != 'none'
 ORDER BY p.id_product
 """
 

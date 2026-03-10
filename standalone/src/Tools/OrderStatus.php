@@ -21,7 +21,7 @@ final class OrderStatus implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Sprawdza status zamówienia klienta. Wymaga numeru referencyjnego zamówienia i adresu email. '
+        return 'Sprawdza status zamówienia klienta. Wymaga kodu referencyjnego zamówienia (ciąg liter, np. AODMYANNV) i adresu email. '
              . 'Używaj gdy klient pyta o status zamówienia, przesyłkę lub dostawę.';
     }
 
@@ -32,7 +32,7 @@ final class OrderStatus implements ToolInterface
             'properties' => [
                 'order_reference' => [
                     'type' => 'string',
-                    'description' => 'Numer referencyjny zamówienia (np. "ABCDEFGH")',
+                    'description' => 'Kod referencyjny zamówienia — ciąg liter w formacie np. "AODMYANNV" (klient znajdzie go u góry maila z potwierdzeniem zamówienia)',
                 ],
                 'customer_email' => [
                     'type' => 'string',
@@ -49,7 +49,7 @@ final class OrderStatus implements ToolInterface
         $email = trim($params['customer_email'] ?? '');
 
         if ($reference === '' || $email === '') {
-            return ['error' => 'Wymagany numer zamówienia i email'];
+            return ['error' => 'Wymagany kod referencyjny zamówienia i email'];
         }
 
         $db = MysqlConnection::getInstance();
@@ -68,7 +68,7 @@ final class OrderStatus implements ToolInterface
         );
 
         if (!$order) {
-            return ['error' => 'Nie znaleziono zamówienia o podanym numerze i emailu. Sprawdź dane.'];
+            return ['error' => 'Nie znaleziono zamówienia o podanym kodzie referencyjnym i emailu. Sprawdź dane.'];
         }
 
         // Historia statusów
@@ -106,6 +106,18 @@ final class OrderStatus implements ToolInterface
             $trackingUrl = $carrier['tracking_url']
                 ? str_replace('@', $carrier['tracking_number'], $carrier['tracking_url'])
                 : null;
+
+            // Fallback: jeśli URL jest pusty lub nie zawiera numeru, zbuduj z nazwy przewoźnika
+            if (empty($trackingUrl) || $trackingUrl === $carrier['tracking_url']) {
+                $carrierLower = strtolower($carrier['carrier_name'] ?? '');
+                if (str_contains($carrierLower, 'inpost') || str_contains($carrierLower, 'paczkomat')) {
+                    $trackingUrl = 'https://inpost.pl/sledzenie-przesylek?number=' . urlencode($carrier['tracking_number']);
+                } elseif (str_contains($carrierLower, 'dpd')) {
+                    $trackingUrl = 'https://tracktrace.dpd.com.pl/parcelDetails?typ=1&p1=' . urlencode($carrier['tracking_number']);
+                } elseif (str_contains($carrierLower, 'dhl')) {
+                    $trackingUrl = 'https://www.dhl.com/pl-pl/home/tracking.html?tracking-id=' . urlencode($carrier['tracking_number']);
+                }
+            }
 
             $result['tracking'] = [
                 'carrier' => $carrier['carrier_name'],

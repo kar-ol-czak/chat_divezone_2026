@@ -44,16 +44,11 @@ final class ChatService
         // Wczytaj ustawienia z bazy (fallback na .env/defaults)
         $settings = $this->loadSettings();
 
-        // 1. Wczytaj lub utwórz sesję
-        $history = $this->conversationStore->startOrResume($sessionId, $customerId);
-
-        // 2. Zbuduj listę wiadomości
-        $messages = [
-            ['role' => 'system', 'content' => SystemPrompt::build($settings['emoji_enabled'])],
-        ];
+        // 1. Wczytaj lub utwórz sesję (PEŁNA historia)
+        $fullHistory = $this->conversationStore->startOrResume($sessionId, $customerId);
 
         // Rehydratuj ToolCall objects z historii (JSON zwraca tablice)
-        foreach ($history as &$msg) {
+        foreach ($fullHistory as &$msg) {
             if (!empty($msg['tool_calls']) && is_array($msg['tool_calls'])) {
                 $msg['tool_calls'] = array_map(
                     fn(array $tc) => new ToolCall($tc['id'], $tc['name'], $tc['arguments'] ?? []),
@@ -63,11 +58,15 @@ final class ChatService
         }
         unset($msg);
 
-        // Przytnij historię do ostatnich N wiadomości
-        $history = $this->trimHistory($history);
+        // 2. Przytnij KOPIĘ dla LLM kontekstu (pełna historia nienaruszona)
+        $trimmedHistory = $this->trimHistory($fullHistory);
 
-        // Dodaj historię (bez systemu - jest na początku)
-        foreach ($history as $msg) {
+        // 3. Zbuduj listę wiadomości dla LLM z PRZYCIĘTEJ historii
+        $messages = [
+            ['role' => 'system', 'content' => SystemPrompt::build($settings['emoji_enabled'])],
+        ];
+
+        foreach ($trimmedHistory as $msg) {
             if ($msg['role'] !== 'system') {
                 $messages[] = $msg;
             }
@@ -151,12 +150,14 @@ final class ChatService
                     }
                 }
 
-                // Dodaj wynik narzędzia do wiadomości
+                // Dodaj wynik narzędzia do wiadomości (bez search_debug — diagnostyka zbyt duża dla LLM)
+                $resultForAI = $result;
+                unset($resultForAI['search_debug']);
                 $messages[] = [
                     'role' => 'tool_result',
                     'tool_call_id' => $toolCall->id,
                     'name' => $toolCall->name,
-                    'content' => json_encode($result, JSON_UNESCAPED_UNICODE),
+                    'content' => json_encode($resultForAI, JSON_UNESCAPED_UNICODE),
                 ];
             }
         }
@@ -177,14 +178,28 @@ final class ChatService
                 ? Config::get('ANTHROPIC_MODEL', 'claude-sonnet-4-20250514')
                 : Config::get('OPENAI_CHAT_MODEL', 'gpt-4o'));
 
-        // 5. Zapisz historię (bez system prompta)
-        $historyToSave = array_values(array_filter(
-            $messages,
-            fn(array $m) => $m['role'] !== 'system',
-        ));
+        // 5. Zapisz PEŁNĄ historię + nowe wiadomości z tego turnu
+        //    Serializuj ToolCall objects w pełnej historii
+        $fullHistorySerialized = array_map(function (array $m) {
+            if (!empty($m['tool_calls'])) {
+                $m['tool_calls'] = array_map(function ($tc) {
+                    if ($tc instanceof ToolCall) {
+                        return ['id' => $tc->id, 'name' => $tc->name, 'arguments' => $tc->arguments];
+                    }
+                    return $tc;
+                }, $m['tool_calls']);
+            }
+            return $m;
+        }, $fullHistory);
 
-        // Serializuj tool_calls do zapisu (ToolCall -> array)
-        $historyToSave = array_map(function (array $m) {
+        // Wyciągnij NOWE wiadomości z tego turnu (po trimmed history + user msg)
+        //   $messages = [system, ...trimmedHistory, userMsg, ...toolLoopMsgs]
+        //   Nowe = userMsg + toolLoopMsgs (od pozycji 1 + count(trimmedHistory))
+        $newStartIdx = 1 + count($trimmedHistory); // skip system + trimmed history
+        $newMessages = array_slice($messages, $newStartIdx);
+
+        // Serializuj tool_calls w nowych wiadomościach
+        $newMessages = array_map(function (array $m) {
             if (!empty($m['tool_calls'])) {
                 $m['tool_calls'] = array_map(fn($tc) => [
                     'id' => $tc->id,
@@ -193,16 +208,22 @@ final class ChatService
                 ], $m['tool_calls']);
             }
             return $m;
-        }, $historyToSave);
+        }, $newMessages);
 
-        // Dodaj odpowiedź asystenta na końcu (jeśli nie ma tool calls)
+        // Dodaj finalną odpowiedź asystenta (jeśli nie ma tool calls)
         if (!$response->hasToolCalls()) {
             $assistantMsg = ['role' => 'assistant', 'content' => $finalContent];
             if (!empty($products)) {
                 $assistantMsg['products'] = $products;
             }
-            $historyToSave[] = $assistantMsg;
+            $newMessages[] = $assistantMsg;
         }
+
+        // Złącz: pełna historia (bez system) + nowe wiadomości
+        $historyToSave = array_merge(
+            array_values(array_filter($fullHistorySerialized, fn(array $m) => $m['role'] !== 'system')),
+            $newMessages,
+        );
 
         $roundedTimings = array_map(fn($v) => round((float) $v, 1), $timings);
 
@@ -296,6 +317,11 @@ final class ChatService
         // Dołącz search_plan jeśli obecny
         if (!empty($toolCall->arguments['search_plan'])) {
             $diag['search_plan'] = $toolCall->arguments['search_plan'];
+        }
+
+        // Dołącz pełny search_debug z ProductSearch (kandydaci, MySQL, odfiltrowane)
+        if ($toolCall->name === 'search_products' && !empty($result['search_debug'])) {
+            $diag['search_debug'] = $result['search_debug'];
         }
 
         return $diag;
