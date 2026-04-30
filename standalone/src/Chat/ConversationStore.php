@@ -242,4 +242,50 @@ final class ConversationStore
             [$sessionId],
         );
     }
+
+    /**
+     * Append wiadomości do `divechat_messages` (dual write – nadal jest też
+     * historia w `divechat_conversations.messages` JSONB jako legacy).
+     * Zwraca message_id potrzebny dla `UsageLogger::logMessage` (FK).
+     *
+     * @param array<int, array<string, mixed>>|null $toolCalls Lista wywołanych
+     *   narzędzi (znormalizowana: `[{name, args}]`) – dla role='assistant' z
+     *   tool_use; dla user/tool/system zwykle null.
+     */
+    public function appendMessage(
+        int $conversationId,
+        string $role,
+        string $content,
+        ?array $toolCalls = null,
+    ): int {
+        $row = $this->db->fetchOne(
+            'INSERT INTO divechat_messages (conversation_id, role, content, tool_calls)
+             VALUES (?, ?, ?, ?::jsonb)
+             RETURNING id',
+            [
+                $conversationId,
+                $role,
+                $content,
+                $toolCalls === null ? null : json_encode($toolCalls, JSON_UNESCAPED_UNICODE),
+            ],
+        );
+
+        return (int) ($row['id'] ?? 0);
+    }
+
+    /**
+     * Lista wiadomości per rozmowa (dla admin dashboardu / modala podglądu).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listMessages(int $conversationId): array
+    {
+        return $this->db->fetchAll(
+            'SELECT id, role, content, tool_calls, rating, rating_at, created_at
+             FROM divechat_messages
+             WHERE conversation_id = ?
+             ORDER BY created_at, id',
+            [$conversationId],
+        );
+    }
 }

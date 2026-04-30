@@ -21,6 +21,11 @@ final class UsageLogger
         private readonly ExchangeRateService $exchangeRates,
     ) {}
 
+    /**
+     * @param array<int, array<string, mixed>>|null $toolCalls Lista narzędzi
+     *   wywołanych przez LLM w tej odpowiedzi (znormalizowana: `[{name, args}]`)
+     *   lub null gdy brak.
+     */
     public function logMessage(
         int $conversationId,
         ?int $messageId,
@@ -29,6 +34,8 @@ final class UsageLogger
         int $outputTokens,
         int $cacheReadTokens = 0,
         int $cacheCreationTokens = 0,
+        ?int $latencyMs = null,
+        ?array $toolCalls = null,
     ): CostBreakdown {
         $cost = $this->pricing->calculateCost(
             $modelId,
@@ -42,8 +49,9 @@ final class UsageLogger
             'INSERT INTO divechat_message_usage (
                 conversation_id, message_id, model_id,
                 input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-                cost_input_usd, cost_output_usd, cost_cache_usd, cost_total_usd
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                cost_input_usd, cost_output_usd, cost_cache_usd, cost_total_usd,
+                latency_ms, tool_calls
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)',
             [
                 $conversationId,
                 $messageId,
@@ -56,6 +64,8 @@ final class UsageLogger
                 $cost->costOutputUsd,
                 $cost->costCacheUsd,
                 $cost->costTotalUsd,
+                $latencyMs,
+                $toolCalls === null ? null : json_encode($toolCalls, JSON_UNESCAPED_UNICODE),
             ],
         );
 

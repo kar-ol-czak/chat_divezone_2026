@@ -80,6 +80,13 @@ final class ChatService
         // Dodaj nową wiadomość użytkownika
         $messages[] = ['role' => 'user', 'content' => $message];
 
+        // Dual write: zapisz user message do divechat_messages (faza 1 dashboardu).
+        try {
+            $this->conversationStore->appendMessage($conversationId, 'user', $message);
+        } catch (\Throwable $e) {
+            error_log("[DiveChat] appendMessage(user) failed: " . $e->getMessage());
+        }
+
         // 3. Przygotuj definicje narzędzi
         $toolDefinitions = $this->toolRegistry->getToolDefinitions();
 
@@ -121,10 +128,36 @@ final class ChatService
 
             $aiStart = microtime(true);
             $response = $this->aiProvider->chat($messages, $toolDefinitions, $aiOptions);
-            $timings['ai_ms'] += (microtime(true) - $aiStart) * 1000;
+            $iterLatencyMs = (int) ((microtime(true) - $aiStart) * 1000);
+            $timings['ai_ms'] += $iterLatencyMs;
 
             $totalUsage['input_tokens'] += $response->usage['input_tokens'];
             $totalUsage['output_tokens'] += $response->usage['output_tokens'];
+
+            // Znormalizuj tool_calls dla telemetrii i divechat_messages.
+            $toolCallsNormalized = $response->hasToolCalls()
+                ? array_map(
+                    fn(ToolCall $tc) => [
+                        'id' => $tc->id,
+                        'name' => $tc->name,
+                        'arguments' => $tc->arguments,
+                    ],
+                    $response->toolCalls,
+                )
+                : null;
+
+            // Dual write: zapisz assistant message do divechat_messages (z tool_calls jeśli były).
+            $assistantMessageId = null;
+            try {
+                $assistantMessageId = $this->conversationStore->appendMessage(
+                    $conversationId,
+                    'assistant',
+                    (string) ($response->content ?? ''),
+                    $toolCallsNormalized,
+                );
+            } catch (\Throwable $e) {
+                error_log("[DiveChat] appendMessage(assistant) failed: " . $e->getMessage());
+            }
 
             // Loguj usage per wywołanie providera (audit trail w divechat_message_usage).
             $modelForLogging = $aiOptions['model_override']
@@ -135,12 +168,14 @@ final class ChatService
             try {
                 $this->usageLogger->logMessage(
                     conversationId: $conversationId,
-                    messageId: null,
+                    messageId: $assistantMessageId,
                     modelId: $modelForLogging,
                     inputTokens: (int) $response->usage['input_tokens'],
                     outputTokens: (int) $response->usage['output_tokens'],
                     cacheReadTokens: (int) ($response->usage['cache_read_tokens'] ?? 0),
                     cacheCreationTokens: (int) ($response->usage['cache_creation_tokens'] ?? 0),
+                    latencyMs: $iterLatencyMs,
+                    toolCalls: $toolCallsNormalized,
                 );
             } catch (\Throwable $e) {
                 // Nie blokuj odpowiedzi czatu jeśli logger się wywróci.
@@ -188,12 +223,25 @@ final class ChatService
                 // Dodaj wynik narzędzia do wiadomości (bez search_debug — diagnostyka zbyt duża dla LLM)
                 $resultForAI = $result;
                 unset($resultForAI['search_debug']);
+                $toolResultJson = json_encode($resultForAI, JSON_UNESCAPED_UNICODE);
                 $messages[] = [
                     'role' => 'tool_result',
                     'tool_call_id' => $toolCall->id,
                     'name' => $toolCall->name,
-                    'content' => json_encode($resultForAI, JSON_UNESCAPED_UNICODE),
+                    'content' => $toolResultJson,
                 ];
+
+                // Dual write: tool result do divechat_messages (role='tool') – do podglądu w dashboardzie.
+                try {
+                    $this->conversationStore->appendMessage(
+                        $conversationId,
+                        'tool',
+                        $toolResultJson,
+                        [['tool_call_id' => $toolCall->id, 'name' => $toolCall->name]],
+                    );
+                } catch (\Throwable $e) {
+                    error_log("[DiveChat] appendMessage(tool) failed: " . $e->getMessage());
+                }
             }
         }
 
