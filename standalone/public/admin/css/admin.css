@@ -1,0 +1,425 @@
+/* ================================================================
+   DiveChat Admin Dashboard - Style
+   ================================================================ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --primary: #0066cc;
+    --primary-hover: #0052a3;
+    --success: #28a745;
+    --warning: #ffc107;
+    --danger: #dc3545;
+    --bg: #f5f6f8;
+    --bg-panel: #ffffff;
+    --text: #222;
+    --text-muted: #6b7280;
+    --border: #e5e7eb;
+    --radius: 8px;
+    --radius-sm: 4px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06);
+    --shadow-md: 0 4px 14px rgba(0,0,0,0.10);
+    --topbar-h: 56px;
+}
+
+html, body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text);
+    background: var(--bg);
+    min-height: 100vh;
+}
+
+.hidden { display: none !important; }
+
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* --- Top bar --- */
+.topbar {
+    position: sticky;
+    top: 0;
+    height: var(--topbar-h);
+    background: #1a1a2e;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 24px;
+    z-index: 50;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.topbar__title {
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: 0.3px;
+}
+
+.topbar__nav {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+}
+
+.topbar__link {
+    color: #aaa;
+    text-decoration: none;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.topbar__link:hover {
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+}
+
+.topbar__link--active {
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+}
+
+.topbar__link--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.topbar__user {
+    color: #aaa;
+    font-size: 13px;
+}
+
+/* --- Dashboard layout --- */
+.dashboard {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* --- KPI cards --- */
+.kpi {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+.kpi__card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.kpi__card--cpr {
+    background: linear-gradient(135deg, #e6f4ea 0%, #f0f9f4 100%);
+    border-color: #c8e6c9;
+}
+
+.kpi__label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.kpi__value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+
+.kpi__sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.kpi__card--cpr .kpi__value {
+    color: #1e7e34;
+    font-size: 20px;
+}
+
+.kpi__card--loading .kpi__value {
+    color: var(--text-muted);
+    font-weight: 400;
+}
+
+/* --- Panels --- */
+.panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: #fafbfc;
+}
+
+.panel__header h2 {
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #444;
+}
+
+.panel__actions {
+    display: flex;
+    gap: 4px;
+}
+
+.panel__body {
+    padding: 16px 20px;
+}
+
+.panel__empty {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 40px 0;
+    font-size: 13px;
+}
+
+/* --- Buttons --- */
+.btn {
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text);
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.15s;
+}
+
+.btn:hover { background: #f0f0f0; }
+
+.btn--toggle {
+    background: #fff;
+}
+
+.btn--toggle.btn--active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+}
+
+.btn--close {
+    border: none;
+    background: transparent;
+    font-size: 24px;
+    line-height: 1;
+    color: var(--text-muted);
+    padding: 0 8px;
+    cursor: pointer;
+}
+
+.btn--close:hover { color: var(--text); }
+
+/* --- Table --- */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.data-table thead th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 8px 10px;
+    border-bottom: 2px solid var(--border);
+    background: #fafbfc;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.3px;
+}
+
+.data-table tbody td {
+    padding: 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.data-table tbody tr {
+    transition: background 0.1s;
+}
+
+.data-table tbody tr.clickable {
+    cursor: pointer;
+}
+
+.data-table tbody tr.clickable:hover {
+    background: #f0f4ff;
+}
+
+.data-table__empty {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 24px 0;
+    font-style: italic;
+}
+
+.data-table .ellipsis {
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.data-table .badge--model {
+    display: inline-block;
+    background: #e8eaf6;
+    color: #3949ab;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+/* --- Modal --- */
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    cursor: pointer;
+}
+
+.modal__panel {
+    position: relative;
+    width: 90%;
+    max-width: 800px;
+    max-height: 85vh;
+    background: var(--bg-panel);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    display: flex;
+    flex-direction: column;
+}
+
+.modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal__header h2 {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.modal__meta {
+    padding: 8px 20px;
+    background: #fafbfc;
+    color: var(--text-muted);
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+}
+
+.modal__body {
+    padding: 16px 20px;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* --- Conversation messages in modal --- */
+.msg {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.msg--user { flex-direction: row-reverse; }
+
+.msg__bubble {
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 70%;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.msg--user .msg__bubble {
+    background: #e3f2fd;
+    color: #1a3a5c;
+    border-bottom-right-radius: 2px;
+}
+
+.msg--assistant .msg__bubble {
+    background: #fff;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-bottom-left-radius: 2px;
+}
+
+.msg--tool .msg__bubble {
+    background: #f8f8f8;
+    border: 1px dashed var(--border);
+    color: var(--text-muted);
+    font-family: 'SF Mono', 'Consolas', monospace;
+    font-size: 11px;
+    max-height: 120px;
+    overflow: auto;
+}
+
+.msg__sidebar {
+    flex-shrink: 0;
+    width: 140px;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.msg__tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: #f0f0f0;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.msg--user .msg__tag { background: #c8e1ff; color: #1a3a5c; }
+.msg--assistant .msg__tag { background: #e8eaf6; color: #3949ab; }
+.msg--tool .msg__tag { background: #f3e5f5; color: #7b1fa2; }

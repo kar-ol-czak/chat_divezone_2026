@@ -31,6 +31,10 @@ cache/
 # MCP config (zawiera hasła)
 .mcp.json
 
+# Basic auth credentials (admin dashboard, generowane na serwerze)
+.htpasswd
+**/.htpasswd
+
 # ============================================
 # PROJEKT - lokalne handoffy, sesje, deploy logi
 # Te pliki czesto zawieraja credentiale i debug info

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DiveChat Admin</title>
+    <link rel="stylesheet" href="css/admin.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+</head>
+<body>
+    <header class="topbar">
+        <div class="topbar__title">DiveChat Admin</div>
+        <nav class="topbar__nav">
+            <a class="topbar__link topbar__link--active" href="#koszty">Koszty</a>
+            <a class="topbar__link topbar__link--disabled" title="Wkrótce">Rozmowy</a>
+            <a class="topbar__link topbar__link--disabled" title="Wkrótce">Cennik</a>
+            <a class="topbar__link topbar__link--disabled" title="Wkrótce">Ustawienia</a>
+        </nav>
+        <div class="topbar__user" id="topbarUser">—</div>
+    </header>
+
+    <main class="dashboard">
+        <!-- A2: KPI -->
+        <section class="kpi" id="kpiSection">
+            <div class="kpi__card kpi__card--loading"><span class="kpi__label">Dziś</span><span class="kpi__value">—</span></div>
+            <div class="kpi__card kpi__card--loading"><span class="kpi__label">Tydzień</span><span class="kpi__value">—</span></div>
+            <div class="kpi__card kpi__card--loading"><span class="kpi__label">Miesiąc</span><span class="kpi__value">—</span></div>
+            <div class="kpi__card kpi__card--loading kpi__card--cpr">
+                <span class="kpi__label">CPR (vs human agent)</span>
+                <span class="kpi__value">—</span>
+                <span class="kpi__sub">—</span>
+            </div>
+        </section>
+
+        <!-- A1: Trend wydatków -->
+        <section class="panel" id="trendSection">
+            <header class="panel__header">
+                <h2>Trend wydatków</h2>
+                <div class="panel__actions" role="tablist" aria-label="Okres">
+                    <button class="btn btn--toggle btn--active" data-period="daily">Dziennie</button>
+                    <button class="btn btn--toggle" data-period="weekly">Tygodniowo</button>
+                    <button class="btn btn--toggle" data-period="monthly">Miesięcznie</button>
+                </div>
+            </header>
+            <div class="panel__body">
+                <canvas id="trendChart" height="80"></canvas>
+                <div class="panel__empty hidden" id="trendEmpty">Brak rozmów w wybranym okresie.</div>
+            </div>
+        </section>
+
+        <!-- A3: Top 10 -->
+        <section class="panel" id="topSection">
+            <header class="panel__header">
+                <h2>Top 10 najdroższych rozmów (30 dni)</h2>
+            </header>
+            <div class="panel__body">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Model</th>
+                            <th class="num">Wiad.</th>
+                            <th class="num">Koszt</th>
+                            <th>Pierwsza wiadomość</th>
+                        </tr>
+                    </thead>
+                    <tbody id="topConversationsBody">
+                        <tr><td colspan="5" class="data-table__empty">Ładowanie…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- A4: Breakdown per model -->
+        <section class="panel" id="byModelSection">
+            <header class="panel__header">
+                <h2>Breakdown per model (30 dni)</h2>
+            </header>
+            <div class="panel__body">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Model</th>
+                            <th class="num">Użyć</th>
+                            <th class="num">Tokens (in / out)</th>
+                            <th class="num">Cache read</th>
+                            <th class="num">Avg latency</th>
+                            <th class="num">Koszt</th>
+                            <th class="num">Avg / use</th>
+                        </tr>
+                    </thead>
+                    <tbody id="byModelBody">
+                        <tr><td colspan="7" class="data-table__empty">Ładowanie…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- B2: Modal podgląd rozmowy -->
+    <div class="modal hidden" id="convModal" role="dialog" aria-modal="true" aria-labelledby="convModalTitle">
+        <div class="modal__backdrop" data-close-modal></div>
+        <div class="modal__panel">
+            <header class="modal__header">
+                <h2 id="convModalTitle">Rozmowa</h2>
+                <button class="btn btn--close" data-close-modal aria-label="Zamknij">&times;</button>
+            </header>
+            <div class="modal__meta" id="convModalMeta">—</div>
+            <div class="modal__body" id="convModalBody"></div>
+        </div>
+    </div>
+
+    <script src="js/admin.js" defer></script>
+    <script src="js/admin-charts.js" defer></script>
+    <script src="js/admin-tables.js" defer></script>
+    <script src="js/admin-conversation.js" defer></script>
+</body>
+</html>

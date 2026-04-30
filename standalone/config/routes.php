@@ -5,15 +5,20 @@ declare(strict_types=1);
 use DiveChat\AI\ExchangeRateService;
 use DiveChat\AI\PricingService;
 use DiveChat\AI\UsageLogger;
+use DiveChat\Admin\ConversationViewer;
+use DiveChat\Admin\CostAnalytics;
 use DiveChat\Chat\ChatService;
 use DiveChat\Chat\ConversationStore;
 use DiveChat\Chat\SettingsStore;
+use DiveChat\Controller\AdminController;
 use DiveChat\Controller\AdminPricingController;
 use DiveChat\Controller\ChatController;
 use DiveChat\Controller\ConversationsController;
 use DiveChat\Controller\HealthController;
 use DiveChat\Controller\SettingsController;
 use DiveChat\Controller\TestTokenController;
+use DiveChat\Database\PostgresConnection;
+use DiveChat\Http\AdminAuthMiddleware;
 use DiveChat\Router;
 
 /**
@@ -37,7 +42,7 @@ return static function (
     $router->post('/api/chat', $chatController->handle(...));
     $router->post('/api/chat/stream', $chatController->stream(...));
 
-    // Admin: Conversations
+    // Admin: Conversations (po session_id - legacy widget testowy)
     $convController = new ConversationsController(new ConversationStore(), $usageLogger);
     $router->get('/api/conversations', $convController->list(...));
     $router->get('/api/conversations/{session_id}', $convController->detail(...));
@@ -56,4 +61,18 @@ return static function (
     $pricingController = new AdminPricingController($pricingService);
     $router->get('/api/admin/pricing', $pricingController->list(...));
     $router->post('/api/admin/pricing', $pricingController->update(...));
+
+    // Admin: Dashboard (TASK-055) – chronione przez AdminAuthMiddleware (basic auth + .htpasswd)
+    $htpasswdPath = dirname(__DIR__) . '/admin/.htpasswd';
+    $adminAuth = new AdminAuthMiddleware($htpasswdPath);
+    $db = PostgresConnection::getInstance();
+    $costAnalytics = new CostAnalytics($db, $pricingService, $exchangeRateService);
+    $conversationViewer = new ConversationViewer($db, $exchangeRateService);
+    $adminController = new AdminController($adminAuth, $costAnalytics, $conversationViewer);
+
+    $router->get('/api/admin/cost/kpi', $adminController->kpi(...));
+    $router->get('/api/admin/cost/trend', $adminController->trend(...));
+    $router->get('/api/admin/cost/by-model', $adminController->byModel(...));
+    $router->get('/api/admin/conversations/top', $adminController->topConversations(...));
+    $router->get('/api/admin/conversations/{id}', $adminController->conversationDetail(...));
 };

@@ -1,0 +1,12 @@
+AuthType Basic
+AuthName "DiveChat Admin"
+AuthUserFile /home/divezone/public_html/chat.divezone.pl/admin/.htpasswd
+Require valid-user
+
+# Cache busting dla JS/CSS - każdy deploy dostaje świeże assety
+<FilesMatch "\.(js|css)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+</FilesMatch>
+
+# Index file
+DirectoryIndex index.html
