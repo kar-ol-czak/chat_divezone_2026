@@ -58,7 +58,10 @@
         applyModelDependentControls();
         if (!initialLoad) saveAll();
     });
-    elEscalation.addEventListener('change', function () { if (!initialLoad) saveAll(); });
+    elEscalation.addEventListener('change', function () {
+        applyModelDependentControls();
+        if (!initialLoad) saveAll();
+    });
 
     elTemp.addEventListener('input', function () {
         elTempValue.textContent = parseFloat(elTemp.value).toFixed(1);
@@ -212,10 +215,12 @@
 
     /**
      * Pokazuje / ukrywa kontrolki temperature i reasoning_effort na podstawie flag
-     * aktualnie wybranego model_primary.
+     * aktualnie wybranego model_primary. Jeśli primary nie jest wybrany (placeholder),
+     * fallback do flag z modelu eskalacji – żeby UI się degradował gracefully gdy
+     * baza ma stale state (np. model_primary nie pasuje do providera, patrz TASK-053).
      */
     function applyModelDependentControls() {
-        var meta = getSelectedModelMeta(elModel);
+        var meta = getSelectedModelMeta(elModel) || getSelectedModelMeta(elEscalation);
 
         // Temperature: zawsze widoczny slider, ale disabled+info gdy model nie wspiera.
         if (meta && meta.supports_temperature) {
@@ -228,7 +233,7 @@
             elTemp.parentElement.classList.add('setting-group--disabled');
         }
 
-        // Reasoning effort: widoczne tylko jeśli model wspiera.
+        // Reasoning effort: widoczne tylko jeśli aktywny lub fallback model wspiera.
         if (meta && meta.supports_reasoning_effort) {
             elEffortGroup.classList.remove('hidden');
         } else {

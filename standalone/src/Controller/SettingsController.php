@@ -40,6 +40,7 @@ final class SettingsController
 
         if (isset($body['settings']) && is_array($body['settings'])) {
             $this->settingsStore->setMany($body['settings']);
+            $this->cleanupLegacyKeys($body['settings']);
             Response::json(['success' => true, 'updated' => array_keys($body['settings'])]);
         }
 
@@ -53,7 +54,26 @@ final class SettingsController
         }
 
         $this->settingsStore->set($key, $body['value']);
+        $this->cleanupLegacyKeys([$key => $body['value']]);
         Response::json(['success' => true, 'key' => $key, 'value' => $body['value']]);
+    }
+
+    /**
+     * Usuwa legacy klucze gdy zapisany został odpowiadający im nowy klucz.
+     * Zapobiega narastającemu stale state po refaktorze TASK-052b/052c.
+     */
+    private function cleanupLegacyKeys(array $written): void
+    {
+        $legacyMap = [
+            'model_primary' => 'primary_model',
+            'model_escalation' => 'escalation_model',
+            'reasoning_effort' => 'escalation_effort',
+        ];
+        foreach ($legacyMap as $newKey => $legacyKey) {
+            if (array_key_exists($newKey, $written)) {
+                $this->settingsStore->delete($legacyKey);
+            }
+        }
     }
 
     /**

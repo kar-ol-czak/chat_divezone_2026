@@ -70,4 +70,12 @@ final class SettingsStore
             $this->set($key, $value);
         }
     }
+
+    /**
+     * Usuwa wpis settings (no-op gdy nie istnieje).
+     */
+    public function delete(string $key): void
+    {
+        $this->db->query('DELETE FROM divechat_settings WHERE key = ?', [$key]);
+    }
 }
