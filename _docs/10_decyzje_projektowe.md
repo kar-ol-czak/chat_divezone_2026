@@ -1017,3 +1017,81 @@ z walidacją dat, shop, group, from_quantity.
 **Ograniczenie:** Ceny na poziomie produktu (`id_product_attribute = 0`). Kombinacje z różnymi cenami
 to znane ograniczenie, akceptowalne w pierwszej iteracji.
 **Powód:** AI podawał cenę bazową sprzed obniżki, niezgodną z ceną widoczną na karcie produktu.
+
+### ADR-051: Panel admina – aktualizacja modeli, dual-control reasoning, kalkulacja kosztu rozmowy
+**Data:** 2026-04-30 | **Status:** PRZYJĘTA
+
+**Kontekst:** Panel admina ma listę modeli `gpt-4.1` jako primary i `gpt-5.2` jako escalation, slider
+temperature zawsze widoczny. Brak najnowszych modeli (Opus 4.7, GPT-5.4, Haiku 4.5). Bug w UI:
+zmiana providera nie filtruje listy modeli. Brak informacji o cenach przy wyborze. Brak kalkulacji
+kosztu rozmowy. Slider temperature jest ignorowany przez modele rozumujące (GPT-5.x, Claude z thinking),
+co operatora wprowadza w błąd.
+
+**Decyzja:**
+
+1. **Lista modeli (8 szt., bez Opus 4.6 i GPT-5.4 Nano):**
+   Anthropic: Claude Opus 4.7, Claude Sonnet 4.6, Claude Haiku 4.5
+   OpenAI: GPT-5.4, GPT-4.1, GPT-5.4 Mini, o3-mini, GPT-5 mini
+
+2. **Cennik w tabeli PG `divechat_model_pricing`** (struktura w `AIModel` enum, ceny edytowalne
+   z panelu admina bez deploya). Pola: `model_id`, `input_price_per_million`, `output_price_per_million`,
+   `cache_read_price_per_million`, `cache_creation_price_per_million`, `currency` (USD), `updated_at`.
+
+3. **Dual-control reasoning w UI:** slider temperature widoczny zawsze (dla modeli rozumujących
+   wyszarzony z infoboxem). Dropdown "Reasoning effort" widoczny tylko dla modeli rozumujących
+   (wartości: `minimal`, `low`, `medium`, `high`). Backend mapuje:
+   - OpenAI reasoning models → `reasoning_effort: minimal/low/medium/high`
+   - Anthropic z thinking → `thinking.budget_tokens`: 1024 / 4096 / 8192 / 16384
+
+4. **Logging zużycia – per wiadomość + agregaty rozmowy:**
+   - Tabela `divechat_message_usage` (per wiadomość: model, input_tokens, output_tokens,
+     cache_read_tokens, cache_creation_tokens, cost_usd, created_at, message_id)
+   - Kolumny w `divechat_conversations`: `total_cost_usd`, `total_input_tokens`,
+     `total_output_tokens` (cache'owane agregaty, aktualizowane po każdej wiadomości)
+
+5. **Prompt caching Anthropic uwzględniany w kalkulacji** – cache_read = 10% input price,
+   cache_creation = 125% input price. Realne oszczędności przy długim system prompt.
+
+6. **Wyświetlanie kosztu:** sumaryczny koszt rozmowy w nagłówku panelu admina (USD główne,
+   PLN po kursie NBP w nawiasie). Kurs NBP pobierany 1× dziennie i cache'owany w tabeli
+   `divechat_exchange_rates` (date, currency, rate_to_pln).
+
+7. **Naprawa buga filtrowania providera:** frontend używa `available_models` pogrupowanego
+   per provider (już zwracane przez `SettingsController::get`). Po zmianie providera dropdown
+   modeli pokazuje tylko modele tego providera.
+
+**Uzasadnienie odrzuconych wariantów:**
+- Statyczny cennik w enum: każda zmiana cen = redeploy, niedopuszczalne (ceny zmieniają się
+  przy promocjach providerów).
+- Pojedynczy slider z auto-detekcją: operator nie ma świadomości czy parametr działa.
+  Dual-control z infoboxem informuje wprost.
+- Logging tylko per rozmowa: utrudnia analitykę typu "który model najczęściej generuje drogie
+  odpowiedzi", brak audit trail.
+
+**Implementacja w 3 taskach:**
+- TASK-052a (migration) – schemat tabel + seed cen
+- TASK-052b (backend) – enum, PricingService, UsageLogger, endpoints
+- TASK-052c (frontend) – filtr providera, dual-control, widget kosztu
+
+**Powiązane:** ADR-049 (search_debug nie do LLM), `_docs/13_wymagania_panel_admina.md`
+
+
+### ADR-051a: Korekta migracji 007 po review schematu (2026-04-30)
+**Status:** PRZYJĘTA (uzupełnienie ADR-051)
+
+**Kontekst:** Backend Claude Code wykrył 3 niezgodności między specyfikacją TASK-052a 
+a istniejącym schematem PG (`divechat_conversations.id` jest INTEGER nie VARCHAR, 
+istnieją już kolumny `tokens_input/output/estimated_cost`, brak tabeli `divechat_messages`).
+
+**Decyzja:**
+1. `divechat_message_usage.conversation_id` typu INTEGER z FK 
+   `REFERENCES divechat_conversations(id) ON DELETE CASCADE`.
+2. Zachowane istniejące kolumny `tokens_input`, `tokens_output`, `estimated_cost` 
+   (D-modified). Dodane tylko `cache_read_tokens`, `cache_creation_tokens`. 
+   `estimated_cost` rozszerzony z DECIMAL(8,6) na NUMERIC(10,6).
+3. `message_id BIGINT` bez FK z komentarzem (tabela `divechat_messages` jeszcze 
+   nie istnieje, ALTER po jej powstaniu).
+4. Rollback NIE cofa zmiany typu kolumny (poszerzenie precyzji jest bezpieczne).
+
+**Źródło:** `_instances/backend/handoff/052a_decisions.md` (zignorowany w git po 
+ADR-051a, ale logika utrwalona tutaj).
