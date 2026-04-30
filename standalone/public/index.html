@@ -23,6 +23,7 @@
             <!-- Pasek info czatu -->
             <div class="chat-header">
                 <span class="chat-header__label" id="chatHeaderLabel">Nowa rozmowa</span>
+                <span class="chat-cost hidden" id="chatCost" title="Sumaryczny koszt rozmowy"></span>
                 <button class="btn btn--small" id="btnNewChat">Nowa rozmowa</button>
                 <button class="btn btn--small btn--ghost hidden" id="btnBackToChat">Powrot do czatu</button>
             </div>
@@ -71,38 +72,31 @@
                     </div>
                     <div class="setting-group">
                         <label class="setting-label" for="settingModel">Model</label>
-                        <select id="settingModel" class="setting-select">
-                            <option value="gpt-4.1">gpt-4.1</option>
-                            <option value="gpt-5-mini">gpt-5-mini</option>
+                        <select id="settingModel" class="setting-select setting-select--wide">
+                            <option value="">Wybierz model...</option>
                         </select>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label" for="settingEscalation">Model eskalacji</label>
-                        <select id="settingEscalation" class="setting-select">
-                            <option value="gpt-5.2">gpt-5.2</option>
+                        <select id="settingEscalation" class="setting-select setting-select--wide">
+                            <option value="">Wybierz model...</option>
                         </select>
-                    </div>
-                    <div class="setting-group hidden" id="effortGroup">
-                        <label class="setting-label">Reasoning effort</label>
-                        <div>
-                            <select id="effortOpenai" class="setting-select">
-                                <option value="low">Low</option>
-                                <option value="medium" selected>Medium</option>
-                                <option value="high">High</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="setting-label" for="effortClaude">
-                                Budget tokens: <span id="effortClaudeValue">5000</span>
-                            </label>
-                            <input type="range" id="effortClaude" class="setting-range" min="1000" max="20000" step="1000" value="5000">
-                        </div>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label" for="settingTemp">
                             Temperature: <span id="tempValue">0.6</span>
+                            <span class="info-icon hidden" id="tempInfoIcon" title="Wybrany model nie używa parametru temperature. Użyj kontroli Reasoning poniżej.">&#9432;</span>
                         </label>
                         <input type="range" id="settingTemp" class="setting-range" min="0" max="1" step="0.1" value="0.6">
+                    </div>
+                    <div class="setting-group hidden" id="effortGroup">
+                        <label class="setting-label" for="settingEffort">Reasoning effort</label>
+                        <select id="settingEffort" class="setting-select">
+                            <option value="minimal">Minimal</option>
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
+                        </select>
                     </div>
                     <div class="setting-group">
                         <label class="setting-label" for="settingEmoji">Emoji</label>
@@ -118,6 +112,20 @@
                         <input type="range" id="settingGapThreshold" class="setting-range" min="0" max="1" step="0.05" value="0.5">
                     </div>
                     <div class="setting-status hidden" id="settingSaved">Zapisano</div>
+                </div>
+            </section>
+
+            <!-- Cennik modeli -->
+            <section class="panel-section panel-pricing" id="panelPricing">
+                <div class="panel-section__header collapsed" data-toggle="pricingBody">
+                    <h3>Cennik modeli</h3>
+                    <span class="panel-section__chevron">&#x25BC;</span>
+                </div>
+                <div class="panel-section__body collapsed" id="pricingBody">
+                    <div class="pricing-list" id="pricingList">
+                        <div class="pricing-empty">Ładowanie...</div>
+                    </div>
+                    <div class="pricing-status hidden" id="pricingStatus"></div>
                 </div>
             </section>
 
@@ -169,6 +177,7 @@
 
     <script src="js/console.js"></script>
     <script src="js/settings.js"></script>
+    <script src="js/pricing.js"></script>
     <script src="js/history.js"></script>
     <script src="js/chat.js"></script>
 </body>

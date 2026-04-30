@@ -121,6 +121,18 @@ html, body {
     flex: 1;
 }
 
+/* Cost widget w nagłówku czatu (TASK-052c) */
+.chat-cost {
+    font-size: 12px;
+    color: #1e7e34;
+    background: #e6f4ea;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    margin-right: 6px;
+}
+
 /* --- Wiadomosci --- */
 .chat-messages {
     flex: 1;
@@ -593,6 +605,24 @@ html, body {
     outline: none;
 }
 
+.setting-select--wide {
+    width: 240px;
+    flex: 1;
+}
+
+.setting-group--disabled .setting-range {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.info-icon {
+    display: inline-block;
+    margin-left: 4px;
+    color: var(--warning);
+    cursor: help;
+    font-size: 13px;
+}
+
 .setting-select:focus {
     border-color: var(--primary);
 }
@@ -649,6 +679,118 @@ html, body {
     text-align: right;
     padding: 4px 0;
     animation: fadeIn 0.2s;
+}
+
+/* --- Panel cennika (TASK-052c sekcja 5) --- */
+.pricing-empty {
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+    padding: 16px 0;
+}
+
+.pricing-row {
+    background: #fff;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin-bottom: 8px;
+}
+
+.pricing-row__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.pricing-row__label {
+    font-weight: 600;
+    color: #1a1a2e;
+}
+
+.pricing-row__provider,
+.pricing-row__esc {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.pricing-row__id {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 11px;
+    color: #888;
+    margin-left: auto;
+}
+
+.pricing-row__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 10px;
+    align-items: end;
+}
+
+.pricing-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.pricing-field__label {
+    font-size: 11px;
+    color: #777;
+}
+
+.pricing-field__input {
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    background: #fff;
+}
+
+.pricing-field__input:focus {
+    border-color: var(--primary);
+    outline: none;
+}
+
+.pricing-field__input--error {
+    border-color: var(--danger);
+    background: #fff0f0;
+}
+
+.pricing-row__save {
+    grid-column: 1 / -1;
+    justify-self: end;
+    margin-top: 6px;
+}
+
+.pricing-status {
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    text-align: center;
+}
+
+.pricing-status--success {
+    background: #e6f4ea;
+    color: #1e7e34;
+}
+
+.pricing-status--error {
+    background: #fce4ec;
+    color: var(--danger);
+}
+
+.pricing-status--info {
+    background: #e3f2fd;
+    color: #1565c0;
 }
 
 /* --- Konsola debug --- */

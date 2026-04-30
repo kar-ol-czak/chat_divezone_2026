@@ -55,6 +55,10 @@
         chatInput.value = '';
         chatInput.focus();
         updateSendButton();
+        // Wyczyść widget kosztu
+        if (window.DiveChat.Settings) {
+            window.DiveChat.Settings.clearCostWidget();
+        }
     });
 
     // --- Funkcje ---
@@ -254,6 +258,11 @@
         // Karty produktow
         if (data.products && data.products.length > 0) {
             appendProductCards(data.products);
+        }
+
+        // Aktualizuj widget kosztu rozmowy (TASK-052c)
+        if (data.conversation_cost && window.DiveChat.Settings) {
+            window.DiveChat.Settings.updateCostWidget(data.conversation_cost);
         }
 
         // Loguj diagnostyke

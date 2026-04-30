@@ -164,6 +164,11 @@
         btnNewChat.classList.add('hidden');
         chatHeaderLabel.textContent = 'Rozmowa #' + sessionId.substring(0, 8);
 
+        // Aktualizuj widget kosztu z conversation_cost (TASK-052c)
+        if (data.conversation_cost && window.DiveChat.Settings) {
+            window.DiveChat.Settings.updateCostWidget(data.conversation_cost);
+        }
+
         // Renderuj wiadomosci
         chatMessages.innerHTML = '';
 
@@ -203,6 +208,10 @@
         chatMessages.innerHTML = savedChatHtml;
         savedChatHtml = '';
         chatMessages.scrollTop = chatMessages.scrollHeight;
+        // Wyczyść widget kosztu (wracamy do nowej rozmowy)
+        if (window.DiveChat.Settings) {
+            window.DiveChat.Settings.clearCostWidget();
+        }
     }
 
     function createMessageEl(content, role, readonly, products) {
