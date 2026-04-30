@@ -11,26 +11,28 @@ use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\ServerException;
 
 /**
- * Provider OpenAI API (GPT-4o, GPT-4.1).
+ * Provider OpenAI API.
  *
- * Konwertuje ujednolicony format wiadomości na natywny format OpenAI:
- * - system jako wiadomość z role 'system'
- * - tool_calls w wiadomości assistant
- * - tool results jako wiadomość z role 'tool'
+ * Konwertuje ujednolicony format wiadomości na natywny format OpenAI.
+ * Reasoning effort: settings.reasoning_effort (UI string) → wprost
+ * jako `reasoning_effort` w body (modele wspierające).
+ *
+ * GPT-4.1 (single model with `supports_temperature=true`) → wysyłane temperature.
+ * Modele rozumujące → bez temperature.
+ *
+ * Cache: OpenAI nie eksponuje cache_*_tokens w usage, więc zwracamy 0.
  */
 final class OpenAIProvider implements AIProviderInterface
 {
     private readonly Client $http;
     private readonly string $apiKey;
     private readonly string $model;
-    private readonly float $temperature;
     private readonly int $maxTokens;
 
     public function __construct()
     {
         $this->apiKey = Config::getRequired('OPENAI_API_KEY');
         $this->model = Config::get('OPENAI_CHAT_MODEL', 'gpt-4.1');
-        $this->temperature = (float) Config::get('OPENAI_CHAT_TEMPERATURE', '0.4');
         $this->maxTokens = (int) Config::get('AI_MAX_TOKENS', '4096');
         $this->http = new Client([
             'base_uri' => 'https://api.openai.com/',
@@ -63,6 +65,7 @@ final class OpenAIProvider implements AIProviderInterface
         }
 
         $model = $options['model_override'] ?? $this->model;
+        $aiModel = AIModel::tryFrom($model);
 
         $body = [
             'model' => $model,
@@ -70,17 +73,22 @@ final class OpenAIProvider implements AIProviderInterface
             'max_completion_tokens' => $this->maxTokens,
         ];
 
-        // Temperature tylko dla modeli które ją obsługują (nie reasoning)
-        $aiModel = AIModel::tryFrom($model);
+        // Temperature tylko dla modeli które ją obsługują (GPT-4.1).
         if ($aiModel === null || $aiModel->supportsTemperature()) {
-            $body['temperature'] = $this->temperature;
+            if (isset($options['temperature'])) {
+                $body['temperature'] = (float) $options['temperature'];
+            } else {
+                $body['temperature'] = (float) Config::get('OPENAI_CHAT_TEMPERATURE', '0.4');
+            }
         }
 
-        // Reasoning effort tylko dla modeli które go obsługują
-        if (!empty($options['effort']) && is_string($options['effort'])) {
-            $aiModel = $aiModel ?? AIModel::tryFrom($model);
-            if ($aiModel !== null && $aiModel->supportsEffort()) {
-                $body['reasoning_effort'] = $options['effort'];
+        // Reasoning effort tylko dla modeli wspierających (wszystko poza GPT-4.1).
+        if (!empty($options['effort']) && $aiModel !== null && $aiModel->supportsReasoningEffort()) {
+            if (is_string($options['effort'])) {
+                $mapped = $aiModel->mapEffortToProviderValue($options['effort']);
+                if (is_string($mapped)) {
+                    $body['reasoning_effort'] = $mapped;
+                }
             }
         }
 
@@ -88,7 +96,7 @@ final class OpenAIProvider implements AIProviderInterface
             $body['tools'] = $this->formatTools($tools);
         }
 
-        $options = [
+        $requestOptions = [
             'headers' => [
                 'Authorization' => "Bearer {$this->apiKey}",
                 'Content-Type' => 'application/json',
@@ -96,7 +104,7 @@ final class OpenAIProvider implements AIProviderInterface
             'json' => $body,
         ];
 
-        $response = $this->requestWithRetry('POST', 'v1/chat/completions', $options);
+        $response = $this->requestWithRetry('POST', 'v1/chat/completions', $requestOptions);
 
         $data = json_decode($response->getBody()->getContents(), true);
         return $this->parseResponse($data);
@@ -179,12 +187,16 @@ final class OpenAIProvider implements AIProviderInterface
             );
         }
 
+        $usage = $data['usage'] ?? [];
+
         return new AIResponse(
             content: $content,
             toolCalls: $toolCalls,
             usage: [
-                'input_tokens' => $data['usage']['prompt_tokens'] ?? 0,
-                'output_tokens' => $data['usage']['completion_tokens'] ?? 0,
+                'input_tokens' => (int) ($usage['prompt_tokens'] ?? 0),
+                'output_tokens' => (int) ($usage['completion_tokens'] ?? 0),
+                'cache_read_tokens' => 0,
+                'cache_creation_tokens' => 0,
             ],
         );
     }

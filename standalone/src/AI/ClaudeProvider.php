@@ -14,23 +14,25 @@ use GuzzleHttp\Exception\ServerException;
  * Provider Anthropic Claude API.
  *
  * Konwertuje ujednolicony format wiadomości na natywny format Anthropic:
- * - system osobno (nie w messages)
+ * - system osobno (nie w messages), z `cache_control: ephemeral` żeby skorzystać
+ *   z prompt caching
  * - tool_use blocks w odpowiedzi asystenta
  * - tool_result jako content block w wiadomości user
+ *
+ * Reasoning effort: settings.reasoning_effort (UI string) → mapowane przez
+ * AIModel::mapEffortToProviderValue() na int budget_tokens.
  */
 final class ClaudeProvider implements AIProviderInterface
 {
     private readonly Client $http;
     private readonly string $apiKey;
     private readonly string $model;
-    private readonly float $temperature;
     private readonly int $maxTokens;
 
     public function __construct()
     {
         $this->apiKey = Config::getRequired('ANTHROPIC_API_KEY');
-        $this->model = Config::get('ANTHROPIC_MODEL', 'claude-sonnet-4-20250514');
-        $this->temperature = (float) Config::get('CLAUDE_TEMPERATURE', '0.6');
+        $this->model = Config::get('ANTHROPIC_MODEL', 'claude-sonnet-4-6');
         $this->maxTokens = (int) Config::get('AI_MAX_TOKENS', '4096');
         $this->http = new Client([
             'base_uri' => 'https://api.anthropic.com/',
@@ -58,38 +60,57 @@ final class ClaudeProvider implements AIProviderInterface
         }
 
         $model = $options['model_override'] ?? $this->model;
+        $aiModel = AIModel::tryFrom($model);
 
         $body = [
             'model' => $model,
             'max_tokens' => $this->maxTokens,
-            'temperature' => $this->temperature,
             'messages' => $claudeMessages,
         ];
 
-        // Extended thinking tylko dla modeli eskalacyjnych (np. claude-opus-4-6)
-        if (!empty($options['effort']) && is_int($options['effort'])) {
-            $aiModel = AIModel::tryFrom($model);
-            if ($aiModel !== null && $aiModel->supportsEffort()) {
-                $body['thinking'] = [
-                    'type' => 'enabled',
-                    'budget_tokens' => $options['effort'],
-                ];
-                // Extended thinking wymaga wyższego max_tokens
-                $body['max_tokens'] = max($this->maxTokens, $options['effort'] + 4096);
-                // Temperature musi być 1 z extended thinking
-                unset($body['temperature']);
+        // Reasoning effort → budget_tokens dla modeli wspierających thinking.
+        // options['effort'] przychodzi z ChatService jako string (minimal/low/medium/high)
+        // lub int (legacy budget_tokens) – rozpoznajemy oba.
+        $budgetTokens = null;
+        if (!empty($options['effort'])) {
+            if (is_int($options['effort'])) {
+                $budgetTokens = $options['effort'];
+            } elseif (is_string($options['effort']) && $aiModel !== null) {
+                $mapped = $aiModel->mapEffortToProviderValue($options['effort']);
+                if (is_int($mapped)) {
+                    $budgetTokens = $mapped;
+                }
             }
         }
 
+        if ($budgetTokens !== null && $aiModel !== null && $aiModel->supportsReasoningEffort()) {
+            $body['thinking'] = [
+                'type' => 'enabled',
+                'budget_tokens' => $budgetTokens,
+            ];
+            // Extended thinking wymaga max_tokens > budget_tokens.
+            $body['max_tokens'] = max($this->maxTokens, $budgetTokens + 4096);
+            // Z thinking nie wysyłamy temperature.
+        } elseif ($aiModel !== null && $aiModel->supportsTemperature() && isset($options['temperature'])) {
+            $body['temperature'] = (float) $options['temperature'];
+        }
+
+        // System prompt z cache_control → prompt caching Anthropic.
         if ($system !== '') {
-            $body['system'] = $system;
+            $body['system'] = [
+                [
+                    'type' => 'text',
+                    'text' => $system,
+                    'cache_control' => ['type' => 'ephemeral'],
+                ],
+            ];
         }
 
         if (!empty($tools)) {
             $body['tools'] = $this->formatTools($tools);
         }
 
-        $options = [
+        $requestOptions = [
             'headers' => [
                 'x-api-key' => $this->apiKey,
                 'anthropic-version' => '2023-06-01',
@@ -98,7 +119,7 @@ final class ClaudeProvider implements AIProviderInterface
             'json' => $body,
         ];
 
-        $response = $this->requestWithRetry('POST', 'v1/messages', $options);
+        $response = $this->requestWithRetry('POST', 'v1/messages', $requestOptions);
 
         $data = json_decode($response->getBody()->getContents(), true);
         return $this->parseResponse($data);
@@ -144,7 +165,6 @@ final class ClaudeProvider implements AIProviderInterface
 
     /**
      * Grupuje kolejne tool_result w jedną wiadomość user z wieloma content blocks.
-     * Claude API wymaga aby wyniki narzędzi z jednego turnu były w jednym user message.
      */
     private function appendToolResult(array &$messages, array $msg): void
     {
@@ -208,12 +228,16 @@ final class ClaudeProvider implements AIProviderInterface
             };
         }
 
+        $usage = $data['usage'] ?? [];
+
         return new AIResponse(
             content: $content,
             toolCalls: $toolCalls,
             usage: [
-                'input_tokens' => $data['usage']['input_tokens'] ?? 0,
-                'output_tokens' => $data['usage']['output_tokens'] ?? 0,
+                'input_tokens' => (int) ($usage['input_tokens'] ?? 0),
+                'output_tokens' => (int) ($usage['output_tokens'] ?? 0),
+                'cache_read_tokens' => (int) ($usage['cache_read_input_tokens'] ?? 0),
+                'cache_creation_tokens' => (int) ($usage['cache_creation_input_tokens'] ?? 0),
             ],
         );
     }

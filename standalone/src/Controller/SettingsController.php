@@ -4,50 +4,45 @@ declare(strict_types=1);
 
 namespace DiveChat\Controller;
 
+use DiveChat\AI\ExchangeRateService;
+use DiveChat\AI\PricingService;
 use DiveChat\Chat\SettingsStore;
 use DiveChat\Enum\AIModel;
 use DiveChat\Http\Request;
 use DiveChat\Http\Response;
 
 /**
- * Admin API do zarządzania ustawieniami czatu.
+ * Admin API ustawień czatu.
  *
- * GET /api/settings — pobierz wszystkie
- * POST /api/settings — aktualizuj jedno lub wiele
+ * GET /api/settings — settings + lista modeli z cenami + kurs USD/PLN.
+ * POST /api/settings — single (key/value) lub bulk (settings: {...}).
  */
 final class SettingsController
 {
     public function __construct(
         private readonly SettingsStore $settingsStore,
+        private readonly PricingService $pricingService,
+        private readonly ExchangeRateService $exchangeRateService,
     ) {}
 
-    /**
-     * GET /api/settings
-     */
     public function get(Request $request): void
     {
         Response::json([
             'settings' => $this->settingsStore->getAll(),
-            'available_models' => AIModel::grouped(),
+            'available_models' => $this->buildAvailableModels(),
+            'exchange_rate_usd_pln' => round($this->exchangeRateService->getUsdToPln(), 4),
         ]);
     }
 
-    /**
-     * POST /api/settings
-     * Body: {"key": "temperature", "value": 0.7}
-     * Lub bulk: {"settings": {"temperature": 0.7, "emoji_enabled": false}}
-     */
     public function post(Request $request): void
     {
         $body = $request->getJsonBody();
 
-        // Bulk update
         if (isset($body['settings']) && is_array($body['settings'])) {
             $this->settingsStore->setMany($body['settings']);
             Response::json(['success' => true, 'updated' => array_keys($body['settings'])]);
         }
 
-        // Single update
         $key = $body['key'] ?? '';
         if ($key === '') {
             Response::error('Pole "key" jest wymagane (lub "settings" dla bulk update)', 400);
@@ -59,5 +54,46 @@ final class SettingsController
 
         $this->settingsStore->set($key, $body['value']);
         Response::json(['success' => true, 'key' => $key, 'value' => $body['value']]);
+    }
+
+    /**
+     * Łączy AIModel::grouped() z cenami z PricingService – dla każdego modelu
+     * dorzuca input_price/output_price/cache_*. Modele bez wpisu w cenniku
+     * (np. legacy fallback) pomijane.
+     */
+    private function buildAvailableModels(): array
+    {
+        $grouped = AIModel::grouped();
+        $enriched = [];
+
+        foreach ($grouped as $provider => $tiers) {
+            foreach ($tiers as $tier => $models) {
+                foreach ($models as $model) {
+                    $price = $this->pricingService->getPrice($model['value']);
+                    if ($price === null || !$price->isActive) {
+                        continue;
+                    }
+                    $enriched[$provider][$tier][] = [
+                        'value' => $model['value'],
+                        'label' => $price->label,
+                        'input_price' => $price->inputPricePerMillion,
+                        'output_price' => $price->outputPricePerMillion,
+                        'cache_read_price' => $price->cacheReadPricePerMillion,
+                        'cache_creation_price' => $price->cacheCreationPricePerMillion,
+                        'supports_temperature' => $price->supportsTemperature,
+                        'supports_reasoning_effort' => $price->supportsReasoningEffort,
+                        'effort_param' => $model['effort_param'],
+                    ];
+                }
+                if (!empty($enriched[$provider][$tier])) {
+                    usort(
+                        $enriched[$provider][$tier],
+                        static fn(array $a, array $b): int => $a['input_price'] <=> $b['input_price'],
+                    );
+                }
+            }
+        }
+
+        return $enriched;
     }
 }

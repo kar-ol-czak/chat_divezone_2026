@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DiveChat\Controller;
 
+use DiveChat\AI\UsageLogger;
 use DiveChat\Chat\ConversationStore;
 use DiveChat\Http\Request;
 use DiveChat\Http\Response;
@@ -11,19 +12,17 @@ use DiveChat\Http\Response;
 /**
  * Admin API do przeglądania rozmów.
  *
- * GET /api/conversations — lista z paginacją i filtrami
- * GET /api/conversations/{session_id} — szczegóły
- * POST /api/conversations/{session_id}/status — zmiana admin_status
+ * GET /api/conversations — lista z paginacją i filtrami.
+ * GET /api/conversations/{session_id} — szczegóły + conversation_cost.
+ * POST /api/conversations/{session_id}/status — zmiana admin_status.
  */
 final class ConversationsController
 {
     public function __construct(
         private readonly ConversationStore $conversationStore,
+        private readonly UsageLogger $usageLogger,
     ) {}
 
-    /**
-     * GET /api/conversations
-     */
     public function list(Request $request): void
     {
         $page = max(1, $request->getQueryInt('page', 1));
@@ -37,9 +36,6 @@ final class ConversationsController
         Response::json($result);
     }
 
-    /**
-     * GET /api/conversations/{session_id}
-     */
     public function detail(Request $request): void
     {
         $sessionId = $request->params['session_id'] ?? '';
@@ -54,12 +50,18 @@ final class ConversationsController
             Response::error('Rozmowa nie znaleziona', 404);
         }
 
+        // Wzbogacamy o conversation_cost (USD + PLN po przeliczeniu).
+        try {
+            $conversation['conversation_cost'] = $this->usageLogger
+                ->getConversationCost((int) $conversation['id'])
+                ->toArray();
+        } catch (\Throwable $e) {
+            $conversation['conversation_cost'] = null;
+        }
+
         Response::json($conversation);
     }
 
-    /**
-     * POST /api/conversations/{session_id}/status
-     */
     public function updateStatus(Request $request): void
     {
         $sessionId = $request->params['session_id'] ?? '';

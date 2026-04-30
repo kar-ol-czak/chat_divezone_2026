@@ -6,7 +6,9 @@ namespace DiveChat\Chat;
 
 use DiveChat\AI\AIProviderInterface;
 use DiveChat\AI\AIResponse;
+use DiveChat\AI\ConversationCost;
 use DiveChat\AI\ToolCall;
+use DiveChat\AI\UsageLogger;
 use DiveChat\Config;
 use DiveChat\Enum\AIModel;
 use DiveChat\Tools\ToolRegistry;
@@ -26,6 +28,7 @@ final class ChatService
         private readonly ToolRegistry $toolRegistry,
         private readonly ConversationStore $conversationStore,
         private readonly SettingsStore $settingsStore,
+        private readonly UsageLogger $usageLogger,
     ) {}
 
     /**
@@ -44,8 +47,10 @@ final class ChatService
         // Wczytaj ustawienia z bazy (fallback na .env/defaults)
         $settings = $this->loadSettings();
 
-        // 1. Wczytaj lub utwórz sesję (PEŁNA historia)
-        $fullHistory = $this->conversationStore->startOrResume($sessionId, $customerId);
+        // 1. Wczytaj lub utwórz sesję (PEŁNA historia + id rekordu).
+        $session = $this->conversationStore->startOrResume($sessionId, $customerId);
+        $conversationId = $session['id'];
+        $fullHistory = $session['history'];
 
         // Rehydratuj ToolCall objects z historii (JSON zwraca tablice)
         foreach ($fullHistory as &$msg) {
@@ -89,13 +94,22 @@ final class ChatService
         // Rozpoznaj aktualnego providera
         $currentProvider = Config::get('AI_PROVIDER', str_starts_with(Config::get('ANTHROPIC_MODEL', ''), 'claude') ? 'claude' : 'openai');
 
-        // Opcje AI (effort, model override z settings)
-        $aiOptions = $settings['ai_options'] ?? [];
-        if (!empty($settings['primary_model'])) {
-            // Model override tylko jeśli pasuje do aktualnego providera
-            $settingsModel = AIModel::tryFrom($settings['primary_model']);
-            if ($settingsModel !== null && $settingsModel->provider() === $currentProvider) {
-                $aiOptions['model_override'] = $settings['primary_model'];
+        // Opcje AI: model override + temperature/effort wg flag wybranego modelu.
+        $aiOptions = [];
+        $primaryModel = null;
+        if (!empty($settings['model_primary'])) {
+            $primaryModel = AIModel::tryFrom($settings['model_primary']);
+            if ($primaryModel !== null && $primaryModel->provider() === $currentProvider) {
+                $aiOptions['model_override'] = $settings['model_primary'];
+            }
+        }
+
+        if ($primaryModel !== null) {
+            if ($primaryModel->supportsTemperature() && isset($settings['temperature'])) {
+                $aiOptions['temperature'] = (float) $settings['temperature'];
+            }
+            if ($primaryModel->supportsReasoningEffort() && !empty($settings['reasoning_effort'])) {
+                $aiOptions['effort'] = (string) $settings['reasoning_effort'];
             }
         }
 
@@ -111,6 +125,27 @@ final class ChatService
 
             $totalUsage['input_tokens'] += $response->usage['input_tokens'];
             $totalUsage['output_tokens'] += $response->usage['output_tokens'];
+
+            // Loguj usage per wywołanie providera (audit trail w divechat_message_usage).
+            $modelForLogging = $aiOptions['model_override']
+                ?? ($currentProvider === 'claude'
+                    ? Config::get('ANTHROPIC_MODEL', 'claude-sonnet-4-6')
+                    : Config::get('OPENAI_CHAT_MODEL', 'gpt-4.1'));
+
+            try {
+                $this->usageLogger->logMessage(
+                    conversationId: $conversationId,
+                    messageId: null,
+                    modelId: $modelForLogging,
+                    inputTokens: (int) $response->usage['input_tokens'],
+                    outputTokens: (int) $response->usage['output_tokens'],
+                    cacheReadTokens: (int) ($response->usage['cache_read_tokens'] ?? 0),
+                    cacheCreationTokens: (int) ($response->usage['cache_creation_tokens'] ?? 0),
+                );
+            } catch (\Throwable $e) {
+                // Nie blokuj odpowiedzi czatu jeśli logger się wywróci.
+                error_log("[DiveChat] UsageLogger failed: " . $e->getMessage());
+            }
 
             // Jeśli brak tool calls - mamy finalną odpowiedź
             if (!$response->hasToolCalls()) {
@@ -231,12 +266,19 @@ final class ChatService
             $sessionId,
             $historyToSave,
             array_unique($toolsUsed),
-            $totalUsage,
             $modelUsed,
             $roundedTimings,
             $searchDiagnostics,
             $knowledgeGap,
         );
+
+        // Sumaryczny koszt rozmowy (po atomic UPDATE w UsageLogger).
+        try {
+            $conversationCost = $this->usageLogger->getConversationCost($conversationId)->toArray();
+        } catch (\Throwable $e) {
+            error_log("[DiveChat] getConversationCost failed: " . $e->getMessage());
+            $conversationCost = null;
+        }
 
         return [
             'response' => $finalContent,
@@ -244,6 +286,7 @@ final class ChatService
             'tools_used' => array_values(array_unique($toolsUsed)),
             'products' => $products,
             'usage' => $totalUsage,
+            'conversation_cost' => $conversationCost,
             'diagnostics' => [
                 'model_used' => $modelUsed,
                 'response_times' => $roundedTimings,
@@ -255,35 +298,24 @@ final class ChatService
 
     /**
      * Wczytuje ustawienia z bazy z fallbackami na .env/defaults.
-     */
-    /**
-     * Wczytuje ustawienia z bazy z fallbackami na .env/defaults.
-     * Buduje opcje effort na podstawie modelu eskalacyjnego.
+     * Akceptuje nowe klucze (model_primary, model_escalation, temperature,
+     * reasoning_effort) i legacy (primary_model, escalation_model, escalation_effort)
+     * dla kompatybilności wstecznej. Frontend zapisuje pod nowymi nazwami.
      */
     private function loadSettings(): array
     {
         $dbSettings = $this->settingsStore->getAll();
 
-        // Rozpoznaj effort na podstawie modelu eskalacyjnego
-        $escalationModelId = $dbSettings['escalation_model'] ?? null;
-        $effort = $dbSettings['escalation_effort'] ?? 'medium';
-        $aiOptions = [];
-
-        if ($escalationModelId !== null) {
-            $escalationModel = AIModel::tryFrom($escalationModelId);
-            if ($escalationModel !== null && $escalationModel->supportsEffort()) {
-                // Claude: effort to budget_tokens (int), OpenAI: effort to string
-                $aiOptions['effort'] = $escalationModel->provider() === 'claude'
-                    ? (is_int($effort) ? $effort : 5000)
-                    : (is_string($effort) ? $effort : 'medium');
-            }
-        }
-
         return [
             'emoji_enabled' => $dbSettings['emoji_enabled'] ?? true,
             'knowledge_gap_threshold' => (float) ($dbSettings['knowledge_gap_threshold'] ?? 0.5),
-            'ai_options' => $aiOptions,
-            'primary_model' => $dbSettings['primary_model'] ?? null,
+            'model_primary' => $dbSettings['model_primary'] ?? $dbSettings['primary_model'] ?? null,
+            'model_escalation' => $dbSettings['model_escalation'] ?? $dbSettings['escalation_model'] ?? null,
+            'temperature' => $dbSettings['temperature'] ?? null,
+            'reasoning_effort' => $dbSettings['reasoning_effort']
+                ?? (is_string($dbSettings['escalation_effort'] ?? null)
+                    ? $dbSettings['escalation_effort']
+                    : 'medium'),
         ];
     }
 

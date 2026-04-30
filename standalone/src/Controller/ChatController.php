@@ -70,6 +70,7 @@ final class ChatController
                 'tools_used' => $result['tools_used'],
                 'products' => $result['products'],
                 'usage' => $result['usage'],
+                'conversation_cost' => $result['conversation_cost'],
                 'diagnostics' => $result['diagnostics'],
             ]);
         } catch (\Throwable $e) {
@@ -150,6 +151,7 @@ final class ChatController
                 'tools_used' => $result['tools_used'],
                 'products' => $result['products'],
                 'usage' => $result['usage'],
+                'conversation_cost' => $result['conversation_cost'],
                 'diagnostics' => $result['diagnostics'],
             ], JSON_UNESCAPED_UNICODE) . "\n\n";
             flush();

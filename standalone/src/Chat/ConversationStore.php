@@ -19,7 +19,10 @@ final class ConversationStore
     }
 
     /**
-     * Wznawia lub tworzy nową sesję. Zwraca historię wiadomości.
+     * Wznawia lub tworzy nową sesję.
+     *
+     * @return array{id: int, history: array} `id` = klucz PK z divechat_conversations,
+     *   potrzebny dla UsageLogger (FK divechat_message_usage.conversation_id).
      */
     public function startOrResume(string $sessionId, ?int $customerId): array
     {
@@ -31,27 +34,34 @@ final class ConversationStore
         );
 
         if ($row) {
-            return json_decode($row['messages'], true) ?: [];
+            return [
+                'id' => (int) $row['id'],
+                'history' => json_decode($row['messages'], true) ?: [],
+            ];
         }
 
-        // Nowa sesja
-        $this->db->query(
+        // Nowa sesja – RETURNING id w jednym roundtripie.
+        $newRow = $this->db->fetchOne(
             'INSERT INTO divechat_conversations (session_id, ps_customer_id, messages)
-             VALUES (?, ?, ?::jsonb)',
+             VALUES (?, ?, ?::jsonb)
+             RETURNING id',
             [$sessionId, $customerId, '[]'],
         );
 
-        return [];
+        return [
+            'id' => (int) ($newRow['id'] ?? 0),
+            'history' => [],
+        ];
     }
 
     /**
      * Zapisuje historię wiadomości + diagnostykę.
+     * Tokeny i koszt aktualizuje UsageLogger – tu tylko payload tekstowy + meta.
      */
     public function save(
         string $sessionId,
         array $messages,
         array $toolsUsed,
-        array $usage,
         string $modelUsed = '',
         array $responseTimes = [],
         array $searchDiagnostics = [],
@@ -61,8 +71,6 @@ final class ConversationStore
             'UPDATE divechat_conversations
              SET messages = ?::jsonb,
                  tools_used = ?::jsonb,
-                 tokens_input = tokens_input + ?,
-                 tokens_output = tokens_output + ?,
                  model_used = COALESCE(?, model_used),
                  response_times = ?::jsonb,
                  search_diagnostics = ?::jsonb,
@@ -72,8 +80,6 @@ final class ConversationStore
             [
                 json_encode($messages, JSON_UNESCAPED_UNICODE),
                 json_encode(array_values($toolsUsed), JSON_UNESCAPED_UNICODE),
-                $usage['input_tokens'] ?? 0,
-                $usage['output_tokens'] ?? 0,
                 $modelUsed ?: null,
                 json_encode($responseTimes, JSON_UNESCAPED_UNICODE),
                 json_encode($searchDiagnostics, JSON_UNESCAPED_UNICODE),
@@ -122,7 +128,9 @@ final class ConversationStore
 
         $rows = $this->db->fetchAll(
             "SELECT id, session_id, ps_customer_id, model_used, tools_used,
-                    tokens_input, tokens_output, estimated_cost,
+                    tokens_input, tokens_output,
+                    cache_read_tokens, cache_creation_tokens,
+                    estimated_cost,
                     knowledge_gap, admin_status,
                     jsonb_array_length(COALESCE(messages, '[]'::jsonb)) as message_count,
                     started_at, updated_at
@@ -143,6 +151,8 @@ final class ConversationStore
                 'tools_used' => array_values(json_decode($row['tools_used'] ?? '[]', true) ?: []),
                 'tokens_input' => (int) $row['tokens_input'],
                 'tokens_output' => (int) $row['tokens_output'],
+                'cache_read_tokens' => (int) ($row['cache_read_tokens'] ?? 0),
+                'cache_creation_tokens' => (int) ($row['cache_creation_tokens'] ?? 0),
                 'estimated_cost' => (float) ($row['estimated_cost'] ?? 0),
                 'knowledge_gap' => (bool) $row['knowledge_gap'],
                 'admin_status' => $row['admin_status'] ?? 'new',
@@ -177,6 +187,8 @@ final class ConversationStore
             'tools_used' => array_values(json_decode($row['tools_used'] ?? '[]', true) ?: []),
             'tokens_input' => (int) $row['tokens_input'],
             'tokens_output' => (int) $row['tokens_output'],
+            'cache_read_tokens' => (int) ($row['cache_read_tokens'] ?? 0),
+            'cache_creation_tokens' => (int) ($row['cache_creation_tokens'] ?? 0),
             'estimated_cost' => (float) ($row['estimated_cost'] ?? 0),
             'model_used' => $row['model_used'],
             'response_times' => json_decode($row['response_times'] ?? '{}', true),
