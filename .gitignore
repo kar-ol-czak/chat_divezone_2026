@@ -30,3 +30,39 @@ cache/
 
 # MCP config (zawiera hasła)
 .mcp.json
+
+# ============================================
+# PROJEKT - lokalne handoffy, sesje, deploy logi
+# Te pliki czesto zawieraja credentiale i debug info
+# ============================================
+_docs/HANDOFF_*
+_docs/PROMPT_*
+_docs/TASK-*
+_docs/sesja*
+_docs/*sesja*
+_docs/security_reports*/
+_docs/wiedza_nurkowa/
+_instances/*/handoff/
+_instances/*/tasks/TASK-*-completed.md
+_prompts/
+
+# Deploy logi i raporty
+*deploy_log*
+*deploy_report*
+*_audit*.md
+
+# Dane
+data/
+
+# Generated artifacts
+generate_encyclopedia/output/
+generate_encyclopedia/*.json
+embeddings/output/
+
+# CC pisze tu logi
+.claude_logs/
+
+# System
+*.bak
+*.tmp
+*~
