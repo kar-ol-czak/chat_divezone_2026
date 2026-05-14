@@ -317,6 +317,13 @@
         // Separatory ---
         html = html.replace(/^-{3,}$/gm, '<hr class="ai-separator">');
 
+        // Goly URL (http/https) → klikalny link. PO Markdown links (żeby nie tknąć już-anchorów),
+        // PRZED phone/price/order (żeby ich regexy pominęły URL przez replaceOutsideAnchors).
+        // Kończy regex na [\w\/]+ zamiast trailing \b — zachowuje trailing slash w URL.
+        html = replaceOutsideAnchors(html, /(https?:\/\/[\w\-.~:\/?#@!$&'*+,;=%]+[\w\/])/g,
+            '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+        );
+
         // Email → mailto link z bold
         html = replaceOutsideAnchors(html, /\b([a-z0-9._-]+@[a-z0-9.-]+\.[a-z]{2,})\b/gi, function (match) {
             return '<a href="mailto:' + match + '"><strong>' + match + '</strong></a>';

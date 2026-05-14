@@ -214,8 +214,24 @@ html, body {
     border-bottom-left-radius: 2px;
 }
 
-.message__bubble .product-link {
+/* Generyczne linki w bańce (tel:, mailto:, gole URL) — niebieskie podkreślone */
+.message__bubble a {
     color: var(--primary);
+    text-decoration: underline;
+}
+
+.message__bubble a:hover {
+    color: var(--primary-hover);
+}
+
+/* Fix: <strong> w środku <a> dziedziczy kolor linka zamiast nadpisywać na #1a1a2e
+   (inaczej bold tekst linka produktu/telefonu/maila wygląda na czarny) */
+.message__bubble a strong {
+    color: inherit;
+}
+
+/* Linki produktów (Markdown [text](url) + tryLinkProduct) — bold bez podkreślenia */
+.message__bubble .product-link {
     text-decoration: none;
     font-weight: 600;
 }
