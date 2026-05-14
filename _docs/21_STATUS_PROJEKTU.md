@@ -1,10 +1,61 @@
 # STATUS PROJEKTU: Czat AI divezone.pl
-# Wersja: 3.1 | Data: 2026-04-30
+# Wersja: 3.3 | Data: 2026-05-14
 # Aktualizowany ręcznie po każdej sesji architekta
 
 ---
 
-## OSTATNIA SESJA (2026-04-30)
+## OSTATNIA SESJA (2026-05-14 - TASK-CHAT-007a SystemPrompt hardening)
+
+**Status:** TASK-CHAT-007a → DEPLOYED 2026-05-14 13:54 CEST, commit `92083b7`
+
+**Co zrobione:**
+- Wykonano P0 hardening SystemPrompt.php pod ADR-053: dane firmy (Storczykowa 5 Toruń, 56 307 03 03, dive@divezone.pl, godziny pracy), naprawa list marek (FOURTH ELEMENT usunięte z ALLOWED, dodane DUI + Fourth Element do BANNED), 3-warstwowy off-topic (rozwiązuje case "kurczak"), TEMATY MEDYCZNE, STATUSY ZAMÓWIEŃ z few-shot, rozdzielenie dostępności od doręczenia (rozwiązuje N3), ZABEZPIECZENIA anti-injection, FORMAT ODPOWIEDZI z linkami w każdej odpowiedzi.
+- Plik zmieniony: `standalone/src/Chat/SystemPrompt.php` (diff 220 linii, smoke test OK, 20984 bajtów).
+- Artefakty: `/tmp/007a_diff.patch`, `/tmp/system_prompt_built.txt`.
+- Raport: `_instances/backend/handoff/TASK-CHAT-007a_done.md`.
+
+**Decyzja w trakcie wykonania (opcja A, Karol potwierdził):**
+- ADR-053 pkt 2 ma błędną premisę. Backend tool to faktycznie `get_expert_knowledge` (nie `search_encyclopedia`) i `check_order_status` (nie `get_order_status`).
+- KROK 2 zadania (rename tool name w prompcie) pominięty — wykonanie zepsułoby function calling.
+- Do rozważenia osobny task na rename narzędzi w backendzie lub aktualizacja ADR-053.
+
+**Stan aliasów statusów:**
+- `_docs/aliasy_statusow_propozycja.csv` istnieje, ale NIE jest zaimplementowany w `OrderStatus.php`. Tool zwraca raw `osl.name` (BARTEK/LESZEK trafiają wprost do modelu). Pierwsza warstwa obrony przez prompt; defensywne alias map po stronie tool to osobny task (sugestia: TASK-CHAT-007d).
+
+**Otwarte pytania:**
+- Review diffa SystemPrompt.php przed deployem.
+- TASK-CHAT-007b ShopCalendar (równoległa sesja CC) — prompt już referuje `get_shop_schedule`.
+- TASK-CHAT-007c fix formatowania frontend (osobny task).
+- Decyzja: ADR-053 pkt 2 fix vs backend tool rename.
+
+---
+
+## OSTATNIA SESJA (2026-04-30 - sesja 3, planowanie admin dashboard)
+
+**Co przerobione:**
+- Smoke test TASK-052 wykrył dwa problemy:
+  1. Bug: dropdown "Reasoning effort" nie pokazuje się dla modeli rozumujących
+  2. Brak admin dashboardu (analityka kosztów, lista rozmów)
+- ADR-052 podjęty: osobna aplikacja chat.divezone.pl/admin/, basic auth na MVP,
+  docelowo moduł PrestaShop. Faza 1 = tylko sekcja A (Koszty).
+- Research wykonany: best practices admin dashboardów chatbotowych 2026
+  (Langfuse, Helicone, LiteLLM, AI Vyuh FinOps). CPR benchmark: AI $0.30-1.50 vs
+  human $5-15 per resolution.
+
+**Taski wystawione (sekwencyjne):**
+- TASK-053 (backend+frontend) - fix bug effort dropdown, P1
+- TASK-054 (backend) - migracja 008: latency_ms, tool_calls, divechat_messages, ratings
+- TASK-055 (backend+frontend) - admin dashboard faza 1, sekcja A (Koszty):
+  KPI, wykres trendu (daily/weekly/monthly), top 10 najdroższych rozmów,
+  breakdown per model. Modal podglądu rozmowy. Chart.js z CDN.
+
+**Otwarte pytania:**
+- Smoke test TASK-053/054/055 po wykonaniu
+- Faza 2 dashboardu (sekcje B/C/D/E z ADR-052) - po fazie 1
+
+---
+
+## OSTATNIA SESJA (2026-04-30 - kontynuacja po incydencie secret scanning)
 
 **Co przerobione:**
 - Zbudowany arkusz testów pre-launch (138 scenariuszy w 11 kategoriach, plik `divezone_chat_testy.xlsx`).
