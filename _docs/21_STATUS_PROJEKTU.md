@@ -1,6 +1,27 @@
 # STATUS PROJEKTU: Czat AI divezone.pl
-# Wersja: 3.3 | Data: 2026-05-14
+# Wersja: 3.4 | Data: 2026-05-14
 # Aktualizowany ręcznie po każdej sesji architekta
+
+---
+
+## OSTATNIA SESJA (2026-05-14 - Mini-patch v2 SystemPrompt)
+
+**Status:** Mini-patch v2 SystemPrompt → DEPLOYED 2026-05-14 15:48 CEST, commit `23de13e`
+
+**Co zrobione:**
+- 6 zmian w jednej paczce na `SystemPrompt.php`:
+  1. Aktywacja `get_shop_schedule` (po deploy 007b — referencja przywrócona do DANE FIRMY)
+  2. Język adaptywny PL/EN/inne — Bug A test #7
+  3. Maski pełnotwarzowe (Ocean Reef Aria) wykluczone z rekomendacji do nurkowania ze sprzętem — Problem D test #1
+  4. NAZEWNICTWO "Inne:" rozszerzone o Akcesoria nurkowe (logbooki), Prezenty, Vouchery prezentowe — Bug B test #14 + Test #8
+  5. Nowa sekcja MAPOWANIE TERMINÓW KLIENTOWSKICH (logbook/voucher/prezent → kategorie + sugestia linku)
+  6. Nowa sekcja MARKA KONKRETNA NIEDOSTĘPNA (najpierw info o pytanej marce na zamówienie, dopiero potem alternatywy) — Problem C test #6
+- Deploy via scp na chat.divezone.pl. Backup hash przed: `a0c8990d...`, po: `00a64155...`. Verify: md5 lokalny=remote, `php -l` OK, wszystkie 6 fraz acceptance + Storczykowa 5 (regression 007a) potwierdzone.
+
+**Otwarte pytania:**
+- Karol robi smoke test 6 nowych zachowań przez UI + regression TOP 15 ataków.
+- TASK-CHAT-007c (frontend) — bug formatowania linków produktów (osobny task).
+- TASK-CHAT-008 — aliasy statusów (BARTEK→pakowanie) po deploy 007a.
 
 ---
 
