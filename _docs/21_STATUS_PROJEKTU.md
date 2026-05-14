@@ -21,6 +21,7 @@
 | **T-002 D2-hybrid mapping 100% pokrycia (ADR-055)** | DEPLOYED | `f8cf156` + `1461d82` |
 | **T-003 Mini-patch v3 SystemPrompt (7 patchy: PORADY PREZENTOWE, PL/EN, bold ceny, NAZEWNICTWO, krój, available_to_order, linki)** | DEPLOYED 18:50 CEST | `60db230` |
 | **T-006 fix availability logic — respektuj out_of_stock=2 (ADR-056, 1043 SKU "ożywa")** | DEPLOYED 21:20 CEST | `cbc8f30` |
+| **T-007 mini-patch v5 SystemPrompt — Patch H (PYTANIE O PŁEĆ KRYTYCZNE) + Patch I (ZAKAZ GENERALIZACJI STATUSÓW)** | DEPLOYED 21:39 CEST | `becfcb1` |
 
 ### Aktywne instancje CC
 
@@ -28,7 +29,7 @@
 |---|---|---|
 | frontend | TASK-CHAT-007c follow-up | DEPLOYED, weryfikacja Karol przez UI |
 | embeddings | T-001 | **DONE** |
-| backend | T-006 fix availability logic (ADR-056) | **DONE** — DEPLOYED 21:20, czeka smoke test |
+| backend | T-007 mini-patch v5 SystemPrompt | **DONE** — DEPLOYED 21:39, czeka smoke test |
 
 ### Smoke test produkcyjny po T-001 i T-002 (14.05)
 
@@ -40,7 +41,10 @@ Karol potwierdził:
 ALE wykryte 3 follow-up bugi w prod:
 1. Bot mówi "obecnie niedostępne" dla `available_to_order` (E.Lite Plus, Ladies First) zamiast "na zamówienie" — **CLOSED by T-006** (root cause PHP, nie SystemPrompt — tool zwracał `unavailable` zamiast `available_to_order` dla out_of_stock=2)
 2. Bot wybiórczo linkuje produkty (linkuje tylko in_stock, pomija available_to_order) — **CLOSED by T-006** (objaw tego samego buga — model dostawał `unavailable` więc nie linkował)
-3. Bot polecił skafander męski bez pytania o płeć (reguła obecnie pokrywa "pianki/skafandry", nie "skafandry suche") — **OPEN** (osobny task, prompt-side; patch E T-003 obejmuje "skafandry suche" jako trigger, ale model może nadal pomijać)
+3. Bot polecił skafander męski bez pytania o płeć (reguła obecnie pokrywa "pianki/skafandry", nie "skafandry suche") — **CLOSED by T-007 patch H** (PYTANIE O PŁEĆ KRYTYCZNE: ZAWSZE przed pierwszą rekomendacją, NIEZALEŻNIE od nazw produktów typu "Męski"/"Ladies First")
+4. Bot pisał w intro "nie mamy żadnego dostępnego od ręki" mimo że w swojej liście wymieniał produkt in_stock (Powystawowy) — **CLOSED by T-007 patch I** (ZAKAZ GENERALIZACJI STATUSÓW: policz statusy przed wstępem, intro spójne z listą)
+
+**PAKIET HOTFIXÓW POST-T-002 ZAMKNIĘTY** (T-001/T-002/T-003/T-006/T-007).
 
 ### T-003 spec (gotowy do puszczenia)
 
@@ -66,13 +70,13 @@ Prompt CC: `wykonaj _instances/backend/tasks/T-003_backend_systemprompt-v3.md`
 
 Stara konwencja (TASK-CHAT-007a/007b/007c, TASK-CHAT-010/011/012) zostaje w handoff i historycznych raportach. Numeracja T-NNN od 14.05.
 
-### Kolejka tasków (po deploy T-006)
+### Kolejka tasków (po deploy T-007, hotfixy zamknięte)
 
 | Numer | Task | Priorytet | Status |
 |---|---|---|---|
+| TASK-CHAT-009a/b Editorial Picks (ADR-054) | ODMROŻONE po pakiecie hotfixów — **NASTĘPNY** | P1 | spec gotowy |
 | T-004 (proponowany) | refresh_stock_only.py cron daily (CC propozycja po T-001) | P1 | propozycja, czeka na decyzję |
 | T-005 (proponowany) | SynonymExpander rozbija multi-word frazy → FTS noise (CC propozycja po T-001) | P2 | propozycja, czeka na decyzję |
-| TASK-CHAT-009a/b Editorial Picks (ADR-054) | WSTRZYMANE do końca hotfixów | P1 | spec gotowy |
 | T-XXX D1 ETL z pr_category | po hotfixach, trwałe rozwiązanie zastępujące D2-hybrid mapping | P2 | planowane |
 | TASK-CHAT-014 audyt EXCLUDED_CATEGORY_IDS | po hotfixach, proaktywny audyt | P2 | spec gotowy |
 | TASK-CHAT-008 alias map statusów BARTEK/LESZEK w OrderStatus.php | po hotfixach, defense in depth | P1 | nie zaczęte |
