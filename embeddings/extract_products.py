@@ -32,6 +32,12 @@ EXCLUDED_CATEGORY_IDS = [
     59, 457, 436, 462, 490
 ]
 
+# Subkategorie, które chcemy indeksować pomimo wykluczenia ich parenta (override).
+# Produkt przypisany do dowolnej z tych kategorii jest indeksowany, a category_name
+# w embeddings zostaje nadpisany nazwą whitelistowanej kategorii (nie domyślnej z PS).
+# TASK-CHAT-010: 476 = "Vouchery prezentowe" (parent 368 PREZENTY jest excluded).
+WHITELISTED_SUBCATEGORY_IDS = [476]
+
 # Produkty wykluczone ręcznie (np. maseczka COVID w kategorii Gadżety)
 EXCLUDED_PRODUCT_IDS = [5910]
 
@@ -97,14 +103,47 @@ WHERE c.nleft > root.nleft AND c.nright < root.nright
 
 
 def get_allowed_categories(cur) -> set[int]:
-    """Pobiera dozwolone ID kategorii z drzewa PrestaShop (nested set)."""
+    """Pobiera dozwolone ID kategorii z drzewa PrestaShop (nested set).
+
+    Dodaje WHITELISTED_SUBCATEGORY_IDS jako override — kategorie te są dozwolone
+    nawet jeśli ich parent jest w EXCLUDED_CATEGORY_IDS.
+    """
     excluded_str = ",".join(str(x) for x in EXCLUDED_CATEGORY_IDS)
     sql = ALLOWED_CATEGORIES_SQL.format(excluded=excluded_str)
     cur.execute(sql)
     allowed = {row["id_category"] for row in cur.fetchall()}
-    logger.info("Dozwolone kategorie: %d (wykluczone: %d IDs + ich potomkowie)",
-                len(allowed), len(EXCLUDED_CATEGORY_IDS))
+    allowed.update(WHITELISTED_SUBCATEGORY_IDS)
+    logger.info(
+        "Dozwolone kategorie: %d (wykluczone: %d IDs, whitelist override: %d)",
+        len(allowed), len(EXCLUDED_CATEGORY_IDS), len(WHITELISTED_SUBCATEGORY_IDS),
+    )
     return allowed
+
+
+def get_whitelisted_products(cur) -> dict[int, dict]:
+    """Zwraca produkty przypisane do WHITELISTED_SUBCATEGORY_IDS z ich override-cat
+    (id + nazwa), niezależnie od id_category_default. Klucz: id_product.
+    """
+    if not WHITELISTED_SUBCATEGORY_IDS:
+        return {}
+    ids_str = ",".join(str(x) for x in WHITELISTED_SUBCATEGORY_IDS)
+    cur.execute(f"""
+        SELECT cp.id_product, cp.id_category, cl.name AS category_name
+        FROM pr_category_product cp
+        JOIN pr_category_lang cl ON cl.id_category = cp.id_category AND cl.id_lang = 1
+        WHERE cp.id_category IN ({ids_str})
+    """)
+    mapping: dict[int, dict] = {}
+    for row in cur.fetchall():
+        pid = row["id_product"]
+        # Pierwsze trafienie wygrywa (zwykle jest 1 whitelist per produkt).
+        if pid not in mapping:
+            mapping[pid] = {
+                "id_category": row["id_category"],
+                "category_name": row["category_name"],
+            }
+    logger.info("Whitelist override dotyczy %d produktów", len(mapping))
+    return mapping
 
 
 def open_ssh_tunnel():
@@ -202,8 +241,9 @@ def extract_products(limit: int = None) -> list[dict]:
     conn = get_mysql_connection()
     cur = conn.cursor()
 
-    # Pobierz dozwolone kategorie (filtr drzewa kategorii)
+    # Pobierz dozwolone kategorie (filtr drzewa kategorii) + whitelist override
     allowed_categories = get_allowed_categories(cur)
+    whitelisted_products = get_whitelisted_products(cur)
 
     # Pobierz produkty
     sql = PRODUCTS_SQL
@@ -214,12 +254,26 @@ def extract_products(limit: int = None) -> list[dict]:
     total_before_filter = len(products_raw)
     logger.info("Pobrano %d produktów z MySQL (przed filtrem kategorii)", total_before_filter)
 
-    # Filtruj po dozwolonych kategoriach i wykluczonych produktach
-    products_raw = [
-        p for p in products_raw
-        if p.get("id_category_default") in allowed_categories
-        and p["id_product"] not in EXCLUDED_PRODUCT_IDS
-    ]
+    # Filtruj: domyślna kategoria dozwolona LUB produkt na whitelist (parent excluded
+    # ale przypisany do whitelistowanej sub-kategorii — override).
+    def is_allowed(p: dict) -> bool:
+        if p["id_product"] in EXCLUDED_PRODUCT_IDS:
+            return False
+        if p.get("id_category_default") in allowed_categories:
+            return True
+        return p["id_product"] in whitelisted_products
+
+    products_raw = [p for p in products_raw if is_allowed(p)]
+
+    # Override category_name dla produktów wpuszczonych przez whitelist
+    # (id_category_default wskazuje wykluczonego parenta typu PREZENTY).
+    for p in products_raw:
+        pid = p["id_product"]
+        if p.get("id_category_default") not in allowed_categories and pid in whitelisted_products:
+            override = whitelisted_products[pid]
+            p["id_category_default"] = override["id_category"]
+            p["category_name"] = override["category_name"]
+
     logger.info("Po filtrze kategorii + produktów: %d produktów (odrzucono %d)",
                 len(products_raw), total_before_filter - len(products_raw))
 

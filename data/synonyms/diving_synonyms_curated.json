@@ -400,5 +400,49 @@
       "obieg półzamknięty"
     ],
     "notes": "Rebreathery"
+  },
+  {
+    "canonical": "logbook",
+    "synonyms": [
+      "log book",
+      "dziennik nurkowań",
+      "dziennik nurkowy",
+      "książeczka nurkowa",
+      "książeczka do wpisywania nurkowań",
+      "karta nurkowań",
+      "dive logbook",
+      "diving log",
+      "dive journal",
+      "scuba log"
+    ],
+    "notes": "Klasyczna książeczka nurkowa (NIE wet notes)"
+  },
+  {
+    "canonical": "wet notes",
+    "synonyms": [
+      "mokry notes",
+      "podwodny notatnik",
+      "notes nurkowy",
+      "notes pod wodą",
+      "underwater notebook"
+    ],
+    "notes": "Podwodny notatnik wodoodporny (NIE logbook)"
+  },
+  {
+    "canonical": "voucher",
+    "synonyms": [
+      "voucher prezentowy",
+      "bon",
+      "bon prezentowy",
+      "kupon",
+      "karta podarunkowa",
+      "prezent",
+      "prezent dla nurka",
+      "upominek",
+      "gift voucher",
+      "gift card",
+      "gift certificate"
+    ],
+    "notes": "Karta podarunkowa Divezone (kat. 476)"
   }
 ]
