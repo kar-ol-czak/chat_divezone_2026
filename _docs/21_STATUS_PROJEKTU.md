@@ -1,6 +1,36 @@
 # STATUS PROJEKTU: Czat AI divezone.pl
-# Wersja: 3.5 | Data: 2026-05-14
+# Wersja: 3.6 | Data: 2026-05-14
 # Aktualizowany ręcznie po każdej sesji architekta
+
+---
+
+## OSTATNIA SESJA (2026-05-14 - T-002 D2-hybrid mapping 100% pokrycia)
+
+**Status:** T-002 → DEPLOYED 2026-05-14, commit `f8cf156`. TASK-CHAT-012 zamknięty po tym fixie.
+
+**Co zrobione:**
+- Migracja `sql/010_pseudocategory_mapping.sql` (14 UPDATE statements, idempotentna)
+- Backup table `divechat_product_embeddings_backup_20260514` (2561 wierszy) przed apply
+- Hipoteza Karola zweryfikowana w MySQL: brand-only kategorie (TECLINE/SCUBAPRO/APEKS/POSEIDON/MARES/AQUALUNG/ATOMIC/XDEEP/SCUBATECH = 168 produktów) są subkategoriami "Automaty Oddechowe" w PrestaShop (id_parent=286) → dorzucone pod parent='Automaty Oddechowe'
+- KLASYCZNE (16) + TURYSTYCZNE, LEKKIE (4) pod Wypornościowe (jackety) per decyzja Karola
+- Ocieplacze do Suchych (70), Buty do suchego, Zawory do suchego, Torby na Suche, Manszety pod Skafandry suche (od scope rozszerzenie)
+- Konsole/Manometry/Kompasy/Interfejsy/Węże do Manometrów/Analizatory tlenowe pod Komputery Nurkowe
+- WYPRZEDAŻE (24) zostaje NULL (decyzja Karol — nie indeksujemy)
+
+**Statystyki post-apply:**
+- 2193 produkty (86%) pod parent_category_name dla 14 pseudokategorii zbiorczych
+- 368 produktów (14%) bez parent — z czego 24 WYPRZEDAŻE + ~344 literal-only (działa przez ADR-027 first half OR)
+- Wszystkie 14 UPDATE wykonane bez błędu (UPDATE 322/214/140/121/205/95/337/182/81/156/216/42/67/15)
+
+**Integration tests:**
+- SANTI w Skafandry suche: 36 produktów (przed: 0) ✅
+- Komputery Nurkowe: SUUNTO 29, TECLINE 27, SHEARWATER 23, SCUBAPRO 23, MARES 20, GARMIN 15 + reszta ✅
+- Regression literal (Maski jednoszybowe 68, Książki nurkowe 15) działa ✅
+
+**Otwarte pytania:**
+- Karol smoke test 5 zapytań przez UI (SANTI suchy, SHEARWATER komputer, akcesoria, BCD, latarka backup)
+- Plus regression: maska jednoszybowa Tecline, książka nurkowa
+- TASK-XXX D1 ETL z `pr_category` MySQL → PG parent_category_name jako trwałe rozwiązanie (zastąpi hardcoded mapping z D2-hybrid)
 
 ---
 
