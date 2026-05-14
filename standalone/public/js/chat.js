@@ -296,10 +296,19 @@
     }
 
     /**
-     * Formatuje odpowiedź AI: bold, separatory, linkuje produkty.
+     * Formatuje odpowiedź AI: Markdown linki, bold, separatory, kontakt, ceny, linkuje produkty.
+     * Kolejność: linki Markdown muszą iść PRZED bold (bo `[**X**](url)` ma `**` w środku),
+     * a wszystkie regexy poza linkami aplikowane są SOLELY na tekście poza istniejącymi <a>...</a>
+     * (przez replaceOutsideAnchors), żeby uniknąć podwójnego wrapowania.
      */
     function formatAiResponse(text, products) {
         var html = escHtml(text);
+
+        // Markdown links [text](url) — PRZED bold i przed tryLinkProduct,
+        // żeby goły "](url)" nie został w bańce, a tryLinkProduct nie linkował duplikatu.
+        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g,
+            '<a href="$2" target="_blank" rel="noopener noreferrer" class="product-link">$1</a>'
+        );
 
         // Markdown bold **text** i __text__
         html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
@@ -308,7 +317,24 @@
         // Separatory ---
         html = html.replace(/^-{3,}$/gm, '<hr class="ai-separator">');
 
-        // Linkuj nazwy produktów jeśli mamy dane
+        // Email → mailto link z bold
+        html = replaceOutsideAnchors(html, /\b([a-z0-9._-]+@[a-z0-9.-]+\.[a-z]{2,})\b/gi, function (match) {
+            return '<a href="mailto:' + match + '"><strong>' + match + '</strong></a>';
+        });
+
+        // Telefon PL (9 cyfr w formacie XX XXX XX XX) → tel:+48 link z bold
+        html = replaceOutsideAnchors(html, /\b(\d{2}\s?\d{3}\s?\d{2}\s?\d{2})\b/g, function (match) {
+            var digits = match.replace(/\s+/g, '');
+            return '<a href="tel:+48' + digits + '"><strong>' + match + '</strong></a>';
+        });
+
+        // Cena "XXX zł" / "XXX,XX zł" → bold. (?!\w) bo \b nie działa po non-ASCII `ł`.
+        html = replaceOutsideAnchors(html, /\b(\d+(?:[.,]\d{2})?\s*zł)(?!\w)/g, '<strong>$1</strong>');
+
+        // Numer zamówienia PrestaShop (9-10 wielkich liter pod rząd) → bold
+        html = replaceOutsideAnchors(html, /\b([A-Z]{9,10})\b/g, '<strong>$1</strong>');
+
+        // Linkuj nazwy produktów jeśli mamy dane (pomija fragmenty już w <a>)
         if (products && products.length > 0) {
             products.forEach(function (p) {
                 if (!p.name || !p.url) return;
@@ -344,16 +370,45 @@
     }
 
     /**
+     * Aplikuje regex tylko poza istniejącymi blokami <a>...</a>.
+     * Splituje HTML na alternujące fragmenty (poza-anchor / anchor) i przepuszcza
+     * przez replace() tylko parzyste indeksy.
+     */
+    function replaceOutsideAnchors(html, pattern, replacer) {
+        var parts = html.split(/(<a\b[^>]*>[\s\S]*?<\/a>)/gi);
+        return parts.map(function (part, i) {
+            if (i % 2 === 0) {
+                return part.replace(pattern, replacer);
+            }
+            return part;
+        }).join('');
+    }
+
+    /**
      * Próbuje znaleźć fragment w HTML i zamienić na link.
-     * Zwraca zmieniony HTML lub null jeśli nie znaleziono.
-     * Pomija fragmenty już wewnątrz tagów <a>.
+     * Zwraca zmieniony HTML lub null jeśli nie znaleziono pasującego miejsca
+     * poza istniejącymi <a>...</a> (zapobiega nested anchors i duplikatom z Markdown links).
      */
     function tryLinkProduct(html, needle, url) {
-        var regex = new RegExp('(?![^<]*<\\/a>)' + escRegex(needle), 'i');
-        if (!regex.test(html)) return null;
-        return html.replace(regex,
-            '<a href="' + escAttr(url) + '" target="_blank" rel="noopener" class="product-link">$&</a>'
-        );
+        var anchorRanges = [];
+        var anchorRegex = /<a\b[^>]*>[\s\S]*?<\/a>/gi;
+        var a;
+        while ((a = anchorRegex.exec(html)) !== null) {
+            anchorRanges.push([a.index, a.index + a[0].length]);
+        }
+
+        var pattern = new RegExp(escRegex(needle), 'gi');
+        var result;
+        while ((result = pattern.exec(html)) !== null) {
+            var pos = result.index;
+            var inside = anchorRanges.some(function (r) { return pos >= r[0] && pos < r[1]; });
+            if (!inside) {
+                return html.substring(0, pos)
+                    + '<a href="' + escAttr(url) + '" target="_blank" rel="noopener" class="product-link">' + result[0] + '</a>'
+                    + html.substring(pos + result[0].length);
+            }
+        }
+        return null;
     }
 
     function appendProductCards(products) {
