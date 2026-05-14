@@ -591,9 +591,19 @@ final class ProductSearch implements ToolInterface
             return [];
         }
 
+        // Globalna konfiguracja: czy sklep pozwala zamawiać niedostępne produkty (PS_ORDER_OUT_OF_STOCK).
+        // Używana gdy produkt ma out_of_stock=2 (use default behavior — PrestaShop konwencja).
+        // Wartość pobierana per request — może się zmieniać w PS admin bez restartu.
+        $globalAllowOos = (int) (
+            $mysql->fetchOne(
+                "SELECT value FROM pr_configuration WHERE name = 'PS_ORDER_OUT_OF_STOCK' LIMIT 1"
+            )['value'] ?? 0
+        );
+
         $placeholders = implode(',', array_fill(0, count($productIds), '?'));
 
-        // Główne dane produktów (cena bazowa netto, stan, visibility)
+        // Główne dane produktów (cena bazowa netto, stan, visibility).
+        // CASE availability respektuje 3 stany PrestaShop out_of_stock (0=deny, 1=allow, 2=use default).
         $rows = $mysql->fetchAll(
             "SELECT
                 p.id_product,
@@ -602,7 +612,9 @@ final class ProductSearch implements ToolInterface
                 COALESCE(sa.total_qty, 0) AS quantity,
                 CASE
                     WHEN COALESCE(sa.total_qty, 0) > 0 THEN 'in_stock'
-                    WHEN COALESCE(sa.allow_oos, 0) = 1 THEN 'available_to_order'
+                    WHEN sa.allow_oos = 1 THEN 'available_to_order'
+                    WHEN sa.allow_oos = 0 THEN 'unavailable'
+                    WHEN (sa.allow_oos IS NULL OR sa.allow_oos = 2) AND ? = 1 THEN 'available_to_order'
                     ELSE 'unavailable'
                 END AS availability,
                 ps.active,
@@ -620,7 +632,7 @@ final class ProductSearch implements ToolInterface
                 AND tr.id_country = 14
             LEFT JOIN pr_tax t ON tr.id_tax = t.id_tax
             WHERE p.id_product IN ({$placeholders})",
-            $productIds,
+            array_merge([$globalAllowOos], $productIds),
         );
 
         // Aktywne promocje z pr_specific_price (priorytetyzacja: bardziej specyficzny wygrywa)
