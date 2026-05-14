@@ -1,6 +1,92 @@
 # STATUS PROJEKTU: Czat AI divezone.pl
-# Wersja: 3.6 | Data: 2026-05-14
+# Wersja: 3.7 | Data: 2026-05-14 (koniec sesji architekt #4)
 # Aktualizowany ręcznie po każdej sesji architekta
+
+---
+
+## AKTUALNY STAN (koniec sesji 2026-05-14, przed przeniesieniem rozmowy)
+
+### Co działa na produkcji chat.divezone.pl
+
+| Komponent | Status | Commit |
+|---|---|---|
+| TASK-CHAT-007a SystemPrompt hardening | DEPLOYED | `92083b7` + `f26927f` |
+| TASK-CHAT-007b ShopCalendar + tool get_shop_schedule | DEPLOYED | `b26fe39` |
+| Mini-patch v2 SystemPrompt (6 reguł: język, marka niedostępna, pełnotwarzowe, logbook, voucher) | DEPLOYED | `23de13e` |
+| TASK-CHAT-011 get_shop_schedule trigger fix (Fix C: 4 grupy triggerów + few-shot) | DEPLOYED | `93f9fe8` |
+| TASK-CHAT-007c frontend Markdown parser | DEPLOYED z 2 follow-up bugami | `446beae` |
+| TASK-CHAT-007c follow-up (goły URL + CSS link color) | DEPLOYED | (status zwrócony, weryfikacja Karol) |
+| TASK-CHAT-010 synonimy logbook/wet notes/voucher + whitelist sub-cat 476 | DEPLOYED z regresją | `6171157` |
+| **T-001 regresja logbook → wet notes fix** (stale in_stock dla id=5263) | DEPLOYED | `95edf2e` |
+| **T-002 D2-hybrid mapping 100% pokrycia (ADR-055)** | DEPLOYED | `f8cf156` + `1461d82` |
+| **T-003 Mini-patch v3 SystemPrompt (7 patchy: PORADY PREZENTOWE, PL/EN, bold ceny, NAZEWNICTWO, krój, available_to_order, linki)** | DEPLOYED 18:50 CEST | `60db230` |
+
+### Aktywne instancje CC
+
+| Instancja | Task | Stan |
+|---|---|---|
+| frontend | TASK-CHAT-007c follow-up | DEPLOYED, weryfikacja Karol przez UI |
+| embeddings | T-001 | **DONE** |
+| backend | T-003 mini-patch v3 SystemPrompt | **DONE** — DEPLOYED 18:50, czeka smoke test |
+
+### Smoke test produkcyjny po T-001 i T-002 (14.05)
+
+Karol potwierdził:
+- T-001 logbook regression: ✅ działa, "Macie logbook?" zwraca prawdziwe logbooki, nie wet notes
+- T-002 SANTI bug: ✅ SANTI znalezione (Santi Edge + E.Motion Plus)
+- T-002 Komputery Nurkowe: ✅ wszystkie marki widoczne (SUUNTO/SHEARWATER/SCUBAPRO/MARES/GARMIN)
+
+ALE wykryte 3 follow-up bugi w prod (rozwiązywane przez T-003):
+1. Bot mówi "obecnie niedostępne" dla `available_to_order` (E.Lite Plus, Ladies First) zamiast "na zamówienie"
+2. Bot wybiórczo linkuje produkty (linkuje tylko in_stock, pomija available_to_order)
+3. Bot polecił skafander męski bez pytania o płeć (reguła obecnie pokrywa "pianki/skafandry", nie "skafandry suche")
+
+### T-003 spec (gotowy do puszczenia)
+
+Plik: `_instances/backend/tasks/T-003_backend_systemprompt-v3.md`
+7 patchy:
+- A. Sekcja PORADY PREZENTOWE z budżetem + 4 kategorie cenowe + voucher
+- B. Język statusów PL/EN (in_stock / available_to_order / unavailable)
+- C. Bold ceny + status dostępności
+- D. NAZEWNICTWO Logbooki + Tabliczki + Prezenty subkategorie
+- E. Krój damski/męski rozszerzony (skafandry suche, pianki mokre, ocieplacze, odzież)
+- F. **KRYTYCZNY**: available_to_order ZAWSZE "na zamówienie", NIGDY "niedostępny"
+- G. **KRYTYCZNY**: linkuj WSZYSTKIE wymienione produkty niezależnie od dostępności
+
+Prompt CC: `wykonaj _instances/backend/tasks/T-003_backend_systemprompt-v3.md`
+
+### Konwencja numeracji (NOWA, od T-001)
+
+- Każdy task = nowy numer narastający T-NNN (T-001, T-002, T-003, ...)
+- Nazwa pliku: `T-NNN_INSTANCJA_krotki-opis.md` (instancja = backend/frontend/embeddings/integration)
+- Cała treść tasku w pliku w `_instances/{instancja}/tasks/`
+- Prompt CC w czacie: max 3 linie typu "wykonaj plik X"
+- Nie ma faz (jak "faza 2", "v2"). Każda iteracja = nowy numer T-NNN
+
+Stara konwencja (TASK-CHAT-007a/007b/007c, TASK-CHAT-010/011/012) zostaje w handoff i historycznych raportach. Numeracja T-NNN od 14.05.
+
+### Kolejka tasków (po deploy T-003)
+
+| Numer | Task | Priorytet | Status |
+|---|---|---|---|
+| T-004 (proponowany) | refresh_stock_only.py cron daily (CC propozycja po T-001) | P1 | propozycja, czeka na decyzję |
+| T-005 (proponowany) | SynonymExpander rozbija multi-word frazy → FTS noise (CC propozycja po T-001) | P2 | propozycja, czeka na decyzję |
+| TASK-CHAT-009a/b Editorial Picks (ADR-054) | WSTRZYMANE do końca hotfixów | P1 | spec gotowy |
+| T-XXX D1 ETL z pr_category | po hotfixach, trwałe rozwiązanie zastępujące D2-hybrid mapping | P2 | planowane |
+| TASK-CHAT-014 audyt EXCLUDED_CATEGORY_IDS | po hotfixach, proaktywny audyt | P2 | spec gotowy |
+| TASK-CHAT-008 alias map statusów BARTEK/LESZEK w OrderStatus.php | po hotfixach, defense in depth | P1 | nie zaczęte |
+
+### Ostatni numer pytania Karola: 57
+
+W konwersacji architekt zadał 57 ponumerowanych pytań decyzyjnych z rekomendacjami. Karol odpowiedział na wszystkie aktywne. Nieodpowiedziane w trakcie: 56 (T-004 refresh_stock), 57 (T-005 SynonymExpander) — czekają na decyzję.
+
+### Ważne decyzje sesji 14.05
+
+- ADR-053 SystemPrompt hardening (3 warstwy off-topic, anti-injection, statusy)
+- ADR-054 Editorial Picks (manualny boost rankingu, wstrzymane do końca hotfixów)
+- ADR-055 D2-hybrid mapping pseudokategorii (DEPLOYED jako T-002)
+- Rezygnacja z cold-start auto-boost (Karol: "producenci wypuszczają nowości marketingowo, nie wszystkie są dobre")
+- WYPRZEDAŻE jako kategoria PG zostają NULL (nie indeksujemy, decyzja Karol)
 
 ---
 
