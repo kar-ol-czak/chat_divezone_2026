@@ -1315,3 +1315,166 @@ Karol odpala ręcznie po deployu wszystkich 3 tasków. Lista w `_docs/23_red_tea
 - Wyróżnik kolorystyczny "dostępne od ręki" (sugestia N5) — wymaga decyzji UI, osobny ADR design system.
 
 **Powiązane:** `_docs/22_red_team_panel.md`, `_docs/23_red_team_konsolidacja.md`, ADR-049 (search_debug nie do LLM), `_docs/aliasy_statusow_propozycja.csv`
+
+
+
+### ADR-054: Editorial Picks — manualny boost rankingu produktów
+
+**Data:** 2026-05-14 | **Status:** PRZYJĘTA | **Powiązane:** ADR-053 (hardening), TASK-055 (admin dashboard)
+
+**Kontekst:** Algorytm RRF + sygnał bestsellerów ze statystyk sprzedaży nie pokrywa przypadku "wiemy że to jest dobry produkt zanim ma dane sprzedażowe". Przykład z testów (CSV 14.05): klient pyta o "popularny komputer", bot zwraca tylko Suunto Eon Core (2 kolory), pomija Suunto Nautic / Ocean / Shearwater Peregrine, które są w ofercie ale mają mniej sprzedaży historycznej.
+
+Cold-start auto-boost (np. boost dla produktów dodanych w ostatnich 30 dniach) został odrzucony — Karol wskazał że producenci wypuszczają nowości marketingowo, nie wszystkie są dobre. Decyzja sprzedażowa musi być świadoma.
+
+**Decyzja:**
+
+1. **Tabela `divechat_editorial_picks` (PG):**
+
+```sql
+CREATE TABLE divechat_editorial_picks (
+    id SERIAL PRIMARY KEY,
+    product_id INTEGER NOT NULL,
+    product_name TEXT NOT NULL,
+    category_hint TEXT,
+    boost_factor NUMERIC(3,2) NOT NULL DEFAULT 1.5 CHECK (boost_factor BETWEEN 1.0 AND 2.5),
+    reason TEXT NOT NULL,
+    added_by TEXT NOT NULL,
+    added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ,
+    last_review_at TIMESTAMPTZ,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    UNIQUE(product_id, category_hint)
+);
+
+CREATE INDEX idx_editorial_picks_active_expires
+    ON divechat_editorial_picks(active, expires_at) WHERE active = TRUE;
+```
+
+   - `expires_at` NULL = bezterminowo
+   - `category_hint` NULL = boost we wszystkich kategoriach
+   - `last_review_at` ustawiany przez "Mark as reviewed" w panelu
+
+2. **TTL enum w UI:** dropdown z opcjami 15, 30, 60, 90 dni, bezterminowo. Default 60. Mapping na `expires_at = NOW() + INTERVAL 'N days'` lub NULL.
+
+3. **Integracja z RRF:** `final_score = base_rrf_score × editorial_boost`, gdzie:
+   - `editorial_boost` = lookup w aktywnych pickach (`active=TRUE AND (expires_at IS NULL OR expires_at > NOW())`)
+   - Match po `product_id` + opcjonalnie `category_hint`
+   - Brak picka → boost = 1.0 (no-op)
+
+4. **Auto-expire:** cron co godzinę dezaktywuje `expires_at < NOW()` → `active = FALSE`. Nie usuwa wierszy (audit trail).
+
+5. **Tygodniowe przypomnienia (poniedziałek 9:00 CEST):**
+   - Email do dive@divezone.pl + banner w admin dashboard
+   - Sekcje raportu:
+     * Wygasłe w ostatnim tygodniu (auto-deaktywowane)
+     * Wygasające w tym tygodniu (do akcji)
+     * Bezterminowe bez review > 30 dni (do weryfikacji)
+     * Aktywne picki bez sprzedaży 60+ dni (kandydaci do usunięcia)
+
+6. **Panel admin (rozszerzenie pod `chat.divezone.pl/admin`):**
+   - Sekcja "Editorial Picks" z filtrem active/expired/all
+   - Form dodawania: wyszukiwarka produktu (po nazwie/SKU), slider boost (1.0-2.5), category_hint dropdown, reason text, TTL dropdown, "Add"
+   - Action buttons na każdym wierszu: "Mark as reviewed" (aktualizuje last_review_at), "Deactivate", "Extend TTL"
+   - Banner w dashboard'cie gdy są zaległe review
+
+**Implementacja w 2 taskach:**
+- TASK-CHAT-009a (backend, ~6h CC): migracja + EditorialPicksService + RRF integration + cron + API endpoints
+- TASK-CHAT-009b (frontend admin, ~3h CC): UI sekcji Editorial Picks
+
+**Kolejność:** post-007b → mini-patch v2 → TASK-CHAT-007c → TASK-CHAT-009a → TASK-CHAT-009b. NIE startujemy 009 przed deployem mini-patcha v2.
+
+**Uzasadnienie odrzuconych wariantów:**
+- Wariant 1 (plik konfiguracyjny w PS module): brak audit trailu, każda zmiana = redeploy, ryzyko zaniedbania bez timera ekspiracji.
+- Wariant 3 (= Wariant 2 + cold-start auto-boost): cold-start jest niesemantyczny dla sprzętu nurkowego (producenci wypuszczają nowości marketingowo). Decyzja sprzedażowa wymaga człowieka.
+- Statystyki sprzedaży jako jedyne źródło: nie pokrywa pre-launch produktów ani małych SKU które nie nabiorą jeszcze danych.
+
+**Out of scope ADR-054:**
+- A/B testing różnych poziomów boost
+- ML auto-tuning boost factor na podstawie konwersji
+- Boost per segment klienta (np. nowicjusz vs zaawansowany)
+
+**Powiązane:** ADR-053 (hardening), TASK-055 (admin dashboard), `_docs/dane_sprzedazowe_bestsellery_12m.md`
+
+
+
+### ADR-055: Mapowanie pseudokategorii NAZEWNICTWO SKLEPU na faktyczne kategorie PG (hybrid D2)
+
+**Data:** 2026-05-14 | **Status:** PRZYJĘTA | **Powiązane:** ADR-027 (parent_category_name fallback), TASK-CHAT-012
+
+**Kontekst:** Diagnoza TASK-CHAT-012 ujawniła że pole `parent_category_name` w `divechat_product_embeddings` jest PUSTE dla wszystkich 2556 produktów. ADR-027 fallback w `ProductSearch::buildFilters()` nigdy nie matchuje, więc gdy model wysyła `category="Skafandry suche"` (pseudokategoria z NAZEWNICTWO SKLEPU), search znajduje literalnie 8 produktów zamiast faktycznych 141 (włącznie z bestsellerem SANTI).
+
+Skala problemu: każda pseudokategoria zbiorcza ma podobne luki. "Komputery Nurkowe" literalnie 10, faktycznie 127. Bestsellery sklepu są niewyszukiwalne.
+
+**Decyzja: D2-hybrid (hotfix SQL UPDATE + B aktualizacja SystemPrompt jeśli potrzeba)**
+
+1. **SQL UPDATE w PG**: hardcoded mapping `parent_category_name` dla 5-10 najważniejszych pseudokategorii z NAZEWNICTWO SKLEPU. CC samodzielnie proponuje listę na bazie:
+   - NAZEWNICTWO SKLEPU w SystemPrompt (pseudokategorie używane przez model)
+   - Faktyczne kategorie w PG `divechat_product_embeddings.category_name`
+   - Bestseller-y / volume produktów (mapowanie ma priorytetowo dotyczyć kategorii z największą liczbą produktów)
+
+2. **Bez code change, bez re-embed**: parent_category_name nie jest częścią embedding vector, więc UPDATE działa natychmiast po wykonaniu.
+
+3. **ADR-027 fallback aktywuje się "for free"**: istniejący kod w `ProductSearch::buildFilters()` zacznie matchować z nowo wypełnionymi parent_category_name.
+
+4. **Optymalizacja vs trwałe rozwiązanie**: D2-hybrid to hotfix. Trwałe rozwiązanie (D1) to ETL z MySQL `pr_category` jako część pipeline embeddings — wprowadzane jako osobny task post-hotfix.
+
+**Implementacja w 1 tasku (TASK-CHAT-012):**
+
+- SQL UPDATE script: `sql/00X_pseudocategory_mapping.sql` z idempotentnym UPSERT
+- Skrypt rollback (revert parent_category_name na NULL)
+- Test integracyjny: ProductSearch::execute(brand="SANTI", category="Skafandry suche") zwraca ≥10 produktów po fix
+
+**Mapping (CC proponuje listę 5-10 pseudokategorii, Karol review przed wykonaniem):**
+
+Pseudokategoria → faktyczne kategorie. Format docelowy:
+
+```sql
+UPDATE divechat_product_embeddings 
+SET parent_category_name = 'Skafandry suche'
+WHERE category_name IN ('SUCHE Trylaminat, Cordura', 'SUCHE Neoprenowe', ...);
+```
+
+**Kandydaci do mapowania (pełna lista do propozycji CC):**
+
+Z NAZEWNICTWO SKLEPU pseudokategorie zbiorcze:
+- "Skafandry suche" → ["SUCHE Trylaminat, Cordura", "SUCHE Neoprenowe", ...]
+- "Komputery Nurkowe" → [pojedyncze marki: "Komputery SHEARWATER", "Komputery SUUNTO", "Komputery SCUBAPRO", "Komputery MARES", "Komputery Garmin", "Komputery RATIO", "Komputery AQUALUNG", "Komputery Halcyon", "Komputery TUSA"]
+- "Pianki/skafandry" → wszystkie podkategorie skafandrów
+- "Automaty" → ["Automaty Oddechowe", "1 stopnie", "2 stopnie", "Automaty stage", "Węże do Automatów", "Akcesoria do automatów"]
+- "Wypornościowe" → ["Skrzydła", "Skrzydła z uprzężą...", "Jackety (BCD)", ...]
+- "Maski i fajki" → ["Maski jednoszybowe", "Maski dwuszybowe", "Maski panoramiczne", "Maski korekcyjne", "Fajki", "Zestawy Maska+Fajka"]
+- "Płetwy" → ["Płetwy Paskowe na Buta", "Płetwy Gumowe JET", "Płetwy Kaloszowe na Stopę"]
+- "Oświetlenie" → ["Latarki nurkowe", "Małe i do Ręki", "Duże z Głowicą", ...]
+- "Butle" → ["Butle Stalowe", "Butle Aluminiowe", ...]
+- "Bezpieczeństwo" → ["Bojki dekompresyjne", "Bojki i kołowrotki", "Noże", "Szpulki", ...]
+
+**Krzyżowy mapping (faktyczna kategoria → 1 pseudokategoria parent):**
+
+Każda faktyczna kategoria ma DOKŁADNIE JEDEN parent_category_name (nie wiele). Jeśli kategoria pasuje do >1 pseudokategorii zbiorczej, CC wybiera tę bardziej szczegółową lub konsultuje z Karolem.
+
+**Trwałe rozwiązanie (D1, osobny task post-hotfix):**
+
+TASK-CHAT-015 (przyszłość): wzbogacenie ETL embeddings o automatyczne wypełnienie parent_category_name na bazie hierarchii `pr_category` z MySQL. Hardcoded mapping z D2 zostaje jako warstwa override (np. gdy nazwa parent w PrestaShop nie pokrywa się z używaną w SystemPrompt).
+
+**Uzasadnienie odrzuconych wariantów:**
+
+- A. Zmiana SystemPrompt żeby model używał faktycznych kategorii (np. "SUCHE Trylaminat, Cordura"): wymaga że model zna 50+ faktycznych nazw, niewygodne, error-prone, słaba UX dla porównań cross-marka.
+- B. Re-embed wszystkich produktów z parent_category_name: kosztowne (2-3h re-embed bazy), bez gwarancji że to coś naprawi (parent_category_name nie idzie w vector).
+- C. Zmiana logiki search engine na fuzzy match po category_name: zwiększa hałas wyników, trudniejsze debug.
+- D. Tylko D1 (ETL z pr_category): poprawne ale wolne (1-2 dni implementacji), produkcyjny bug nadal aktywny.
+
+**Acceptance criteria po D2-hybrid:**
+
+1. `ProductSearch::execute(brand="SANTI", category="Skafandry suche")` zwraca ≥10 produktów
+2. `ProductSearch::execute(category="Komputery Nurkowe")` zwraca produkty wszystkich marek komputerów (SHEARWATER, SUUNTO, SCUBAPRO, MARES, Garmin)
+3. Smoke test: 5 zapytań typu "Szukam <pseudokategoria>" zwraca expected ≥5 produktów
+4. Regression: search dla literalnych kategorii (np. "Maski jednoszybowe") nadal działa
+
+**Out of scope ADR-055:**
+
+- D1 ETL z MySQL pr_category — osobny ADR-056 i TASK-CHAT-015 w przyszłości
+- Restrukturyzacja drzewa kategorii w PrestaShop
+- Audyt category_name accuracy (czy literalne nazwy są spójne między SystemPrompt a PG)
+- Editorial Picks integracja z parent_category_name
+
+**Powiązane:** ADR-027 (parent_category_name fallback), TASK-CHAT-012, TASK-CHAT-015 (planowane D1 ETL)
