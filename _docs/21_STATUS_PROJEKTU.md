@@ -4,6 +4,29 @@
 
 ---
 
+## OSTATNIA SESJA (2026-05-14 - TASK-CHAT-007b ShopCalendar + tool get_shop_schedule)
+
+**Status:** TASK-CHAT-007b → DEPLOYED 2026-05-14, commit `b26fe39`, awaiting mini-patch v2 SystemPrompt
+
+**Co zrobione:**
+- Klasa `ShopCalendar` z polskimi świętami stałymi (10) + ruchomymi (algorytm Gaussa, Wielkanoc/Poniedziałek Wielkanocny/Zielone Świątki/Boże Ciało). Stałe godziny pon-pt 9:00-17:00, strefa Europe/Warsaw.
+- Interfejs `OverrideProvider` + adapter `DbOverrideProvider` (PG) — clean DI, testowalne offline bez DB.
+- Tool `get_shop_schedule` zarejestrowany w `ToolRegistry`.
+- Migracja 009 `divechat_shop_calendar_overrides` (urlopy/inwentaryzacje) — applied na Railway, struktura zweryfikowana.
+- 39/39 testów OK (24 ShopCalendar + 15 GetShopSchedule), w tym weryfikacja Wielkanocy 2026-2030.
+- Deploy: 6 plików PHP via scp + `composer dump-autoload` na prod. Smoke test produkcyjny OK.
+
+**Stan toola:**
+- Tool zarejestrowany ale **uśpiony** — model nie wywoła go dopóki SystemPrompt nie referuje. Po 007a (mini-patch forward-ref) sekcja DANE FIRMY zawiera fallback do standardowych godzin + odsyłki kontakt.
+- Wymagany osobny mini-patch v2 SystemPrompt żeby aktywować `get_shop_schedule`.
+
+**Otwarte pytania:**
+- Mini-patch v2 SystemPrompt — kiedy uruchamiamy.
+- Smoke test przez UI po mini-patch v2 ("czy będziecie pracowali 6 czerwca?" → bot powinien wywołać tool).
+- TASK-CHAT-007c (frontend) — bug formatowania linków produktów.
+
+---
+
 ## OSTATNIA SESJA (2026-05-14 - TASK-CHAT-007a SystemPrompt hardening)
 
 **Status:** TASK-CHAT-007a → DEPLOYED 2026-05-14 13:54 CEST, commit `92083b7`
