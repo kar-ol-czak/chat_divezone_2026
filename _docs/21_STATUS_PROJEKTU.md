@@ -20,6 +20,7 @@
 | **T-001 regresja logbook → wet notes fix** (stale in_stock dla id=5263) | DEPLOYED | `95edf2e` |
 | **T-002 D2-hybrid mapping 100% pokrycia (ADR-055)** | DEPLOYED | `f8cf156` + `1461d82` |
 | **T-003 Mini-patch v3 SystemPrompt (7 patchy: PORADY PREZENTOWE, PL/EN, bold ceny, NAZEWNICTWO, krój, available_to_order, linki)** | DEPLOYED 18:50 CEST | `60db230` |
+| **T-006 fix availability logic — respektuj out_of_stock=2 (ADR-056, 1043 SKU "ożywa")** | DEPLOYED 21:20 CEST | `cbc8f30` |
 
 ### Aktywne instancje CC
 
@@ -27,7 +28,7 @@
 |---|---|---|
 | frontend | TASK-CHAT-007c follow-up | DEPLOYED, weryfikacja Karol przez UI |
 | embeddings | T-001 | **DONE** |
-| backend | T-003 mini-patch v3 SystemPrompt | **DONE** — DEPLOYED 18:50, czeka smoke test |
+| backend | T-006 fix availability logic (ADR-056) | **DONE** — DEPLOYED 21:20, czeka smoke test |
 
 ### Smoke test produkcyjny po T-001 i T-002 (14.05)
 
@@ -36,10 +37,10 @@ Karol potwierdził:
 - T-002 SANTI bug: ✅ SANTI znalezione (Santi Edge + E.Motion Plus)
 - T-002 Komputery Nurkowe: ✅ wszystkie marki widoczne (SUUNTO/SHEARWATER/SCUBAPRO/MARES/GARMIN)
 
-ALE wykryte 3 follow-up bugi w prod (rozwiązywane przez T-003):
-1. Bot mówi "obecnie niedostępne" dla `available_to_order` (E.Lite Plus, Ladies First) zamiast "na zamówienie"
-2. Bot wybiórczo linkuje produkty (linkuje tylko in_stock, pomija available_to_order)
-3. Bot polecił skafander męski bez pytania o płeć (reguła obecnie pokrywa "pianki/skafandry", nie "skafandry suche")
+ALE wykryte 3 follow-up bugi w prod:
+1. Bot mówi "obecnie niedostępne" dla `available_to_order` (E.Lite Plus, Ladies First) zamiast "na zamówienie" — **CLOSED by T-006** (root cause PHP, nie SystemPrompt — tool zwracał `unavailable` zamiast `available_to_order` dla out_of_stock=2)
+2. Bot wybiórczo linkuje produkty (linkuje tylko in_stock, pomija available_to_order) — **CLOSED by T-006** (objaw tego samego buga — model dostawał `unavailable` więc nie linkował)
+3. Bot polecił skafander męski bez pytania o płeć (reguła obecnie pokrywa "pianki/skafandry", nie "skafandry suche") — **OPEN** (osobny task, prompt-side; patch E T-003 obejmuje "skafandry suche" jako trigger, ale model może nadal pomijać)
 
 ### T-003 spec (gotowy do puszczenia)
 
@@ -65,7 +66,7 @@ Prompt CC: `wykonaj _instances/backend/tasks/T-003_backend_systemprompt-v3.md`
 
 Stara konwencja (TASK-CHAT-007a/007b/007c, TASK-CHAT-010/011/012) zostaje w handoff i historycznych raportach. Numeracja T-NNN od 14.05.
 
-### Kolejka tasków (po deploy T-003)
+### Kolejka tasków (po deploy T-006)
 
 | Numer | Task | Priorytet | Status |
 |---|---|---|---|

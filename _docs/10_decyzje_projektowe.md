@@ -1478,3 +1478,55 @@ TASK-CHAT-015 (przyszłość): wzbogacenie ETL embeddings o automatyczne wypełn
 - Editorial Picks integracja z parent_category_name
 
 **Powiązane:** ADR-027 (parent_category_name fallback), TASK-CHAT-012, TASK-CHAT-015 (planowane D1 ETL)
+
+
+### ADR-056: Respektowanie PrestaShop out_of_stock=2 (default behavior) w availability logic
+
+**Data:** 2026-05-14 | **Status:** PRZYJĘTA | **Powiązane:** ADR-048 (real-time MySQL enrichment), ADR-049 (search_debug strip), ADR-053 pkt 7
+
+**Kontekst:** Diagnoza smoke testu T-003 (14.05) ujawniła że `enrichWithMySQLData()` w `ProductSearch.php` traktuje produkty z `pr_stock_available.out_of_stock = 2` jako `availability="unavailable"`. PrestaShop konwencja dla pola `out_of_stock` to TRZY stany:
+
+- `0` — Deny orders (sklep nie pozwala zamawiać przy stock=0)
+- `1` — Allow orders (pozwala zamawiać przy stock=0)
+- `2` — Use default (czytaj globalną wartość `PS_ORDER_OUT_OF_STOCK` z `pr_configuration`)
+
+Wartość `2` to NAJCZĘSTSZY default w PrestaShop. Sprawdzono w divezone: `PS_ORDER_OUT_OF_STOCK = 1` (allow). Wszystkie produkty z `quantity=0` i `out_of_stock=2` powinny być `available_to_order`, ale były `unavailable`.
+
+Bug retroaktywnie wyjaśnia:
+
+- Smoke post-T-002: bot mówił "niedostępne" o SANTI E.Lite Plus mimo że można zamówić.
+- Follow-up T-003 bug #2 (linkowanie tylko in_stock) i #3 (bot generalizuje "niedostępne") — to były objawy jednego buga w PHP, nie 2 osobnych.
+
+Patch F w SystemPrompt (T-003) pozostaje poprawny ale nie miał szansy zadziałać — model nigdy nie dostawał `available_to_order` z toola dla produktów z `out_of_stock=2`.
+
+Konkretna diagnoza z PG (rozmowa 14.05 ~19:00 CEST, query do `divechat_conversations.messages`):
+
+| id | name | MySQL quantity | MySQL out_of_stock | Tool result availability | Powinno być |
+|---|---|---|---|---|---|
+| 5509 | E.Lite Plus damski | 0 | 2 | `unavailable` ❌ | `available_to_order` |
+| 5846 | E.Lite Plus Ladies First | 0 | 2 | `unavailable` ❌ | `available_to_order` |
+| 6865 | Ladies First Powystawowy | 1 | 2 | `in_stock` ✅ | `in_stock` |
+
+**Decyzja:** SQL w `enrichWithMySQLData()` musi respektować trzy stany `out_of_stock` PrestaShop z fallback na globalną wartość:
+
+```sql
+CASE
+    WHEN COALESCE(sa.total_qty, 0) > 0 THEN 'in_stock'
+    WHEN sa.allow_oos = 1 THEN 'available_to_order'
+    WHEN sa.allow_oos = 0 THEN 'unavailable'
+    WHEN (sa.allow_oos IS NULL OR sa.allow_oos = 2) AND :global_allow = 1 THEN 'available_to_order'
+    ELSE 'unavailable'
+END AS availability
+```
+
+Wartość `:global_allow` to `PS_ORDER_OUT_OF_STOCK` pobrana raz na request z `pr_configuration` (cache na poziomie metody, nie statycznie — wartość może się zmieniać w panelu PS bez restartu).
+
+**Out of scope:**
+
+- Per-customer-group order policy (PrestaShop pozwala na różne zachowanie per grupa klientów). Pomijamy — czat nie segmentuje po grupach klientów.
+- Combination-level `out_of_stock` (kombinacje produktów mogą mieć własne flagi). Obecnie używamy `MAX(out_of_stock) GROUP BY id_product` na poziomie produktu (zachowane).
+- Cache wartości globalnej między requestami. Pobranie per request to ~1ms, nie warto premature optimization.
+
+**Implementacja:** T-006 backend (~45 min CC).
+
+**Powiązane:** ADR-048, ADR-049, ADR-053 pkt 7, T-003 patch F (działa po fix PHP)
