@@ -1,6 +1,30 @@
 # STATUS PROJEKTU: Czat AI divezone.pl
-# Wersja: 3.4 | Data: 2026-05-14
+# Wersja: 3.5 | Data: 2026-05-14
 # Aktualizowany ręcznie po każdej sesji architekta
+
+---
+
+## OSTATNIA SESJA (2026-05-14 - TASK-CHAT-011 fix get_shop_schedule trigger)
+
+**Status:** TASK-CHAT-011 → DEPLOYED 2026-05-14 16:14 CEST, commit `93f9fe8`
+
+**Bug:** Po mini-patch v2 model produkcyjny halucynował godziny pracy (9-17) zamiast wywołać `get_shop_schedule` dla pośrednich form pytań typu "Chciałbym wpaść 6 czerwca po odbiór" (sobota, sklep zamknięty). Regresja bezpieczeństwa odpowiedzi.
+
+**Diagnoza:**
+- FAZA 1 (tool registration): ✅ OK — tool zarejestrowany, w 6 narzędziach exposed do LLM
+- FAZA 3 (cache): ✅ OK — md5 lokalne = prod dla wszystkich plików, brak stale deploy
+- FAZA 2 (wording): ⚠ root cause. Trigger "Gdy klient pyta o godziny pracy" nie pokrywa "wpadnę 6 czerwca" (klient pyta o odbiór, nie wprost o godziny)
+
+**Fix C (A+B kombinacja, wybrany przez Karola):**
+- Zastąpiono jednolinijkowy trigger rozbudowanym blokiem: "ZAWSZE wywołaj" + 4 grupy triggerów (plany przyjazdu / pytania o pracę / bieżący stan / cut-off wysyłki) + "NIGDY nie halucynuj godzin pracy bez tool call"
+- Dodano 2 few-shot examples ("Chciałbym wpaść 6 czerwca po odbiór", "Pracujecie jutro?")
+- Liczba wzmianek `get_shop_schedule` w prompcie: 1 → 5 (silniejszy sygnał dla modelu)
+- Diff 31 linii, deploy via scp, backup hash zachowany w handoff dla rollbacku
+
+**Otwarte pytania:**
+- Karol smoke test 3 zapytania: (1) "Chcę przyjść 6 czerwca po odbiór" → tool call + "sobota zamknięte", (2) "Pracujecie jutro?" → tool call + odpowiedź, (3) "Jakie macie godziny pracy?" → bez toola, standard pon-pt 9-17
+- Regression check: 16 ataków z poprzedniego retestu nadal przechodzi
+- Opcjonalna zmiana description w `GetShopSchedule.php` (nie wdrożona — Karol nie wybrał)
 
 ---
 
