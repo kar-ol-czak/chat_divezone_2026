@@ -23,13 +23,14 @@
 | **T-006 fix availability logic — respektuj out_of_stock=2 (ADR-056, 1043 SKU "ożywa")** | DEPLOYED 21:20 CEST | `cbc8f30` |
 | **T-007 mini-patch v5 SystemPrompt — Patch H (PYTANIE O PŁEĆ KRYTYCZNE) + Patch I (ZAKAZ GENERALIZACJI STATUSÓW)** | DEPLOYED 21:39 CEST | `becfcb1` |
 | **T-008 Editorial Picks backend (ADR-054) — migracja 011 + EditorialPicksService + RRF integration + cron + API** | DEPLOYED 2026-05-15 06:55 CEST | `92caec0` |
+| **T-009 D1 AUDIT — diagnostyka pr_category vs D2-hybrid (read-only, raport architektoniczny)** | DONE 2026-05-15 | `83d4df5` |
 
 ### Aktywne instancje CC
 
 | Instancja | Task | Stan |
 |---|---|---|
 | frontend | TASK-CHAT-007c follow-up | DEPLOYED, weryfikacja Karol przez UI |
-| embeddings | T-001 | **DONE** |
+| embeddings | T-009 D1 audyt | **DONE** — raport gotowy, czeka decyzje Karola dla T-010 |
 | backend | T-008 Editorial Picks backend (ADR-054) | **DONE** — DEPLOYED 2026-05-15 06:55, czeka smoke + crontab |
 
 ### Smoke test produkcyjny po T-001 i T-002 (14.05)
@@ -79,9 +80,15 @@ Stara konwencja (TASK-CHAT-007a/007b/007c, TASK-CHAT-010/011/012) zostaje w hand
 | T-XXX weekly notifications Editorial Picks | poniedziałek 9:00 CEST email + banner, 4 sekcje raportu | P2 | spec do napisania |
 | T-004 (proponowany) | refresh_stock_only.py cron daily (CC propozycja po T-001) | P1 | propozycja, czeka na decyzję |
 | T-005 (proponowany) | SynonymExpander rozbija multi-word frazy → FTS noise (CC propozycja po T-001) | P2 | propozycja, czeka na decyzję |
-| T-XXX D1 ETL z pr_category | po hotfixach, trwałe rozwiązanie zastępujące D2-hybrid mapping | P2 | planowane |
+| **T-010 D1 ETL z pr_category + warstwa aliasów** | implementacja na bazie T-009 audytu — Strategia B (level=2) + tabela `divechat_category_aliases` z Unicode lowercase lookup | P2 | spec do napisania (T-009 DONE) |
+| T-XXX subcategory_name w embeddings | backlog z T-009 review: kolumna analogiczna do parent_category_name ale deeper cat | P3 | backlog |
 | TASK-CHAT-014 audyt EXCLUDED_CATEGORY_IDS | po hotfixach, proaktywny audyt | P2 | spec gotowy |
 | TASK-CHAT-008 alias map statusów BARTEK/LESZEK w OrderStatus.php | po hotfixach, defense in depth | P1 | nie zaczęte |
+
+### Decyzje czekające na Karola
+
+- **T-010 design (D1 ETL)** — raport audytu: [`_docs/audyt_D1_ETL_pr_category.md`](audyt_D1_ETL_pr_category.md). Główna decyzja: czy iść za rekomendacją CC (D1 ETL = Strategia B level=2 + warstwa aliasów `divechat_category_aliases` w PG) czy wybrać inny design. Side decyzje: które z 365 NULL produktów dostają parent po D1 (Książki nurkowe? Buty? Kaptury? — decyzja Karola), single-value vs multi-value (`parent_categories text[]`).
+- **T-004 / T-005** — patrz tabela Kolejka tasków powyżej.
 
 ### Ostatni numer pytania Karola: 57
 
