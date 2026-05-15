@@ -22,6 +22,7 @@
 | **T-003 Mini-patch v3 SystemPrompt (7 patchy: PORADY PREZENTOWE, PL/EN, bold ceny, NAZEWNICTWO, krój, available_to_order, linki)** | DEPLOYED 18:50 CEST | `60db230` |
 | **T-006 fix availability logic — respektuj out_of_stock=2 (ADR-056, 1043 SKU "ożywa")** | DEPLOYED 21:20 CEST | `cbc8f30` |
 | **T-007 mini-patch v5 SystemPrompt — Patch H (PYTANIE O PŁEĆ KRYTYCZNE) + Patch I (ZAKAZ GENERALIZACJI STATUSÓW)** | DEPLOYED 21:39 CEST | `becfcb1` |
+| **T-008 Editorial Picks backend (ADR-054) — migracja 011 + EditorialPicksService + RRF integration + cron + API** | DEPLOYED 2026-05-15 06:55 CEST | `92caec0` |
 
 ### Aktywne instancje CC
 
@@ -29,7 +30,7 @@
 |---|---|---|
 | frontend | TASK-CHAT-007c follow-up | DEPLOYED, weryfikacja Karol przez UI |
 | embeddings | T-001 | **DONE** |
-| backend | T-007 mini-patch v5 SystemPrompt | **DONE** — DEPLOYED 21:39, czeka smoke test |
+| backend | T-008 Editorial Picks backend (ADR-054) | **DONE** — DEPLOYED 2026-05-15 06:55, czeka smoke + crontab |
 
 ### Smoke test produkcyjny po T-001 i T-002 (14.05)
 
@@ -70,11 +71,12 @@ Prompt CC: `wykonaj _instances/backend/tasks/T-003_backend_systemprompt-v3.md`
 
 Stara konwencja (TASK-CHAT-007a/007b/007c, TASK-CHAT-010/011/012) zostaje w handoff i historycznych raportach. Numeracja T-NNN od 14.05.
 
-### Kolejka tasków (po deploy T-007, hotfixy zamknięte)
+### Kolejka tasków (po deploy T-008)
 
 | Numer | Task | Priorytet | Status |
 |---|---|---|---|
-| TASK-CHAT-009a/b Editorial Picks (ADR-054) | ODMROŻONE po pakiecie hotfixów — **NASTĘPNY** | P1 | spec gotowy |
+| T-XXX frontend admin UI Editorial Picks | UI pod /admin: wyszukiwarka produktu, slider boost, dropdown TTL, action buttons | P1 | spec do napisania (legacy TASK-CHAT-009b) |
+| T-XXX weekly notifications Editorial Picks | poniedziałek 9:00 CEST email + banner, 4 sekcje raportu | P2 | spec do napisania |
 | T-004 (proponowany) | refresh_stock_only.py cron daily (CC propozycja po T-001) | P1 | propozycja, czeka na decyzję |
 | T-005 (proponowany) | SynonymExpander rozbija multi-word frazy → FTS noise (CC propozycja po T-001) | P2 | propozycja, czeka na decyzję |
 | T-XXX D1 ETL z pr_category | po hotfixach, trwałe rozwiązanie zastępujące D2-hybrid mapping | P2 | planowane |
