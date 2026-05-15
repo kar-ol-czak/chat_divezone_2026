@@ -11,6 +11,7 @@ use DiveChat\Chat\ChatService;
 use DiveChat\Chat\ConversationStore;
 use DiveChat\Chat\SettingsStore;
 use DiveChat\Controller\AdminController;
+use DiveChat\Controller\AdminEditorialPicksController;
 use DiveChat\Controller\AdminPricingController;
 use DiveChat\Controller\ChatController;
 use DiveChat\Controller\ConversationsController;
@@ -18,6 +19,7 @@ use DiveChat\Controller\HealthController;
 use DiveChat\Controller\SettingsController;
 use DiveChat\Controller\TestTokenController;
 use DiveChat\Database\PostgresConnection;
+use DiveChat\Editorial\EditorialPicksService;
 use DiveChat\Http\AdminAuthMiddleware;
 use DiveChat\Router;
 
@@ -75,4 +77,12 @@ return static function (
     $router->get('/api/admin/cost/by-model', $adminController->byModel(...));
     $router->get('/api/admin/conversations/top', $adminController->topConversations(...));
     $router->get('/api/admin/conversations/{id}', $adminController->conversationDetail(...));
+
+    // Admin: Editorial Picks (T-008, ADR-054) — chronione przez AdminAuthMiddleware
+    $editorialPicksService = new EditorialPicksService($db);
+    $editorialPicksController = new AdminEditorialPicksController($editorialPicksService, $adminAuth);
+    $router->get('/api/admin/editorial-picks', $editorialPicksController->list(...));
+    $router->post('/api/admin/editorial-picks', $editorialPicksController->add(...));
+    $router->put('/api/admin/editorial-picks/{id}', $editorialPicksController->update(...));
+    $router->delete('/api/admin/editorial-picks/{id}', $editorialPicksController->delete(...));
 };

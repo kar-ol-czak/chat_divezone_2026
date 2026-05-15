@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use DiveChat\AI\EmbeddingService;
 use DiveChat\Database\PostgresConnection;
+use DiveChat\Editorial\EditorialPicksService;
 use DiveChat\Shop\DbOverrideProvider;
 use DiveChat\Shop\ShopCalendar;
 use DiveChat\Tools\ToolRegistry;
@@ -23,7 +24,8 @@ return static function (EmbeddingService $embeddingService): ToolRegistry {
     $pg = PostgresConnection::getInstance();
     $synonymExpander = new SynonymExpander($pg);
 
-    $registry->register(new ProductSearch($embeddingService, $pg, $synonymExpander));
+    $editorialPicks = new EditorialPicksService($pg);
+    $registry->register(new ProductSearch($embeddingService, $pg, $synonymExpander, $editorialPicks));
     $registry->register(new ProductDetails());
     $registry->register(new ExpertKnowledge($embeddingService, $pg));
     $registry->register(new OrderStatus());

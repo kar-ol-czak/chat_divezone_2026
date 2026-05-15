@@ -7,6 +7,7 @@ namespace DiveChat\Tools;
 use DiveChat\AI\EmbeddingService;
 use DiveChat\Database\MysqlConnection;
 use DiveChat\Database\PostgresConnection;
+use DiveChat\Editorial\EditorialPicksService;
 
 /**
  * Wyszukiwanie hybrydowe produktów: 5 torów (3× semantic + FTS + trigram) + RRF fusion.
@@ -22,6 +23,7 @@ final class ProductSearch implements ToolInterface
         private readonly EmbeddingService $embeddingService,
         private readonly PostgresConnection $db,
         private readonly SynonymExpander $synonymExpander,
+        private readonly ?EditorialPicksService $editorialPicks = null,
     ) {}
 
     public function getName(): string
@@ -128,9 +130,9 @@ final class ProductSearch implements ToolInterface
         $fulltext = $expandedQuery !== '' ? $this->searchFullText($expandedQuery, $filters) : [];
         $trigram = $this->searchTrigram($trigramQuery, $filters);
 
-        // Fuzja RRF (5 torów) + real-time MySQL enrichment
+        // Fuzja RRF (5 torów) + real-time MySQL enrichment + editorial boost (ADR-054)
         $inStockOnly = !empty($normalized['in_stock_only']);
-        $merged = $this->mergeRRF($semanticName, $semanticDesc, $semanticJargon, $fulltext, $trigram, $limit, $inStockOnly);
+        $merged = $this->mergeRRF($semanticName, $semanticDesc, $semanticJargon, $fulltext, $trigram, $limit, $inStockOnly, $normalized['category'] ?? null);
 
         // Dołącz search_plan do debug info
         if (!empty($searchPlan)) {
@@ -344,10 +346,12 @@ final class ProductSearch implements ToolInterface
         array $trigram,
         int $limit,
         bool $inStockOnly = true,
+        ?string $category = null,
     ): array {
         $k = self::RRF_K;
         $scores = [];
         $trackInfo = [];
+        $editorialBoosts = [];
 
         $tracks = [
             'name'    => ['data' => $semanticName,   'score_key' => 'similarity'],
@@ -371,6 +375,21 @@ final class ProductSearch implements ToolInterface
         }
 
         arsort($scores);
+
+        // Editorial boost — manualny override rankingu (ADR-054).
+        // final_score = base_rrf_score * boost_factor (1.0-2.5).
+        // Aktywne picki tylko (active=TRUE AND expires_at IS NULL OR > NOW()).
+        if ($this->editorialPicks !== null) {
+            $editorialBoosts = $this->editorialPicks->getActiveBoosts(array_keys($scores), $category);
+            if (!empty($editorialBoosts)) {
+                foreach ($editorialBoosts as $pid => $boost) {
+                    if (isset($scores[$pid])) {
+                        $scores[$pid] *= $boost;
+                    }
+                }
+                arsort($scores);
+            }
+        }
 
         // Pobierz większy zbiór kandydatów (zapas na filtrowanie po MySQL)
         $candidateLimit = min(count($scores), $limit * 3);
@@ -538,6 +557,7 @@ final class ProductSearch implements ToolInterface
                 'product_id' => $id,
                 'rrf_score' => round($rrfScore, 6),
                 'dominant_track' => $dominant,
+                'editorial_boost' => $editorialBoosts[$id] ?? null,
                 'name_rank' => $info['name_rank'] ?? null,
                 'desc_rank' => $info['desc_rank'] ?? null,
                 'jargon_rank' => $info['jargon_rank'] ?? null,

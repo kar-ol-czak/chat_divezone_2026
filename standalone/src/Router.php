@@ -37,6 +37,16 @@ final class Router
         return $this->add('POST', $path, $handler);
     }
 
+    public function put(string $path, callable $handler): self
+    {
+        return $this->add('PUT', $path, $handler);
+    }
+
+    public function delete(string $path, callable $handler): self
+    {
+        return $this->add('DELETE', $path, $handler);
+    }
+
     /**
      * Obsługuje request - znajduje handler i wywołuje go.
      */
