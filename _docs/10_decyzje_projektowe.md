@@ -1593,3 +1593,30 @@ Po T-010 deploy D2-hybrid SQL UPDATE przestaje być źródłem prawdy. Plik `sql
 **Implementacja:** T-010 (instancja embeddings, ~5-6h CC).
 
 **Powiązane:** ADR-027, ADR-048, ADR-055, T-009, T-010, T-011 (frontend admin Editorial Picks osobno)
+
+
+### ADR-058: Editorial Pick boost — hybryda filter respect (75c)
+
+**Data:** 2026-05-15 | **Status:** PRZYJĘTA | **Powiązane:** ADR-054 (Editorial Picks), T-008, T-012
+
+**Kontekst:** Smoke test T-011 (15.05) wykrył że pick na Suunto Ocean Steel Black (id 7318, boost 2.0, category_hint "Komputery nurkowe") nie pojawił się w wynikach. Diagnoza: bot wywołał `search_products` z `filters: {price_max: 3000, in_stock_only: true}`. Produkt prawdopodobnie poza budżetem 3000 zł. Boost mnoży 0 = 0 — pick nie wprowadza produktu spoza wyników bazowych.
+
+**Decyzja (po dyskusji architekt-Karol, opcja 75c hybryda):**
+
+Editorial Pick boost respektuje **`price_max`** (budżet klienta jest święty) ale **ignoruje `in_stock_only`** (flagowe produkty często available_to_order, warto je pokazać).
+
+**Konsekwencje implementacji:**
+
+- W `ProductSearch::execute()` przed application `in_stock_only` filter w `enrichWithMySQLData`, pobrać listę pick product_ids (od `EditorialPicksService::getActiveBoosts`). Te produkty są oznaczone `force_include_through_stock_filter = true`.
+- `enrichWithMySQLData` przy filtrowaniu po `in_stock_only=true`: NIE odfiltrowuj produktu jeśli `force_include_through_stock_filter` (mimo że ma `availability = 'available_to_order'`).
+- `price_max` filter pozostaje bezwarunkowy — pick nie omija budżetu.
+- Boost factor nadal aplikuje się normalnie w RRF fusion (×1.0-2.5).
+
+**Out of scope:**
+
+- Per-customer-segment różne polityki boost (np. premium klienci widzą droższe picki)
+- ML auto-tuning boost factors
+- Analytics ile picków konwertuje (wymaga osobnej infrastruktury)
+- Multi-pick aggregation (jeśli kilka picków matchuje, weź max boost — już zaimplementowane w T-008)
+
+**Powiązane:** ADR-054, T-008, T-012 (implementacja fix)

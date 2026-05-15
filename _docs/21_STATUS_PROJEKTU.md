@@ -26,6 +26,7 @@
 | **T-009 D1 AUDIT — diagnostyka pr_category vs D2-hybrid (read-only, raport architektoniczny)** | DONE 2026-05-15 | `83d4df5` |
 | **T-011 Editorial Picks frontend admin UI (ADR-054) — hash router, lista/filtry/sort, modal Add/Edit, akcje, banner graceful 404, toast** | DEPLOYED 2026-05-15 | `10fc78a` |
 | **T-010 D1 ETL implementacja (ADR-057) — migracja 012 alias table + etl_d1_parent_category.py — D2 deprecated, 96.7% pokrycia parent_category_name, edytowalny online bez deploy** | DEPLOYED 2026-05-15 | `19494ca` |
+| **T-012 hotfix Editorial Picks: PUT 403 fix (X-HTTP-Method-Override) + boost-vs-filters (ADR-058) + Prompt v6 + 3 endpointy follow-up (pending-reviews, products/search, last_review_at sort)** | DEPLOYED 2026-05-15 11:12 CEST | `df8ba9a` |
 
 ### Aktywne instancje CC
 
@@ -33,7 +34,7 @@
 |---|---|---|
 | frontend | T-011 Editorial Picks frontend admin UI | **DONE** — DEPLOYED 2026-05-15, czeka smoke UI Karola (login admin → dodaj test pick 6865 SANTI/1.8/7d → verify → delete) |
 | embeddings | T-010 D1 ETL (ADR-057) | **DONE** — DEPLOYED 2026-05-15, 96.7% pokrycie parent_category_name, idempotentny, D2-hybrid deprecated |
-| backend | T-008 Editorial Picks backend (ADR-054) | **DONE** — DEPLOYED 2026-05-15 06:55, czeka smoke + crontab |
+| backend | T-012 hotfix Editorial Picks + endpointy | **DONE** — DEPLOYED 2026-05-15 11:12, czeka smoke UI Karol (11 scenariuszy) |
 
 ### Smoke test produkcyjny po T-001 i T-002 (14.05)
 
@@ -74,13 +75,11 @@ Prompt CC: `wykonaj _instances/backend/tasks/T-003_backend_systemprompt-v3.md`
 
 Stara konwencja (TASK-CHAT-007a/007b/007c, TASK-CHAT-010/011/012) zostaje w handoff i historycznych raportach. Numeracja T-NNN od 14.05.
 
-### Kolejka tasków (po deploy T-011)
+### Kolejka tasków (po deploy T-012)
 
 | Numer | Task | Priorytet | Status |
 |---|---|---|---|
-| T-XXX backend `/api/admin/editorial-picks/pending-reviews` endpoint | T-011 frontend już gotowy do podłączenia (graceful 404); banner odsłoni się gdy endpoint dostarczy `{count, expired, no_review}` | P2 | spec do napisania (follow-up T-011) |
-| T-XXX backend `/api/admin/products/search?q=` endpoint | autocomplete dla form Add picka (obecnie manual input product_id+name); spec ADR-054 wymaga | P2 | spec do napisania (follow-up T-011) |
-| T-XXX backend order_by=last_review_at whitelist | rozszerzenie `EditorialPicksService::list()` o sort "bez review najdłużej" (UI ma dropdown przygotowany) | P3 | spec do napisania (follow-up T-011) |
+| T-013 frontend UI polish | autocomplete (uses T-012 #5), layout kolumn, sort header (uses #6), banner pending-reviews (uses #4), ikony, tooltipy | P1 | gotowy do startu po T-012 deploy |
 | T-XXX weekly notifications Editorial Picks | poniedziałek 9:00 CEST email + banner, 4 sekcje raportu | P2 | spec do napisania |
 | T-004 (proponowany) | refresh_stock_only.py cron daily (CC propozycja po T-001) | P1 | propozycja, czeka na decyzję |
 | T-005 (proponowany) | SynonymExpander rozbija multi-word frazy → FTS noise (CC propozycja po T-001) | P2 | propozycja, czeka na decyzję |
