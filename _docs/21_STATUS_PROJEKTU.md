@@ -1,5 +1,5 @@
 # STATUS PROJEKTU: Czat AI divezone.pl
-# Wersja: 3.7 | Data: 2026-05-14 (koniec sesji architekt #4)
+# Wersja: 3.8 | Data: 2026-05-15 (po deploy T-011 Editorial Picks frontend)
 # Aktualizowany ręcznie po każdej sesji architekta
 
 ---
@@ -24,12 +24,13 @@
 | **T-007 mini-patch v5 SystemPrompt — Patch H (PYTANIE O PŁEĆ KRYTYCZNE) + Patch I (ZAKAZ GENERALIZACJI STATUSÓW)** | DEPLOYED 21:39 CEST | `becfcb1` |
 | **T-008 Editorial Picks backend (ADR-054) — migracja 011 + EditorialPicksService + RRF integration + cron + API** | DEPLOYED 2026-05-15 06:55 CEST | `92caec0` |
 | **T-009 D1 AUDIT — diagnostyka pr_category vs D2-hybrid (read-only, raport architektoniczny)** | DONE 2026-05-15 | `83d4df5` |
+| **T-011 Editorial Picks frontend admin UI (ADR-054) — hash router, lista/filtry/sort, modal Add/Edit, akcje, banner graceful 404, toast** | DEPLOYED 2026-05-15 | `10fc78a` |
 
 ### Aktywne instancje CC
 
 | Instancja | Task | Stan |
 |---|---|---|
-| frontend | TASK-CHAT-007c follow-up | DEPLOYED, weryfikacja Karol przez UI |
+| frontend | T-011 Editorial Picks frontend admin UI | **DONE** — DEPLOYED 2026-05-15, czeka smoke UI Karola (login admin → dodaj test pick 6865 SANTI/1.8/7d → verify → delete) |
 | embeddings | T-009 D1 audyt | **DONE** — raport gotowy, czeka decyzje Karola dla T-010 |
 | backend | T-008 Editorial Picks backend (ADR-054) | **DONE** — DEPLOYED 2026-05-15 06:55, czeka smoke + crontab |
 
@@ -72,11 +73,13 @@ Prompt CC: `wykonaj _instances/backend/tasks/T-003_backend_systemprompt-v3.md`
 
 Stara konwencja (TASK-CHAT-007a/007b/007c, TASK-CHAT-010/011/012) zostaje w handoff i historycznych raportach. Numeracja T-NNN od 14.05.
 
-### Kolejka tasków (po deploy T-008)
+### Kolejka tasków (po deploy T-011)
 
 | Numer | Task | Priorytet | Status |
 |---|---|---|---|
-| T-XXX frontend admin UI Editorial Picks | UI pod /admin: wyszukiwarka produktu, slider boost, dropdown TTL, action buttons | P1 | spec do napisania (legacy TASK-CHAT-009b) |
+| T-XXX backend `/api/admin/editorial-picks/pending-reviews` endpoint | T-011 frontend już gotowy do podłączenia (graceful 404); banner odsłoni się gdy endpoint dostarczy `{count, expired, no_review}` | P2 | spec do napisania (follow-up T-011) |
+| T-XXX backend `/api/admin/products/search?q=` endpoint | autocomplete dla form Add picka (obecnie manual input product_id+name); spec ADR-054 wymaga | P2 | spec do napisania (follow-up T-011) |
+| T-XXX backend order_by=last_review_at whitelist | rozszerzenie `EditorialPicksService::list()` o sort "bez review najdłużej" (UI ma dropdown przygotowany) | P3 | spec do napisania (follow-up T-011) |
 | T-XXX weekly notifications Editorial Picks | poniedziałek 9:00 CEST email + banner, 4 sekcje raportu | P2 | spec do napisania |
 | T-004 (proponowany) | refresh_stock_only.py cron daily (CC propozycja po T-001) | P1 | propozycja, czeka na decyzję |
 | T-005 (proponowany) | SynonymExpander rozbija multi-word frazy → FTS noise (CC propozycja po T-001) | P2 | propozycja, czeka na decyzję |
