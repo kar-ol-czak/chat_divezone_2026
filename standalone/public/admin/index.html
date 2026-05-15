@@ -131,20 +131,32 @@
                             <option value="expires_at">Wygasające najszybciej</option>
                             <option value="boost_factor">Najwyższy boost</option>
                             <option value="product_name">Nazwa produktu A→Z</option>
+                            <option value="last_review_at">Bez review najdłużej</option>
                         </select>
                     </label>
                     <span class="editorial-filters__count" id="editorialCount"></span>
                 </div>
                 <table class="data-table data-table--editorial">
+                    <colgroup>
+                        <col style="width:28%">
+                        <col style="width:10%">
+                        <col style="width:7%">
+                        <col style="width:15%">
+                        <col style="width:10%">
+                        <col style="width:9%">
+                        <col style="width:9%">
+                        <col style="width:7%">
+                        <col style="width:5%">
+                    </colgroup>
                     <thead>
                         <tr>
-                            <th>Produkt</th>
+                            <th class="sortable" data-sort="product_name">Produkt</th>
                             <th>Kategoria</th>
-                            <th class="num">Boost</th>
+                            <th class="num sortable" data-sort="boost_factor">Boost</th>
                             <th>Powód</th>
-                            <th>Dodał / kiedy</th>
-                            <th>Wygasa</th>
-                            <th>Last review</th>
+                            <th class="sortable" data-sort="added_at">Dodał / kiedy</th>
+                            <th class="sortable" data-sort="expires_at">Wygasa</th>
+                            <th class="sortable" data-sort="last_review_at">Last review</th>
                             <th>Status</th>
                             <th class="actions">Akcje</th>
                         </tr>
@@ -169,14 +181,37 @@
                 <button class="btn btn--close" data-close-modal aria-label="Zamknij">&times;</button>
             </header>
             <form class="modal__body editorial-form" id="editorialForm" autocomplete="off">
-                <div class="editorial-form__row">
+                <!-- Hidden inputs trzymają wybór produktu (z autocomplete lub manual) -->
+                <input type="hidden" name="product_id" id="editorialProductId">
+                <input type="hidden" name="product_name" id="editorialProductName">
+
+                <!-- Autocomplete (default tryb dla Add); ukryte w Edit -->
+                <div class="editorial-form__autocomplete" id="editorialAutocomplete">
+                    <label>Produkt
+                        <input type="text" id="editorialProductSearch" placeholder="Wpisz nazwę lub ID produktu (min 2 znaki)">
+                    </label>
+                    <ul class="editorial-autocomplete__results hidden" id="editorialAutocompleteResults" role="listbox"></ul>
+                    <div class="editorial-autocomplete__chip hidden" id="editorialAutocompleteChip" aria-live="polite">
+                        <span class="editorial-autocomplete__chip-name" id="editorialChipName"></span>
+                        <span class="editorial-autocomplete__chip-id" id="editorialChipId"></span>
+                        <button type="button" class="editorial-autocomplete__chip-x" id="editorialChipReset" aria-label="Zmień produkt">&times;</button>
+                    </div>
+                    <div class="editorial-autocomplete__hint">
+                        <a href="#" id="editorialManualToggle">Wpisz ID manualnie</a>
+                        <span class="editorial-autocomplete__error hidden" id="editorialAutocompleteError"></span>
+                    </div>
+                </div>
+
+                <!-- Manual fallback — collapsed by default; rozwija przez "Wpisz ID manualnie" lub gdy search 5xx -->
+                <div class="editorial-form__row editorial-form__manual hidden" id="editorialManualFields">
                     <label>Product ID
-                        <input type="number" name="product_id" required min="1" placeholder="np. 6865">
+                        <input type="number" id="editorialManualId" min="1" placeholder="np. 6865">
                     </label>
                     <label>Product name
-                        <input type="text" name="product_name" required placeholder="np. SANTI E.Lite Plus Ladies First">
+                        <input type="text" id="editorialManualName" placeholder="np. SANTI E.Lite Plus Ladies First">
                     </label>
                 </div>
+
                 <label>Category hint <span class="editorial-form__hint">(opcjonalne — pusty = wszystkie kategorie)</span>
                     <input type="text" name="category_hint" placeholder="np. Skafandry suche">
                 </label>

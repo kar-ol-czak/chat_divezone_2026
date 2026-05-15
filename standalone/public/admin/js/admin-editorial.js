@@ -1,9 +1,12 @@
 /**
- * T-011: Editorial Picks — admin UI module.
+ * Editorial Picks — admin UI module.
  *
  * - Lista picków (GET /api/admin/editorial-picks) z filtrami status / sort
- * - Form Add (POST), modal Edit (PUT subset), akcje: Extend +30d / Mark reviewed / Deactivate / Delete
- * - Banner pending-reviews: GET /api/admin/editorial-picks/pending-reviews — graceful 404
+ * - Form Add (POST z autocomplete /api/admin/products/search), modal Edit (PUT subset)
+ * - Akcje: Edit ✎ / Mark reviewed ✓ / Extend +30d / Deactivate ⏸ / Delete 🗑
+ * - Sortable headers (klik → ASC/DESC + ▲▼)
+ * - Banner pending-reviews (GET /api/admin/editorial-picks/pending-reviews)
+ * - needs_review filter (client-side: bezterminowe bez review > 30 dni LUB wygasłe w 7 dni)
  * - Hash routing przez DiveAdmin.router (admin.js)
  *
  * Vanilla JS, integruje się z DiveAdmin (api / send / fmt / toast / escHtml).
@@ -14,24 +17,31 @@
     var DiveAdmin = window.DiveAdmin = window.DiveAdmin || {};
 
     var API_BASE = '/api/admin/editorial-picks';
+    var PRODUCTS_SEARCH_URL = '/api/admin/products/search';
     var SHOP_PRODUCT_URL = 'https://divezone.pl/index.php?id_product=';
+
+    var SORTABLE_COLUMNS = ['product_name', 'boost_factor', 'added_at', 'expires_at', 'last_review_at'];
 
     // Stan modułu
     var state = {
-        loaded: false,            // pierwsze załadowanie listy odbyło się
-        bannerChecked: false,     // pending-reviews endpoint: probował (404 → nigdy więcej)
-        currentEdit: null,        // pick obecnie edytowany w modalu (null = Add mode)
+        loaded: false,                  // pierwsze załadowanie listy odbyło się
+        currentEdit: null,              // pick obecnie edytowany w modalu (null = Add mode)
+        sort: { col: 'added_at', dir: 'desc' },
+        statusFilter: '1',              // active=1|0|all (mirror dropdown)
+        needsReviewMode: false,         // tryb klient-side filter z banner CTA
+        autocomplete: { timer: null, abortController: null },
+        selectedProduct: null,          // {id, name} po wyborze z autocomplete lub manual
     };
 
     // --- Helpers formatujące ---
 
+    // T-013 UX feedback: bez "temu" dla przeszłości; "za N..." nadal dla przyszłości
     function relativeTime(iso, opts) {
         if (!iso) return opts && opts.fallback != null ? opts.fallback : '—';
         var d = new Date(iso);
         if (isNaN(d.getTime())) return iso;
         var diffMs = d.getTime() - Date.now();
-        var pastFuture = diffMs >= 0 ? 'za ' : '';
-        var suffix = diffMs < 0 ? ' temu' : '';
+        var prefix = diffMs > 0 ? 'za ' : '';
         var absSec = Math.abs(diffMs) / 1000;
         var n, unit;
         if (absSec < 60) { n = Math.round(absSec); unit = 'sek'; }
@@ -40,7 +50,7 @@
         else if (absSec < 86400 * 30) { n = Math.round(absSec / 86400); unit = n === 1 ? 'dzień' : 'dni'; }
         else if (absSec < 86400 * 365) { n = Math.round(absSec / (86400 * 30)); unit = n === 1 ? 'miesiąc' : (n < 5 ? 'miesiące' : 'miesięcy'); }
         else { n = Math.round(absSec / (86400 * 365)); unit = n === 1 ? 'rok' : (n < 5 ? 'lata' : 'lat'); }
-        return pastFuture + n + ' ' + unit + suffix;
+        return prefix + n + ' ' + unit;
     }
 
     function isExpired(pick) {
@@ -53,12 +63,6 @@
         if (!pick.expires_at) return false;
         var diffMs = new Date(pick.expires_at).getTime() - Date.now();
         return diffMs > 0 && diffMs < daysThreshold * 86400 * 1000;
-    }
-
-    function truncate(text, max) {
-        if (!text) return '';
-        if (text.length <= max) return text;
-        return text.substring(0, max - 1) + '…';
     }
 
     // Format ISO datetime → "yyyy-MM-ddTHH:mm" (input type=datetime-local)
@@ -79,6 +83,7 @@
         var soon = !expired && expiringSoon(pick, 7);
 
         var productCell = document.createElement('td');
+        productCell.dataset.label = 'Produkt';
         var prodLink = document.createElement('a');
         prodLink.href = SHOP_PRODUCT_URL + encodeURIComponent(pick.product_id);
         prodLink.target = '_blank';
@@ -92,6 +97,7 @@
         tr.appendChild(productCell);
 
         var catCell = document.createElement('td');
+        catCell.dataset.label = 'Kategoria';
         if (pick.category_hint) {
             catCell.textContent = pick.category_hint;
         } else {
@@ -103,22 +109,26 @@
         tr.appendChild(catCell);
 
         var boostCell = document.createElement('td');
-        boostCell.className = 'num';
-        boostCell.appendChild(renderBoostBar(parseFloat(pick.boost_factor)));
+        boostCell.dataset.label = 'Boost';
+        boostCell.className = 'num editorial-cell__boost';
+        boostCell.textContent = '×' + parseFloat(pick.boost_factor).toFixed(1);
         tr.appendChild(boostCell);
 
         var reasonCell = document.createElement('td');
+        reasonCell.dataset.label = 'Powód';
         reasonCell.className = 'editorial-cell__reason';
         reasonCell.title = pick.reason || '';
-        reasonCell.textContent = truncate(pick.reason || '', 60);
+        reasonCell.textContent = pick.reason || '';
         tr.appendChild(reasonCell);
 
         var addedCell = document.createElement('td');
+        addedCell.dataset.label = 'Dodał / kiedy';
         addedCell.innerHTML = DiveAdmin.escHtml(pick.added_by || 'admin')
             + '<div class="editorial-cell__sub">' + DiveAdmin.escHtml(relativeTime(pick.added_at)) + '</div>';
         tr.appendChild(addedCell);
 
         var expiresCell = document.createElement('td');
+        expiresCell.dataset.label = 'Wygasa';
         if (!pick.expires_at) {
             var foreverBadge = document.createElement('span');
             foreverBadge.className = 'badge badge--muted';
@@ -134,6 +144,7 @@
         tr.appendChild(expiresCell);
 
         var reviewCell = document.createElement('td');
+        reviewCell.dataset.label = 'Last review';
         if (!pick.last_review_at) {
             reviewCell.innerHTML = '<span class="editorial-cell__sub">—</span>';
         } else {
@@ -142,6 +153,7 @@
         tr.appendChild(reviewCell);
 
         var statusCell = document.createElement('td');
+        statusCell.dataset.label = 'Status';
         var statusBadge = document.createElement('span');
         if (expired) {
             statusBadge.className = 'badge badge--expired';
@@ -154,56 +166,62 @@
         tr.appendChild(statusCell);
 
         var actionsCell = document.createElement('td');
-        actionsCell.className = 'actions';
-        actionsCell.appendChild(actionLink('Edit', function () { openEditModal(pick); }));
-        actionsCell.appendChild(actionLink('Mark reviewed', function () { quickAction(pick, 'mark_reviewed', { mark_reviewed: true }, 'Oznaczono jako przejrzane'); }));
-        actionsCell.appendChild(actionLink('+30d', function () { quickAction(pick, 'extend', { ttl_extend_days: 30 }, 'Pick przedłużony o 30 dni'); }));
+        actionsCell.dataset.label = 'Akcje';
+        actionsCell.className = 'actions editorial-cell__actions';
+        actionsCell.appendChild(iconAction('✎', 'Edytuj', function () { openEditModal(pick); }));
+        actionsCell.appendChild(iconAction('✓', 'Oznacz jako przejrzane', function () { quickAction(pick, { mark_reviewed: true }, 'Oznaczono jako przejrzane'); }));
+        actionsCell.appendChild(iconAction('+30d', 'Przedłuż o 30 dni', function () { quickAction(pick, { ttl_extend_days: 30 }, 'Pick przedłużony o 30 dni'); }, 'text'));
         if (pick.active) {
-            actionsCell.appendChild(actionLink('Deactivate', function () { quickAction(pick, 'deactivate', { active: false }, 'Pick zdezaktywowany'); }));
+            actionsCell.appendChild(iconAction('⏸', 'Dezaktywuj', function () { quickAction(pick, { active: false }, 'Pick zdezaktywowany'); }));
+        } else {
+            // Placeholder żeby kolumna miała stałą szerokość niezależnie od stanu
+            var placeholder = document.createElement('span');
+            placeholder.className = 'editorial-action editorial-action--placeholder';
+            actionsCell.appendChild(placeholder);
         }
-        actionsCell.appendChild(actionLink('Delete', function () { confirmDelete(pick); }, 'danger'));
+        actionsCell.appendChild(iconAction('🗑', 'Usuń permanentnie', function () { confirmDelete(pick); }, 'danger'));
         tr.appendChild(actionsCell);
 
         return tr;
     }
 
-    function actionLink(label, onClick, kind) {
-        var a = document.createElement('a');
-        a.href = '#';
-        a.className = 'editorial-action' + (kind ? ' editorial-action--' + kind : '');
-        a.textContent = label;
-        a.addEventListener('click', function (e) {
+    /**
+     * Buduje przycisk akcji w komórce. `kind` = 'danger'|'text'|undefined.
+     * Native title tooltip (przeglądarka renderuje na hover).
+     */
+    function iconAction(glyph, tooltip, onClick, kind) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'editorial-action' + (kind ? ' editorial-action--' + kind : '');
+        btn.title = tooltip;
+        btn.setAttribute('aria-label', tooltip);
+        btn.textContent = glyph;
+        btn.addEventListener('click', function (e) {
             e.preventDefault();
             onClick();
         });
-        return a;
-    }
-
-    function renderBoostBar(boost) {
-        var wrap = document.createElement('div');
-        wrap.className = 'boost-bar';
-        var label = document.createElement('span');
-        label.className = 'boost-bar__label';
-        label.textContent = '×' + boost.toFixed(1);
-        // skala 1.0-2.5 → 0-100%
-        var pct = Math.max(0, Math.min(100, ((boost - 1.0) / 1.5) * 100));
-        var bar = document.createElement('span');
-        bar.className = 'boost-bar__fill';
-        bar.style.width = pct.toFixed(0) + '%';
-        wrap.appendChild(label);
-        wrap.appendChild(bar);
-        return wrap;
+        return btn;
     }
 
     // --- Load list ---
 
+    /**
+     * Backend zwraca rekordy ORDER BY {col} DESC NULLS LAST. Dir 'asc' realizujemy
+     * client-side przez reverse() — proste i wystarczająco poprawne dla picków
+     * (typowo <50 rekordów). NULLS przesuwają się na początek przy ASC, co matchuje
+     * intuicyjne "Bez review najdłużej" (NULL = nigdy nie reviewed = najpilniejsze).
+     */
     function loadList() {
+        // Sync state.statusFilter z dropdownem (lub needs_review query)
         var statusEl = document.getElementById('editorialFilterStatus');
         var sortEl = document.getElementById('editorialFilterSort');
-        var status = statusEl ? statusEl.value : '1';
-        var orderBy = sortEl ? sortEl.value : 'added_at';
+        if (statusEl && !state.needsReviewMode) state.statusFilter = statusEl.value;
+        if (sortEl) sortEl.value = state.sort.col;
+        updateSortIndicators();
 
-        var url = API_BASE + '?active=' + encodeURIComponent(status) + '&order_by=' + encodeURIComponent(orderBy);
+        // needs_review mode: pobierz wszystkie (active=all), filter client-side
+        var apiActive = state.needsReviewMode ? 'all' : state.statusFilter;
+        var url = API_BASE + '?active=' + encodeURIComponent(apiActive) + '&order_by=' + encodeURIComponent(state.sort.col);
 
         var tbody = document.getElementById('editorialBody');
         var emptyEl = document.getElementById('editorialEmpty');
@@ -214,10 +232,23 @@
         DiveAdmin.api(url)
             .then(function (data) {
                 var picks = data.picks || [];
-                if (countEl) countEl.textContent = picks.length + ' pozyc' + (picks.length === 1 ? 'ja' : 'ji');
+
+                // Client-side filter dla needs_review (banner CTA)
+                if (state.needsReviewMode) {
+                    picks = picks.filter(isPendingReview);
+                }
+
+                // Client-side dir override (backend zawsze DESC)
+                if (state.sort.dir === 'asc') {
+                    picks = picks.slice().reverse();
+                }
+
+                if (countEl) {
+                    countEl.textContent = picks.length + ' pozyc' + (picks.length === 1 ? 'ja' : 'ji')
+                        + (state.needsReviewMode ? ' (filter: needs review)' : '');
+                }
                 tbody.innerHTML = '';
                 if (picks.length === 0) {
-                    tbody.innerHTML = '';
                     if (emptyEl) emptyEl.classList.remove('hidden');
                     return;
                 }
@@ -234,37 +265,117 @@
             });
     }
 
+    // needs_review predykat: aktywne bezterminowe bez review > 30d LUB wygasłe w ostatnich 7d
+    function isPendingReview(pick) {
+        var now = Date.now();
+        var THIRTY_D = 30 * 86400 * 1000;
+        var SEVEN_D = 7 * 86400 * 1000;
+
+        if (pick.active && !pick.expires_at) {
+            if (!pick.last_review_at) return true;
+            var lastReview = new Date(pick.last_review_at).getTime();
+            if (now - lastReview > THIRTY_D) return true;
+        }
+
+        if (!pick.active && pick.expires_at) {
+            var expiresMs = new Date(pick.expires_at).getTime();
+            if (expiresMs <= now && now - expiresMs < SEVEN_D) return true;
+        }
+
+        return false;
+    }
+
+    // --- Sortable headers ---
+
+    function bindSortableHeaders() {
+        document.querySelectorAll('#editorialSection th.sortable').forEach(function (th) {
+            th.addEventListener('click', function () {
+                var col = th.dataset.sort;
+                if (!col || SORTABLE_COLUMNS.indexOf(col) === -1) return;
+                if (state.sort.col === col) {
+                    state.sort.dir = state.sort.dir === 'desc' ? 'asc' : 'desc';
+                } else {
+                    state.sort.col = col;
+                    state.sort.dir = 'desc';
+                }
+                syncSortToHash();
+                loadList();
+            });
+        });
+    }
+
+    function updateSortIndicators() {
+        document.querySelectorAll('#editorialSection th.sortable').forEach(function (th) {
+            var col = th.dataset.sort;
+            th.classList.remove('sortable--active', 'sortable--asc', 'sortable--desc');
+            if (col === state.sort.col) {
+                th.classList.add('sortable--active', 'sortable--' + state.sort.dir);
+            }
+        });
+    }
+
+    function syncSortToHash() {
+        // Zachowaj tab editorial-picks + status + needs_review w URL
+        var parts = ['sort=' + encodeURIComponent(state.sort.col), 'dir=' + encodeURIComponent(state.sort.dir)];
+        if (state.needsReviewMode) {
+            parts.unshift('status=needs_review');
+        } else if (state.statusFilter !== '1') {
+            parts.unshift('status=' + encodeURIComponent(state.statusFilter));
+        }
+        var newHash = '#/editorial-picks?' + parts.join('&');
+        if (window.location.hash !== newHash) {
+            // history.replaceState żeby nie spamować historii kolejnymi sort clickami
+            history.replaceState(null, '', newHash);
+        }
+    }
+
     // --- Banner pending-reviews ---
 
+    /**
+     * GET /api/admin/editorial-picks/pending-reviews → {expired_this_week, long_unreviewed, total}.
+     * T-013: endpoint dostarczony przez T-012, więc banner aktywny zawsze gdy total > 0.
+     * Dla 404/5xx pokazujemy console.warn ale nie blokujemy UI.
+     */
     function checkPendingReviewsBanner() {
-        if (state.bannerChecked) return;
-        state.bannerChecked = true;
         DiveAdmin.api(API_BASE + '/pending-reviews')
             .then(function (data) {
                 var banner = document.getElementById('editorialBanner');
                 var text = document.getElementById('editorialBannerText');
                 if (!banner || !text) return;
-                var count = data && (data.count != null ? data.count : (data.picks ? data.picks.length : 0));
-                if (!count) return;
-                var expired = (data && data.expired) || 0;
-                var noReview = (data && data.no_review) || 0;
-                text.textContent = count + ' picków wymaga review: '
-                    + expired + ' wygasłych w tym tygodniu, '
-                    + noReview + ' bezterminowych bez review > 30 dni.';
+                var total = (data && data.total) || 0;
+                if (total <= 0) {
+                    banner.classList.add('hidden');
+                    return;
+                }
+                var expired = (data && data.expired_this_week) || 0;
+                var unreviewed = (data && data.long_unreviewed) || 0;
+                text.textContent = total + ' pick' + pluralPicks(total) + ' wymaga review: '
+                    + expired + ' wygasł' + pluralExpired(expired) + ' w tym tygodniu, '
+                    + unreviewed + ' bezterminow' + pluralIndefinite(unreviewed) + ' bez review > 30 dni.';
                 banner.classList.remove('hidden');
             })
             .catch(function (err) {
-                // 404 = endpoint nie zaimplementowany; cisza, żaden banner
-                if (err && (err.message || '').indexOf('404') === -1) {
-                    console.warn('pending-reviews check failed:', err.message);
-                }
+                console.warn('pending-reviews check failed:', err.message);
             });
+    }
+
+    function pluralPicks(n) { return n === 1 ? '' : 'ów'; }
+    function pluralExpired(n) {
+        if (n === 1) return ' (auto-zdezaktywowany)';
+        if (n >= 2 && n <= 4) return 'y';
+        return 'ych';
+    }
+    function pluralIndefinite(n) {
+        if (n === 1) return 'y';
+        if (n >= 2 && n <= 4) return 'e';
+        return 'ych';
     }
 
     // --- Modal Add / Edit ---
 
     function openAddModal() {
         state.currentEdit = null;
+        state.selectedProduct = null;
         document.getElementById('editorialModalTitle').textContent = 'Dodaj editorial pick';
         document.getElementById('editorialFormSubmit').textContent = 'Dodaj pick';
         var form = document.getElementById('editorialForm');
@@ -272,32 +383,209 @@
         document.querySelector('input[name="ttl_days"][value="60"]').checked = true;
         setBoostInputValue(1.5);
         document.getElementById('editorialEditFields').classList.add('hidden');
-        // Product fields odblokowane
-        form.product_id.readOnly = false;
-        form.product_name.readOnly = false;
+        // Reset autocomplete UI: search visible, chip+manual hidden
+        resetAutocompleteUi();
+        document.getElementById('editorialAutocomplete').classList.remove('hidden');
         showFormError(null);
         showModal();
     }
 
     function openEditModal(pick) {
         state.currentEdit = pick;
+        state.selectedProduct = { id: pick.product_id, name: pick.product_name || '' };
         document.getElementById('editorialModalTitle').textContent = 'Edytuj pick #' + pick.id;
         document.getElementById('editorialFormSubmit').textContent = 'Zapisz zmiany';
         var form = document.getElementById('editorialForm');
         form.reset();
-        form.product_id.value = pick.product_id;
-        form.product_name.value = pick.product_name || '';
-        form.product_id.readOnly = true;
-        form.product_name.readOnly = true;
+        // Hidden inputs
+        document.getElementById('editorialProductId').value = String(pick.product_id);
+        document.getElementById('editorialProductName').value = pick.product_name || '';
+        // Edit mode: ukryj autocomplete + manual; pokaż chip readonly z nazwą produktu
+        document.getElementById('editorialAutocomplete').classList.add('hidden');
+        document.getElementById('editorialManualFields').classList.add('hidden');
+        showProductChip(pick.product_id, pick.product_name || '', /*editMode*/ true);
+        // Reszta pól (category_hint nie używa name="product_*", więc fd.get działa)
         form.category_hint.value = pick.category_hint || '';
         setBoostInputValue(parseFloat(pick.boost_factor));
         form.reason.value = pick.reason || '';
-        // TTL ukryte przy edycie — pokaż edit-only fields zamiast
+        // Edit-only fields zamiast TTL
         document.getElementById('editorialEditFields').classList.remove('hidden');
         form.active.checked = !!pick.active;
         form.expires_at.value = isoForInput(pick.expires_at);
         showFormError(null);
         showModal();
+    }
+
+    // --- Autocomplete /api/admin/products/search ---
+
+    function resetAutocompleteUi() {
+        var search = document.getElementById('editorialProductSearch');
+        var results = document.getElementById('editorialAutocompleteResults');
+        var chip = document.getElementById('editorialAutocompleteChip');
+        var manualFields = document.getElementById('editorialManualFields');
+        var err = document.getElementById('editorialAutocompleteError');
+        if (search) { search.value = ''; search.classList.remove('hidden'); }
+        if (results) { results.innerHTML = ''; results.classList.add('hidden'); }
+        if (chip) chip.classList.add('hidden');
+        if (manualFields) manualFields.classList.add('hidden');
+        if (err) { err.textContent = ''; err.classList.add('hidden'); }
+        document.getElementById('editorialProductId').value = '';
+        document.getElementById('editorialProductName').value = '';
+        var manualId = document.getElementById('editorialManualId');
+        var manualName = document.getElementById('editorialManualName');
+        if (manualId) manualId.value = '';
+        if (manualName) manualName.value = '';
+    }
+
+    /**
+     * Pokaż chip z wybranym produktem; ukryj search input. editMode = true → chip
+     * "informacyjny" w Edit modal (X resetuje TYLKO w Add, w Edit X jest noop / hidden).
+     */
+    function showProductChip(id, name, editMode) {
+        var chip = document.getElementById('editorialAutocompleteChip');
+        var search = document.getElementById('editorialProductSearch');
+        var results = document.getElementById('editorialAutocompleteResults');
+        var resetBtn = document.getElementById('editorialChipReset');
+        document.getElementById('editorialChipName').textContent = name || ('#' + id);
+        document.getElementById('editorialChipId').textContent = '#' + id;
+        chip.classList.remove('hidden');
+        if (search) search.classList.add('hidden');
+        if (results) { results.classList.add('hidden'); results.innerHTML = ''; }
+        if (resetBtn) resetBtn.style.display = editMode ? 'none' : '';
+    }
+
+    function selectProduct(product) {
+        state.selectedProduct = { id: product.id, name: product.name };
+        document.getElementById('editorialProductId').value = String(product.id);
+        document.getElementById('editorialProductName').value = product.name;
+        showProductChip(product.id, product.name, false);
+        var err = document.getElementById('editorialAutocompleteError');
+        if (err) { err.textContent = ''; err.classList.add('hidden'); }
+        document.getElementById('editorialManualFields').classList.add('hidden');
+    }
+
+    function runAutocomplete(query) {
+        var results = document.getElementById('editorialAutocompleteResults');
+        var err = document.getElementById('editorialAutocompleteError');
+        if (!query || query.length < 2) {
+            if (results) { results.innerHTML = ''; results.classList.add('hidden'); }
+            return;
+        }
+
+        // Anuluj poprzedni in-flight request
+        if (state.autocomplete.abortController) {
+            try { state.autocomplete.abortController.abort(); } catch (_) {}
+        }
+        var ac = new AbortController();
+        state.autocomplete.abortController = ac;
+
+        fetch(PRODUCTS_SEARCH_URL + '?q=' + encodeURIComponent(query),
+            { credentials: 'same-origin', signal: ac.signal })
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                var products = (data && data.products) || [];
+                renderAutocompleteResults(products, data && data.message);
+                if (err) { err.textContent = ''; err.classList.add('hidden'); }
+            })
+            .catch(function (e) {
+                if (e.name === 'AbortError') return;
+                if (results) { results.innerHTML = ''; results.classList.add('hidden'); }
+                if (err) {
+                    err.textContent = 'Błąd wyszukiwania: ' + e.message + '. Wpisz ID manualnie.';
+                    err.classList.remove('hidden');
+                }
+                document.getElementById('editorialManualFields').classList.remove('hidden');
+            });
+    }
+
+    function renderAutocompleteResults(products, message) {
+        var results = document.getElementById('editorialAutocompleteResults');
+        if (!results) return;
+        results.innerHTML = '';
+        if (products.length === 0) {
+            var msg = message || 'Brak wyników';
+            var li = document.createElement('li');
+            li.className = 'editorial-autocomplete__empty';
+            li.textContent = msg;
+            results.appendChild(li);
+            results.classList.remove('hidden');
+            return;
+        }
+        products.forEach(function (p) {
+            var li = document.createElement('li');
+            li.className = 'editorial-autocomplete__item';
+            li.setAttribute('role', 'option');
+            li.tabIndex = 0;
+            li.innerHTML =
+                '<span class="editorial-autocomplete__item-name">' + DiveAdmin.escHtml(p.name) + '</span>'
+                + '<span class="editorial-autocomplete__item-meta">'
+                + '<span class="editorial-autocomplete__item-price">' + (p.price ? p.price.toFixed(2) + ' zł' : '—') + '</span>'
+                + '<span class="editorial-autocomplete__item-stock ' + (p.in_stock ? 'in-stock' : 'out-stock') + '">'
+                + (p.in_stock ? '● od ręki' : '○ na zamówienie')
+                + '</span>'
+                + '<span class="editorial-autocomplete__item-id">#' + p.id + '</span>'
+                + '</span>';
+            li.addEventListener('click', function () { selectProduct(p); });
+            li.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectProduct(p); }
+            });
+            results.appendChild(li);
+        });
+        results.classList.remove('hidden');
+    }
+
+    function bindAutocomplete() {
+        var search = document.getElementById('editorialProductSearch');
+        if (search) {
+            search.addEventListener('input', function () {
+                if (state.autocomplete.timer) clearTimeout(state.autocomplete.timer);
+                var v = search.value.trim();
+                state.autocomplete.timer = setTimeout(function () { runAutocomplete(v); }, 300);
+            });
+            // Klik poza dropdownem zamyka go (mousedown by nie odpalić blur przed click na item)
+            document.addEventListener('mousedown', function (e) {
+                var results = document.getElementById('editorialAutocompleteResults');
+                if (!results || results.classList.contains('hidden')) return;
+                if (e.target === search || results.contains(e.target)) return;
+                results.classList.add('hidden');
+            });
+        }
+
+        var resetBtn = document.getElementById('editorialChipReset');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', function () {
+                if (state.currentEdit) return; // w Edit X jest hidden, ale safety
+                state.selectedProduct = null;
+                resetAutocompleteUi();
+            });
+        }
+
+        var manualToggle = document.getElementById('editorialManualToggle');
+        if (manualToggle) {
+            manualToggle.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.getElementById('editorialManualFields').classList.remove('hidden');
+                document.getElementById('editorialManualId').focus();
+            });
+        }
+
+        // Manual input: wpisanie zapisuje hidden inputs (i czyści chip jeśli był)
+        var manualId = document.getElementById('editorialManualId');
+        var manualName = document.getElementById('editorialManualName');
+        function syncManualToHidden() {
+            var id = parseInt(manualId.value, 10);
+            var name = manualName.value.trim();
+            if (id > 0 && name) {
+                state.selectedProduct = { id: id, name: name };
+                document.getElementById('editorialProductId').value = String(id);
+                document.getElementById('editorialProductName').value = name;
+            }
+        }
+        if (manualId) manualId.addEventListener('input', syncManualToHidden);
+        if (manualName) manualName.addEventListener('input', syncManualToHidden);
     }
 
     function showModal() {
@@ -335,6 +623,7 @@
     function readForm() {
         var form = document.getElementById('editorialForm');
         var fd = new FormData(form);
+        // Hidden inputs: product_id + product_name są wypełniane przez selectProduct() lub manual sync
         var body = {
             product_id: parseInt(fd.get('product_id'), 10),
             product_name: (fd.get('product_name') || '').trim(),
@@ -343,15 +632,9 @@
             reason: (fd.get('reason') || '').trim(),
         };
         if (state.currentEdit) {
-            // Edit mode — mapuj pola edit-only
             body.active = form.active.checked;
             var exp = (fd.get('expires_at') || '').trim();
-            if (exp) {
-                // input datetime-local → ISO string (browser local timezone)
-                body.expires_at = new Date(exp).toISOString();
-            } else {
-                body.expires_at = null;
-            }
+            body.expires_at = exp ? new Date(exp).toISOString() : null;
         } else {
             var ttl = fd.get('ttl_days');
             if (ttl !== null && ttl !== '') {
@@ -417,11 +700,13 @@
 
     // --- Quick actions ---
 
-    function quickAction(pick, kind, body, successMsg) {
+    function quickAction(pick, body, successMsg) {
         DiveAdmin.send('PUT', API_BASE + '/' + pick.id, body)
             .then(function () {
                 DiveAdmin.toast(successMsg, 'success');
                 loadList();
+                // Odśwież banner po akcji która może zmienić licznik (mark_reviewed, deactivate, extend)
+                checkPendingReviewsBanner();
             })
             .catch(function (err) {
                 DiveAdmin.toast('Błąd: ' + err.message, 'error');
@@ -456,8 +741,22 @@
 
         var statusEl = document.getElementById('editorialFilterStatus');
         var sortEl = document.getElementById('editorialFilterSort');
-        if (statusEl) statusEl.addEventListener('change', loadList);
-        if (sortEl) sortEl.addEventListener('change', loadList);
+        if (statusEl) statusEl.addEventListener('change', function () {
+            // Zmiana statusu wyłącza needs_review mode (banner CTA był jednorazowy)
+            state.needsReviewMode = false;
+            state.statusFilter = statusEl.value;
+            syncSortToHash();
+            loadList();
+        });
+        if (sortEl) sortEl.addEventListener('change', function () {
+            state.sort.col = sortEl.value;
+            // Dropdown nie zmienia kierunku — zostaw obecny dir (default desc)
+            syncSortToHash();
+            loadList();
+        });
+
+        bindSortableHeaders();
+        bindAutocomplete();
 
         var form = document.getElementById('editorialForm');
         if (form) form.addEventListener('submit', submitForm);
@@ -480,15 +779,33 @@
 
     function ensureLoaded(route) {
         if (route.tab !== 'editorial-picks') return;
-        if (route.query && route.query.status === 'needs_review') {
-            // Banner CTA — wybierz "wszystkie", użytkownik dalej filtruje sortowaniem
-            var statusEl = document.getElementById('editorialFilterStatus');
-            if (statusEl) statusEl.value = 'all';
-        }
         if (!state.loaded) {
             state.loaded = true;
             bindEvents();
         }
+
+        // Parse URL hash query → state
+        var q = route.query || {};
+        if (q.status === 'needs_review') {
+            state.needsReviewMode = true;
+            // Wyzeruj dropdown statusu wizualnie do "Wszystkie" jako informacja
+            var statusEl = document.getElementById('editorialFilterStatus');
+            if (statusEl) statusEl.value = 'all';
+        } else {
+            state.needsReviewMode = false;
+            if (q.status === '0' || q.status === 'all' || q.status === '1') {
+                state.statusFilter = q.status;
+                var statusEl2 = document.getElementById('editorialFilterStatus');
+                if (statusEl2) statusEl2.value = q.status;
+            }
+        }
+        if (q.sort && SORTABLE_COLUMNS.indexOf(q.sort) !== -1) {
+            state.sort.col = q.sort;
+        }
+        if (q.dir === 'asc' || q.dir === 'desc') {
+            state.sort.dir = q.dir;
+        }
+
         loadList();
     }
 
