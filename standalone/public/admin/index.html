@@ -11,7 +11,8 @@
     <header class="topbar">
         <div class="topbar__title">DiveChat Admin</div>
         <nav class="topbar__nav">
-            <a class="topbar__link topbar__link--active" href="#koszty">Koszty</a>
+            <a class="topbar__link topbar__link--active" href="#/koszty" data-tab="koszty">Koszty</a>
+            <a class="topbar__link" href="#/editorial-picks" data-tab="editorial-picks">Editorial Picks</a>
             <a class="topbar__link topbar__link--disabled" title="Wkrótce">Rozmowy</a>
             <a class="topbar__link topbar__link--disabled" title="Wkrótce">Cennik</a>
             <a class="topbar__link topbar__link--disabled" title="Wkrótce">Ustawienia</a>
@@ -19,7 +20,14 @@
         <div class="topbar__user" id="topbarUser">—</div>
     </header>
 
-    <main class="dashboard">
+    <!-- T-011: banner widoczny w sekcji Koszty (top dashboardu), JS odsłania przy pending-reviews -->
+    <div class="dashboard-banner hidden" id="editorialBanner" data-tab="koszty">
+        <span class="dashboard-banner__icon" aria-hidden="true">⚠️</span>
+        <span class="dashboard-banner__text" id="editorialBannerText">—</span>
+        <a class="dashboard-banner__cta" href="#/editorial-picks?status=needs_review">Zobacz wszystkie</a>
+    </div>
+
+    <main class="dashboard" id="costSection" data-tab="koszty">
         <!-- A2: KPI -->
         <section class="kpi" id="kpiSection">
             <div class="kpi__card kpi__card--loading"><span class="kpi__label">Dziś</span><span class="kpi__value">—</span></div>
@@ -97,6 +105,119 @@
         </section>
     </main>
 
+    <!-- T-011: Editorial Picks (lazy populated by admin-editorial.js) -->
+    <main class="dashboard hidden" id="editorialSection" data-tab="editorial-picks">
+        <section class="panel">
+            <header class="panel__header">
+                <h2>Editorial Picks</h2>
+                <div class="panel__actions">
+                    <button class="btn btn--primary" id="editorialAddBtn">+ Dodaj pick</button>
+                </div>
+            </header>
+            <div class="panel__body">
+                <div class="editorial-filters">
+                    <label class="editorial-filters__group">
+                        <span>Status</span>
+                        <select id="editorialFilterStatus">
+                            <option value="1">Aktywne</option>
+                            <option value="0">Wygasłe / nieaktywne</option>
+                            <option value="all">Wszystkie</option>
+                        </select>
+                    </label>
+                    <label class="editorial-filters__group">
+                        <span>Sort</span>
+                        <select id="editorialFilterSort">
+                            <option value="added_at">Dodane (najnowsze)</option>
+                            <option value="expires_at">Wygasające najszybciej</option>
+                            <option value="boost_factor">Najwyższy boost</option>
+                            <option value="product_name">Nazwa produktu A→Z</option>
+                        </select>
+                    </label>
+                    <span class="editorial-filters__count" id="editorialCount"></span>
+                </div>
+                <table class="data-table data-table--editorial">
+                    <thead>
+                        <tr>
+                            <th>Produkt</th>
+                            <th>Kategoria</th>
+                            <th class="num">Boost</th>
+                            <th>Powód</th>
+                            <th>Dodał / kiedy</th>
+                            <th>Wygasa</th>
+                            <th>Last review</th>
+                            <th>Status</th>
+                            <th class="actions">Akcje</th>
+                        </tr>
+                    </thead>
+                    <tbody id="editorialBody">
+                        <tr><td colspan="9" class="data-table__empty">Ładowanie…</td></tr>
+                    </tbody>
+                </table>
+                <div class="panel__empty hidden" id="editorialEmpty">
+                    Brak Editorial Picks. <a href="#" id="editorialEmptyAdd">Dodaj pierwszy</a>.
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- T-011: Modal Add/Edit pick -->
+    <div class="modal hidden" id="editorialModal" role="dialog" aria-modal="true" aria-labelledby="editorialModalTitle">
+        <div class="modal__backdrop" data-close-modal></div>
+        <div class="modal__panel">
+            <header class="modal__header">
+                <h2 id="editorialModalTitle">Dodaj editorial pick</h2>
+                <button class="btn btn--close" data-close-modal aria-label="Zamknij">&times;</button>
+            </header>
+            <form class="modal__body editorial-form" id="editorialForm" autocomplete="off">
+                <div class="editorial-form__row">
+                    <label>Product ID
+                        <input type="number" name="product_id" required min="1" placeholder="np. 6865">
+                    </label>
+                    <label>Product name
+                        <input type="text" name="product_name" required placeholder="np. SANTI E.Lite Plus Ladies First">
+                    </label>
+                </div>
+                <label>Category hint <span class="editorial-form__hint">(opcjonalne — pusty = wszystkie kategorie)</span>
+                    <input type="text" name="category_hint" placeholder="np. Skafandry suche">
+                </label>
+                <label>Boost factor: <strong id="editorialBoostLabel">×1.5</strong>
+                    <input type="range" name="boost_factor" id="editorialBoostInput" min="1.0" max="2.5" step="0.1" value="1.5">
+                </label>
+                <label>Powód <span class="editorial-form__hint">(min 10 znaków)</span>
+                    <textarea name="reason" required minlength="10" maxlength="500" rows="3" placeholder="Np. Powystawowy in_stock, dobra cena za rozmiar damski"></textarea>
+                </label>
+                <fieldset class="editorial-form__ttl">
+                    <legend>TTL</legend>
+                    <label><input type="radio" name="ttl_days" value="15"> 15 dni</label>
+                    <label><input type="radio" name="ttl_days" value="30"> 30 dni</label>
+                    <label><input type="radio" name="ttl_days" value="60" checked> 60 dni (domyślnie)</label>
+                    <label><input type="radio" name="ttl_days" value="90"> 90 dni</label>
+                    <label><input type="radio" name="ttl_days" value=""> bezterminowo</label>
+                </fieldset>
+
+                <!-- Pola Edit-only (ukryte przy Add) -->
+                <fieldset class="editorial-form__edit-only hidden" id="editorialEditFields">
+                    <label class="editorial-form__active">
+                        <input type="checkbox" name="active"> Aktywny
+                    </label>
+                    <label>Wygasa (data)
+                        <input type="datetime-local" name="expires_at">
+                    </label>
+                </fieldset>
+
+                <div class="editorial-form__error hidden" id="editorialFormError"></div>
+
+                <div class="editorial-form__actions">
+                    <button type="button" class="btn" data-close-modal>Anuluj</button>
+                    <button type="submit" class="btn btn--primary" id="editorialFormSubmit">Dodaj pick</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- T-011: Toast container -->
+    <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
+
     <!-- B2: Modal podgląd rozmowy -->
     <div class="modal hidden" id="convModal" role="dialog" aria-modal="true" aria-labelledby="convModalTitle">
         <div class="modal__backdrop" data-close-modal></div>
@@ -114,5 +235,6 @@
     <script src="js/admin-charts.js" defer></script>
     <script src="js/admin-tables.js" defer></script>
     <script src="js/admin-conversation.js" defer></script>
+    <script src="js/admin-editorial.js" defer></script>
 </body>
 </html>

@@ -61,6 +61,93 @@
             });
     };
 
+    // Wysyła POST/PUT/DELETE z body JSON. Zwraca promise z parsedJson lub rzuca Error
+    // wzbogacony o pola .status oraz .body — żeby caller mógł rozróżnić 404 / 409 / inne.
+    DiveAdmin.send = function (method, url, body) {
+        var opts = {
+            method: method,
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+        };
+        if (body !== undefined && body !== null) {
+            opts.body = JSON.stringify(body);
+        }
+        return fetch(url, opts).then(function (r) {
+            return r.text().then(function (txt) {
+                var data = null;
+                if (txt) {
+                    try { data = JSON.parse(txt); } catch (e) { data = { raw: txt }; }
+                }
+                if (!r.ok) {
+                    var msg = (data && data.error) ? data.error : ('HTTP ' + r.status);
+                    var err = new Error(msg);
+                    err.status = r.status;
+                    err.body = data;
+                    throw err;
+                }
+                return data;
+            });
+        });
+    };
+
+    // T-011: prosty toast (auto-dismiss po 3s)
+    DiveAdmin.toast = function (message, kind) {
+        var container = document.getElementById('toastContainer');
+        if (!container) return;
+        var t = document.createElement('div');
+        t.className = 'toast' + (kind ? ' toast--' + kind : '');
+        t.textContent = message;
+        container.appendChild(t);
+        setTimeout(function () {
+            t.classList.add('toast--leaving');
+            setTimeout(function () { t.remove(); }, 200);
+        }, 3000);
+    };
+
+    // T-011: hash-based router
+    function parseHash() {
+        var raw = (window.location.hash || '').replace(/^#\/?/, '');
+        var qIdx = raw.indexOf('?');
+        var path = qIdx >= 0 ? raw.substring(0, qIdx) : raw;
+        var queryStr = qIdx >= 0 ? raw.substring(qIdx + 1) : '';
+        var query = {};
+        queryStr.split('&').forEach(function (kv) {
+            if (!kv) return;
+            var pair = kv.split('=');
+            query[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1] || '');
+        });
+        return { tab: path || 'koszty', query: query };
+    }
+
+    DiveAdmin.router = {
+        get: parseHash,
+        listeners: [],
+        onChange: function (cb) { this.listeners.push(cb); },
+    };
+
+    function applyRoute() {
+        var route = parseHash();
+        var tab = route.tab;
+        // Pokaż tylko sekcje pasujące do tab; reszta hidden
+        document.querySelectorAll('[data-tab]').forEach(function (el) {
+            if (el.classList.contains('topbar__link')) return; // linki obsługujemy osobno
+            if (el.dataset.tab === tab) {
+                el.classList.remove('hidden');
+            } else {
+                el.classList.add('hidden');
+            }
+        });
+        // Active link
+        document.querySelectorAll('.topbar__link[data-tab]').forEach(function (link) {
+            link.classList.toggle('topbar__link--active', link.dataset.tab === tab);
+        });
+        DiveAdmin.router.listeners.forEach(function (cb) {
+            try { cb(route); } catch (e) { console.error('router listener error:', e); }
+        });
+    }
+
+    window.addEventListener('hashchange', applyRoute);
+
     // KPI section - render z /api/admin/cost/kpi
     DiveAdmin.loadKpi = function () {
         var section = document.getElementById('kpiSection');
@@ -119,7 +206,12 @@
 
     // --- Boot ---
     document.addEventListener('DOMContentLoaded', function () {
+        // Default na #/koszty jeśli pusty hash, żeby active link działał konsystentnie
+        if (!window.location.hash) {
+            window.location.replace('#/koszty');
+        }
+        applyRoute();
         DiveAdmin.loadKpi();
-        // Inne sekcje ładują się przez własne moduły (admin-charts.js, admin-tables.js)
+        // Inne sekcje ładują się przez własne moduły (admin-charts.js, admin-tables.js, admin-editorial.js)
     });
 })();
