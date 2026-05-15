@@ -63,11 +63,21 @@
 
     // Wysyła POST/PUT/DELETE z body JSON. Zwraca promise z parsedJson lub rzuca Error
     // wzbogacony o pola .status oraz .body — żeby caller mógł rozróżnić 404 / 409 / inne.
+    //
+    // Method override: PUT i DELETE są wysyłane jako POST + X-HTTP-Method-Override.
+    // Powód: Apache ModSecurity na chat.divezone.pl blokuje PUT/DELETE z 403
+    // zanim trafią do PHP (smoke T-012 15.05). Backend rozpoznaje header i mapuje
+    // method z powrotem na PUT/DELETE w Request::resolveMethod().
     DiveAdmin.send = function (method, url, body) {
+        var useOverride = method === 'PUT' || method === 'DELETE';
+        var headers = { 'Content-Type': 'application/json' };
+        if (useOverride) {
+            headers['X-HTTP-Method-Override'] = method;
+        }
         var opts = {
-            method: method,
+            method: useOverride ? 'POST' : method,
             credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
         };
         if (body !== undefined && body !== null) {
             opts.body = JSON.stringify(body);

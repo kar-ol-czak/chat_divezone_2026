@@ -20,11 +20,36 @@ final class Request
 
     public function __construct()
     {
-        $this->method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+        $this->method = $this->resolveMethod();
         $this->path = $this->parsePath();
         $this->headers = $this->parseHeaders();
         $this->jsonBody = $this->parseJsonBody();
         $this->queryParams = $_GET;
+    }
+
+    /**
+     * Mapuje POST + X-HTTP-Method-Override: PUT|DELETE|PATCH na faktyczny method.
+     * Workaround dla shared hosting / Apache ModSecurity blokujących PUT i DELETE
+     * (smoke T-012 15.05 wykrył HTTP 403 dla PUT na chat.divezone.pl).
+     */
+    private function resolveMethod(): string
+    {
+        $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+        if ($method !== 'POST') {
+            return $method;
+        }
+
+        $override = $_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'] ?? null;
+        if ($override === null) {
+            return $method;
+        }
+
+        $override = strtoupper(trim($override));
+        if (in_array($override, ['PUT', 'DELETE', 'PATCH'], true)) {
+            return $override;
+        }
+
+        return $method;
     }
 
     public function getHeader(string $name): ?string

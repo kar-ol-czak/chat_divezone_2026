@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DiveChat\Controller;
 
+use DiveChat\Database\MysqlConnection;
 use DiveChat\Editorial\EditorialPicksService;
 use DiveChat\Http\AdminAuthMiddleware;
 use DiveChat\Http\Request;
@@ -153,5 +154,62 @@ final class AdminEditorialPicksController
         }
 
         Response::json(['success' => true, 'id' => $id]);
+    }
+
+    public function pendingReviews(Request $request): void
+    {
+        $this->auth->check();
+        Response::json($this->service->pendingReviews());
+    }
+
+    /**
+     * Autocomplete dla form Add picka — wyszukuje produkty w PrestaShop MySQL.
+     * GET /api/admin/products/search?q={min 2 znaki}
+     */
+    public function productsSearch(Request $request): void
+    {
+        $this->auth->check();
+
+        $q = trim((string) ($_GET['q'] ?? ''));
+        if (mb_strlen($q) < 2) {
+            Response::json(['products' => [], 'message' => 'Min. 2 znaki']);
+        }
+
+        try {
+            $mysql = MysqlConnection::getInstance();
+        } catch (\Throwable $e) {
+            Response::error('Database unavailable', 503);
+        }
+
+        $exactId = ctype_digit($q) ? (int) $q : 0;
+        $like = '%' . $q . '%';
+
+        $rows = $mysql->fetchAll(
+            "SELECT
+                p.id_product,
+                pl.name AS product_name,
+                ps.price,
+                COALESCE(sa.quantity, 0) AS quantity
+            FROM pr_product p
+            JOIN pr_product_lang pl ON p.id_product = pl.id_product AND pl.id_lang = 1
+            JOIN pr_product_shop ps ON p.id_product = ps.id_product AND ps.id_shop = 1 AND ps.active = 1
+            LEFT JOIN pr_stock_available sa ON p.id_product = sa.id_product AND sa.id_product_attribute = 0
+            WHERE pl.name LIKE ? OR p.id_product = ? OR p.reference LIKE ?
+            ORDER BY (CASE WHEN p.id_product = ? THEN 0 ELSE 1 END), pl.name
+            LIMIT 20",
+            [$like, $exactId, $like, $exactId],
+        );
+
+        $products = [];
+        foreach ($rows as $row) {
+            $products[] = [
+                'id' => (int) $row['id_product'],
+                'name' => (string) $row['product_name'],
+                'price' => (float) $row['price'],
+                'in_stock' => ((int) $row['quantity']) > 0,
+            ];
+        }
+
+        Response::json(['products' => $products, 'count' => count($products)]);
     }
 }

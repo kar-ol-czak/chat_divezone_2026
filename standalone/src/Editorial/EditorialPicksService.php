@@ -76,7 +76,7 @@ final class EditorialPicksService
      */
     public function list(?bool $active = null, string $orderBy = 'added_at'): array
     {
-        $allowedOrder = ['added_at', 'expires_at', 'boost_factor', 'product_name'];
+        $allowedOrder = ['added_at', 'expires_at', 'boost_factor', 'product_name', 'last_review_at'];
         if (!in_array($orderBy, $allowedOrder, true)) {
             $orderBy = 'added_at';
         }
@@ -89,6 +89,8 @@ final class EditorialPicksService
             $where = '(active = FALSE OR (expires_at IS NOT NULL AND expires_at <= NOW()))';
         }
 
+        // NULLS LAST przy DESC = "najnowsze góra, NULL na dole" — sensownie zarówno
+        // dla added_at/expires_at jak i last_review_at (pick nigdy nie reviewed → bottom).
         $sql = "SELECT id, product_id, product_name, category_hint, boost_factor,
                        reason, added_by, added_at, expires_at, last_review_at, active
                 FROM divechat_editorial_picks
@@ -96,6 +98,39 @@ final class EditorialPicksService
                 ORDER BY {$orderBy} DESC NULLS LAST";
 
         return $this->db->fetchAll($sql, $params);
+    }
+
+    /**
+     * Picki wymagające uwagi:
+     *  - expired_this_week: active=FALSE, auto-deaktywowane w ostatnich 7 dniach (mają expires_at <= NOW() < expires_at + 7 dni)
+     *  - long_unreviewed: aktywne bezterminowe (expires_at IS NULL) bez last_review_at lub last_review_at > 30 dni temu
+     *
+     * @return array{expired_this_week: int, long_unreviewed: int, total: int}
+     */
+    public function pendingReviews(): array
+    {
+        $expired = (int) ($this->db->fetchOne(
+            "SELECT count(*) AS c
+             FROM divechat_editorial_picks
+             WHERE active = FALSE
+               AND expires_at IS NOT NULL
+               AND expires_at <= NOW()
+               AND expires_at > NOW() - INTERVAL '7 days'"
+        )['c'] ?? 0);
+
+        $unreviewed = (int) ($this->db->fetchOne(
+            "SELECT count(*) AS c
+             FROM divechat_editorial_picks
+             WHERE active = TRUE
+               AND expires_at IS NULL
+               AND (last_review_at IS NULL OR last_review_at < NOW() - INTERVAL '30 days')"
+        )['c'] ?? 0);
+
+        return [
+            'expired_this_week' => $expired,
+            'long_unreviewed' => $unreviewed,
+            'total' => $expired + $unreviewed,
+        ];
     }
 
     /**

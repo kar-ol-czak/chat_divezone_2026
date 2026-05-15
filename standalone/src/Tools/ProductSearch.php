@@ -470,18 +470,26 @@ final class ProductSearch implements ToolInterface
             return $keep;
         });
 
-        // Filtruj in_stock_only z aktualnych danych MySQL
+        // Filtruj in_stock_only z aktualnych danych MySQL.
+        // ADR-058: Editorial Picks bypassują in_stock_only filter (flagowe produkty
+        // często available_to_order, warto je pokazać). price_max szanowany przez
+        // buildFilters() na poziomie PG — pick poza budżetem klienta nie trafia tu w ogóle.
         if ($inStockOnly) {
-            $filteredIds = array_filter($filteredIds, function (int $id) use ($mysqlData, &$filteredOut, $namesById) {
+            $filteredIds = array_filter($filteredIds, function (int $id) use ($mysqlData, &$filteredOut, $namesById, $editorialBoosts) {
                 $inStock = $mysqlData[$id]['in_stock'] ?? false;
-                if (!$inStock) {
-                    $filteredOut[] = [
-                        'id' => $id,
-                        'name' => $namesById[$id] ?? 'unknown',
-                        'reason' => 'in_stock_only=true, quantity=0',
-                    ];
+                if ($inStock) {
+                    return true;
                 }
-                return $inStock;
+                // Bypass dla Editorial Picks (ADR-058 hybryda).
+                if (isset($editorialBoosts[$id])) {
+                    return true;
+                }
+                $filteredOut[] = [
+                    'id' => $id,
+                    'name' => $namesById[$id] ?? 'unknown',
+                    'reason' => 'in_stock_only=true, quantity=0',
+                ];
+                return false;
             });
         }
 

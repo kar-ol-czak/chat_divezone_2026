@@ -81,8 +81,13 @@ return static function (
     // Admin: Editorial Picks (T-008, ADR-054) — chronione przez AdminAuthMiddleware
     $editorialPicksService = new EditorialPicksService($db);
     $editorialPicksController = new AdminEditorialPicksController($editorialPicksService, $adminAuth);
+    // Statyczne paths PRZED parametrycznym /{id} — Router dispatcher matchuje po kolejności.
+    $router->get('/api/admin/editorial-picks/pending-reviews', $editorialPicksController->pendingReviews(...));
     $router->get('/api/admin/editorial-picks', $editorialPicksController->list(...));
     $router->post('/api/admin/editorial-picks', $editorialPicksController->add(...));
     $router->put('/api/admin/editorial-picks/{id}', $editorialPicksController->update(...));
     $router->delete('/api/admin/editorial-picks/{id}', $editorialPicksController->delete(...));
+
+    // Admin: Products search (autocomplete dla form Add picka, T-012)
+    $router->get('/api/admin/products/search', $editorialPicksController->productsSearch(...));
 };
