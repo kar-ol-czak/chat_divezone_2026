@@ -1530,3 +1530,66 @@ Wartość `:global_allow` to `PS_ORDER_OUT_OF_STOCK` pobrana raz na request z `p
 **Implementacja:** T-006 backend (~45 min CC).
 
 **Powiązane:** ADR-048, ADR-049, ADR-053 pkt 7, T-003 patch F (działa po fix PHP)
+
+
+### ADR-057: D1 ETL z pr_category — design (Strategia B + alias table + single-value)
+
+**Data:** 2026-05-15 | **Status:** PRZYJĘTA | **Powiązane:** ADR-027 (parent_category_name fallback), ADR-055 (D2-hybrid hotfix), T-009 audyt
+
+**Kontekst:** Audyt T-009 (_docs/audyt_D1_ETL_pr_category.md) wykazał że pseudokategorie z NAZEWNICTWO SKLEPU (model-facing) różnią się systematycznie od nazw w `pr_category` PrestaShop (admin-facing). 60% rozjazdów Strategii B to nazewnictwo, nie struktura. D1 ETL w surowej formie zastąpiłby D2-hybrid wprowadzając mylące dla bota nazwy ("Skrzydła i jackety" zamiast "Wypornościowe").
+
+**Decyzje:**
+
+**1. Strategia B + tabela aliasów `divechat_category_aliases`.**
+
+ETL bierze `pr_category.level_depth = 2` jako kandydata na parent. Następnie aplikuje lookup w tabeli aliasów PG (PS name → NAZEWNICTWO SKLEPU). Tabela edytowalna online (bez deploy), Unicode lowercase normalization w lookup (case-insensitive match żeby "Maski i Fajki" matchowało alias dla "Maski i fajki").
+
+Schema (preview, finalna w T-010):
+
+```sql
+CREATE TABLE divechat_category_aliases (
+    id SERIAL PRIMARY KEY,
+    ps_name_normalized TEXT UNIQUE NOT NULL,  -- lower(unaccent(ps_name)), key lookup
+    ps_name_original TEXT NOT NULL,            -- "Skrzydła i jackety" (do podglądu)
+    model_facing_name TEXT NOT NULL,           -- "Wypornościowe"
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+Seed migracji wstępnie wypełnia tabelę 14 aliasami pokrywającymi TOP rozjazdy z audytu (Skrzydła i jackety → Wypornościowe, Latarki nurkowe → Oświetlenie, etc.).
+
+**2. Edge cases NULL→coś (hardcoded override w ETL):**
+
+Strategia B konsoliduje akcesoria pod nadkategorie (np. Kaptury/Rękawice/Buty pod "Skafandry mokre"). Dla wybranych pseudokategorii ETL stosuje override level=3 (Strategia A localnie):
+
+- Pseudokategoria "Skafandry mokre" → jeśli produkt jest na level=3 w PS w cat o nazwie {"Kaptury", "Rękawice", "Buty"} → użyj tej nazwy zamiast nadkategorii
+- Pseudokategoria "Skafandry suche" → jeśli produkt jest level=3 w cat "Ocieplacze do Suchych" → użyj tej nazwy
+- Inne override dodawane gdy audyt pokaże potrzebę (T-010 implementation phase)
+
+**3. Lista wpuszczanych grup NULL→coś** (z TOP 20 audytu B):
+
+WPUSZCZAMY (~270 produktów): Książki nurkowe (33), Buty (32), Kaptury (30), Rękawice (29), Torby i Skrzynie (56), Węże (39), Odzież Termoaktywna (19), Ogrzewanie nurkowe (17), Latarki nurkowe (9), Komputery Nurkowe akcesoria (9), Maski i Fajki (5), Płetwy (3), Odzież nurkowa (2), Fotografia i Video (1).
+
+NULL INTENCJONALNIE (~50 produktów): Vouchery prezentowe (5), price buckets PREZENTY ("do 100 PLN", "od 100 do 500 PLN" — łącznie 13), WYPRZEDAŻE (12), Morsowanie (4 — to segment sezonowy, nie kategoria), Dla dzieci i juniorów (3 — segment).
+
+**4. Single-value `parent_category_name TEXT`** (status quo, NIE multi-value).
+
+Audyt pokazał: 80%+ produktów ma 1 sensowny parent po filtrze active=1 + level>=2. Multi-value byłoby over-engineering wymagającym zmian w schemacie PG + ProductSearch (RRF aggregate) + SystemPrompt. Zachowujemy single-value, możemy dodać multi-value później jako migracja gdy konkretny use case z metryką recall pokaże korzyść.
+
+**5. Deprecation D2-hybrid (`sql/010_pseudocategory_mapping.sql`):**
+
+Po T-010 deploy D2-hybrid SQL UPDATE przestaje być źródłem prawdy. Plik `sql/010_*.sql` zostaje w repo jako historyczny ślad ADR-055 + rollback dla cofnięcia T-010 jeśli regresja. Nowe seedy idą do `sql/012_category_aliases_seed.sql`.
+
+**Out of scope:**
+
+- Subcategory_name jako osobne pole w `divechat_product_embeddings` (backlog, insight ze Strategii A)
+- Multi-value `parent_categories TEXT[]` (przyszłość)
+- Restrukturyzacja drzewa pr_category w PrestaShop
+- Frontend UI do edycji aliasów (na razie aliasy edytowalne przez API/curl lub bezpośredni SQL; UI w przyszłym tasku jeśli okaże się że Karol często modyfikuje)
+- Audyt category_name accuracy (literalne nazwy w SystemPrompt vs po aliasach)
+
+**Implementacja:** T-010 (instancja embeddings, ~5-6h CC).
+
+**Powiązane:** ADR-027, ADR-048, ADR-055, T-009, T-010, T-011 (frontend admin Editorial Picks osobno)
