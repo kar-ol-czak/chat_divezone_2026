@@ -1,5 +1,5 @@
 # STATUS PROJEKTU: Czat AI divezone.pl
-# Wersja: 3.11 | Data: 2026-05-26 (po deploy T-015 — search logic: blacklista marek, price floor, boolean re-rank)
+# Wersja: 3.12 | Data: 2026-05-26 (po deploy T-016 — SystemPrompt v7, Faza 2 testów pracowników zamknięta)
 # Aktualizowany ręcznie po każdej sesji architekta
 
 ---
@@ -30,6 +30,7 @@
 | **T-013 Editorial Picks UI polish: kolumny 28%/7%/5%, boost numeric, ikony akcji, sortable headers ▲▼, autocomplete /products/search, banner pending-reviews, needs_review filter client-side, mobile cards** | DEPLOYED 2026-05-15 | `781c550` |
 | **T-014 dane wysyłki z tabeli PG (ADR-059) — migracja 013 `divechat_shipping_rates` + `divechat_shop_config`, edytowalne online, prawidłowe stawki PL 13/13/21.99 + pobranie 26 + darmowa od 299, strefa EU graceful (brak danych = kontakt)** | DEPLOYED 2026-05-26 | `167f973` |
 | **T-015 search logic — migracja 014 `divechat_brand_blacklist` (Aquazone, edytowalna online, case+space-insensitive match), price floor `max_price*0.25` gdy budżet max bez min, boolean re-rank multi-attribute (+50% za pełen match) — testy pracowników 15/8+26/23** | DEPLOYED 2026-05-26 | (commit T-015) |
+| **T-016 SystemPrompt v7 — 9 patchy refinement (PATCH 1 EN front-load + few-shot, PATCH 2 DOSTAWA I WYSYŁKA tool PL/EU, PATCH 3 MARKA WYCOFANA brand_blacklisted, PATCH 4 ZWIĘZŁOŚĆ, PATCH 5 BRAND FIDELITY, PATCH 6 LINKI DO KATEGORII bez hardcoded URL, PATCH 7 FAKTY DOMENOWE Miflex/DS4/Nitrox M26/Suunto POD, PATCH 8 brak maila potwierdzenia, PATCH 9 voucher NO-OP)** | DEPLOYED 2026-05-26 | `d838d94` |
 
 ### Aktywne instancje CC
 
@@ -78,11 +79,14 @@ Prompt CC: `wykonaj _instances/backend/tasks/T-003_backend_systemprompt-v3.md`
 
 Stara konwencja (TASK-CHAT-007a/007b/007c, TASK-CHAT-010/011/012) zostaje w handoff i historycznych raportach. Numeracja T-NNN od 14.05.
 
-### Kolejka tasków (po deploy T-015)
+### Kolejka tasków (po deploy T-016 — Faza 2 testów pracowników zamknięta)
+
+**Faza 2 zamknięta:** T-014 (tool shipping) + T-015 (search logic) + T-016 (SystemPrompt v7) adresują wszystkie bugi z testów pracowników wymagające kodu lub promptu. Backlog niżej = wymaga osobnych tasków lub danych Karola.
 
 | Numer | Task | Priorytet | Status |
 |---|---|---|---|
-| T-016 SystemPrompt v3 (równoległy z T-015) | obsługa flagi `brand_blacklisted` z ProductSearch + ostrzeżenie "tej marki nie polecamy" + PL/EU shipping language | P1 | spec do napisania (po T-015 deploy) |
+| T-XXX combination stock per wariant (test 102) | wymaga zmiany ProductSearch — łączenie statusów wariantów produktu | P2 | spec do napisania |
+| T-XXX encyklopedia gaps (testy 42/47) | Peregrine TX, Ammonite latarki — brakujące artykuły encyklopedii | P2 | osobny task encyklopedii |
 | seed stawek EU dla T-014 | Karol poda kwoty per zone='EU' → INSERT lub przyszłe UI shipping_rates | P2 | czeka na dane Karola |
 | UI shipping_rates / shop_config | analogicznie do model pricing UI — edycja online stawek + thresholdu | P3 | backlog |
 | T-XXX weekly notifications Editorial Picks | poniedziałek 9:00 CEST email + banner, 4 sekcje raportu | P2 | spec do napisania |
