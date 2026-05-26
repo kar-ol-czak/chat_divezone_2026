@@ -130,35 +130,43 @@ final class ProductSearch implements ToolInterface
         $exactKeywords = $searchPlan['exact_keywords'] ?? [];
         $trigramQuery = !empty($exactKeywords) ? implode(' ', $exactKeywords) : $query;
 
-        // 5 torów wyszukiwania: 3× semantic (name, desc, jargon) + FTS + trigram
-        $semanticName = $this->searchSemanticColumn('embedding_name', $vectorStr, $filters);
-        $semanticDesc = $this->searchSemanticColumn('embedding_desc', $vectorStr, $filters);
-        $semanticJargon = $this->searchSemanticColumn('embedding_jargon', $vectorStr, $filters);
-        $fulltext = $expandedQuery !== '' ? $this->searchFullText($expandedQuery, $filters) : [];
-        $trigram = $this->searchTrigram($trigramQuery, $filters);
-
-        // Fuzja RRF (5 torów) + real-time MySQL enrichment + editorial boost (ADR-054)
         $inStockOnly = !empty($normalized['in_stock_only']);
-        $merged = $this->mergeRRF(
-            $semanticName,
-            $semanticDesc,
-            $semanticJargon,
-            $fulltext,
-            $trigram,
-            $limit,
-            $inStockOnly,
-            $normalized['category'] ?? null,
-            $query,
-            $exactKeywords,
+
+        // 5 torów + RRF + editorial boost + MySQL enrichment
+        $merged = $this->runTracksAndMerge(
+            $vectorStr, $expandedQuery, $trigramQuery, $filters,
+            $limit, $inStockOnly, $normalized['category'] ?? null,
+            $query, $exactKeywords,
         );
+
+        // T-017: auto-fallback — gdy 0 wyników i była użyta kategoria, ponów bez kategorii.
+        // Naprawia przypadek gdy model zgadł złą podkategorię dla konkretnego modelu
+        // (np. Crystal Vu = panoramiczna, model szukał w "Maski jednoszybowe" → 0 → "nie mamy").
+        // Deterministyczne — nie zależy od posłuszeństwa modelu wobec reguły "uprość query gdy 0".
+        $usedFilters = $filters;
+        if (empty($merged['products']) && !empty($normalized['category'])) {
+            $fallbackNormalized = $normalized;
+            $fallbackNormalized['category'] = null;
+            $fallbackFilters = $this->buildFilters($fallbackNormalized);
+
+            $merged = $this->runTracksAndMerge(
+                $vectorStr, $expandedQuery, $trigramQuery, $fallbackFilters,
+                $limit, $inStockOnly, null,
+                $query, $exactKeywords,
+            );
+            $merged['search_debug']['category_fallback'] = true;
+            $merged['search_debug']['original_category'] = $normalized['category'];
+            $usedFilters = $fallbackFilters;
+        }
 
         // Dołącz search_plan do debug info
         if (!empty($searchPlan)) {
             $merged['search_debug']['search_plan'] = $searchPlan;
         }
 
-        // T-015: dołącz meta z buildFilters (blacklist bypass, price floor)
-        foreach ($filters['meta'] ?? [] as $key => $value) {
+        // T-015: dołącz meta z buildFilters (blacklist bypass, price floor).
+        // Po fallbacku bierzemy meta z fallback filtrów (rzeczywiście zastosowane).
+        foreach ($usedFilters['meta'] ?? [] as $key => $value) {
             $merged['search_debug'][$key] = $value;
         }
 
@@ -171,6 +179,42 @@ final class ProductSearch implements ToolInterface
         }
 
         return $merged;
+    }
+
+    /**
+     * Uruchamia 5 torów (3× semantic + FTS + trigram) i łączy je przez mergeRRF.
+     * Wydzielone żeby T-017 fallback mógł powtórzyć cały pipeline ze zmienionym $filters
+     * bez duplikacji 5 wywołań.
+     */
+    private function runTracksAndMerge(
+        string $vectorStr,
+        string $expandedQuery,
+        string $trigramQuery,
+        array $filters,
+        int $limit,
+        bool $inStockOnly,
+        ?string $category,
+        string $query,
+        array $exactKeywords,
+    ): array {
+        $semanticName = $this->searchSemanticColumn('embedding_name', $vectorStr, $filters);
+        $semanticDesc = $this->searchSemanticColumn('embedding_desc', $vectorStr, $filters);
+        $semanticJargon = $this->searchSemanticColumn('embedding_jargon', $vectorStr, $filters);
+        $fulltext = $expandedQuery !== '' ? $this->searchFullText($expandedQuery, $filters) : [];
+        $trigram = $this->searchTrigram($trigramQuery, $filters);
+
+        return $this->mergeRRF(
+            $semanticName,
+            $semanticDesc,
+            $semanticJargon,
+            $fulltext,
+            $trigram,
+            $limit,
+            $inStockOnly,
+            $category,
+            $query,
+            $exactKeywords,
+        );
     }
 
     /**
