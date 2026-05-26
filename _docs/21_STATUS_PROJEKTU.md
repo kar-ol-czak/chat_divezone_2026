@@ -1,5 +1,5 @@
 # STATUS PROJEKTU: Czat AI divezone.pl
-# Wersja: 3.12 | Data: 2026-05-26 (po deploy T-016 — SystemPrompt v7, Faza 2 testów pracowników zamknięta)
+# Wersja: 3.13 | Data: 2026-05-26 (po deploy T-018 — SystemPrompt v8, Arkusz3 zamknięty)
 # Aktualizowany ręcznie po każdej sesji architekta
 
 ---
@@ -31,6 +31,7 @@
 | **T-014 dane wysyłki z tabeli PG (ADR-059) — migracja 013 `divechat_shipping_rates` + `divechat_shop_config`, edytowalne online, prawidłowe stawki PL 13/13/21.99 + pobranie 26 + darmowa od 299, strefa EU graceful (brak danych = kontakt)** | DEPLOYED 2026-05-26 | `167f973` |
 | **T-015 search logic — migracja 014 `divechat_brand_blacklist` (Aquazone, edytowalna online, case+space-insensitive match), price floor `max_price*0.25` gdy budżet max bez min, boolean re-rank multi-attribute (+50% za pełen match) — testy pracowników 15/8+26/23** | DEPLOYED 2026-05-26 | (commit T-015) |
 | **T-016 SystemPrompt v7 — 9 patchy refinement (PATCH 1 EN front-load + few-shot, PATCH 2 DOSTAWA I WYSYŁKA tool PL/EU, PATCH 3 MARKA WYCOFANA brand_blacklisted, PATCH 4 ZWIĘZŁOŚĆ, PATCH 5 BRAND FIDELITY, PATCH 6 LINKI DO KATEGORII bez hardcoded URL, PATCH 7 FAKTY DOMENOWE Miflex/DS4/Nitrox M26/Suunto POD, PATCH 8 brak maila potwierdzenia, PATCH 9 voucher NO-OP)** | DEPLOYED 2026-05-26 | `d838d94` |
+| **T-018 SystemPrompt v8 — 11 patchy Arkusz3 (limit głębokości 40m + fikcyjne certy case 85, instruktorzy odsyłanie do federacji case 80, research/magisterka → Encyklopedia case 87, tylko nowy sprzęt case 77, zakaz prania w pralce case 81, zakaz surowych statusów technicznych case 93, budżet nierealny dla kategorii case 93, format order status listą + brak obrazków case 74, zdarta płyta medyczna case 82, INT/DIN przy automatach rozszerzenie case 94, NIE fabrykuj awarii systemu + integracja z category_fallback T-017 case 91)** | DEPLOYED 2026-05-26 | `0b1215e` |
 
 ### Aktywne instancje CC
 
@@ -79,9 +80,9 @@ Prompt CC: `wykonaj _instances/backend/tasks/T-003_backend_systemprompt-v3.md`
 
 Stara konwencja (TASK-CHAT-007a/007b/007c, TASK-CHAT-010/011/012) zostaje w handoff i historycznych raportach. Numeracja T-NNN od 14.05.
 
-### Kolejka tasków (po deploy T-016 — Faza 2 testów pracowników zamknięta)
+### Kolejka tasków (po deploy T-018 — Arkusz3 zamknięty)
 
-**Faza 2 zamknięta:** T-014 (tool shipping) + T-015 (search logic) + T-016 (SystemPrompt v7) adresują wszystkie bugi z testów pracowników wymagające kodu lub promptu. Backlog niżej = wymaga osobnych tasków lub danych Karola.
+**Faza 2 + Arkusz3 zamknięte:** T-014 (tool shipping) + T-015 (search logic) + T-016 (SystemPrompt v7) + T-017 (search category fallback) + T-018 (SystemPrompt v8) adresują wszystkie bugi z testów pracowników (Arkusz1 + Arkusz3) wymagające kodu lub promptu. Backlog niżej = wymaga osobnych tasków, danych Karola lub większego scope (red-team harness, encyklopedia gaps).
 
 | Numer | Task | Priorytet | Status |
 |---|---|---|---|
