@@ -1620,3 +1620,56 @@ Editorial Pick boost respektuje **`price_max`** (budżet klienta jest święty) 
 - Multi-pick aggregation (jeśli kilka picków matchuje, weź max boost — już zaimplementowane w T-008)
 
 **Powiązane:** ADR-054, T-008, T-012 (implementacja fix)
+
+
+### ADR-059: Dane wysyłki z tabeli PG divechat_shipping_rates (nie hardcoded, nie ETL pr_carrier)
+
+**Data:** 2026-05-15 | **Status:** PRZYJĘTA | **Powiązane:** ADR-052 (model pricing table jako wzorzec), testy pracowników 65/66/70
+
+**Kontekst:** Testy pracowników wykryły że `ShippingInfo.php` (tool get_shipping_info) ma HARDCODED BŁĘDNE dane: DPD 15,99 / InPost kurier 14,99 / Paczkomat 12,99 / próg darmowej 499 zł / "Odbiór osobisty Warszawa" (sklep jest w Toruniu). Bot zwracał te dane klientom jako fakty. Prawidłowe dane (od Karola):
+
+- InPost Paczkomat: 13,00 zł (cała Polska, do 31 kg)
+- InPost Kurier: 13,00 zł, pobranie 26,00 zł
+- DPD: 21,99 zł, pobranie 26,00 zł
+- Darmowa dostawa od 299 zł
+- Flat rate do 31 kg (BEZ różnicowania wagi)
+- Strefy: Polska vs reszta EU (różne ceny)
+
+**Decyzja:** Dane wysyłki w tabeli `divechat_shipping_rates` w PostgreSQL (wzorzec jak `divechat_model_pricing` z ADR-052 — edytowalna online bez deploy). Tool `get_shipping_info` czyta z tabeli zamiast hardcoded.
+
+**Dlaczego NIE pełny ETL z pr_carrier/pr_delivery/pr_zone:** Sklep ma flat rate do 31 kg → cała macierz PrestaShop waga×strefa×kurier jest zbędna. ETL parsujący pr_carrier/pr_delivery/pr_zone to ~5-6h + ryzyko błędnego mappingu. Tabela manualna (~6 wierszy) pokrywa 100% przypadków przy 1/20 nakładu.
+
+**Dlaczego NIE hardcoded SystemPrompt/PHP:** Stawki się zmieniają (przesyłki rosną co rok). Hardcoded wymaga deploy. Tabela edytowalna online (SQL UPDATE / przyszłe UI) jak model pricing.
+
+**Schema:**
+
+```sql
+CREATE TABLE divechat_shipping_rates (
+    id SERIAL PRIMARY KEY,
+    carrier_name TEXT NOT NULL,
+    zone TEXT NOT NULL DEFAULT 'PL',       -- 'PL' | 'EU'
+    price NUMERIC(7,2) NOT NULL,
+    cod_price NUMERIC(7,2),                 -- pobranie (NULL gdy niedostępne)
+    delivery_days TEXT NOT NULL DEFAULT '1-2 dni robocze',
+    max_weight_kg INTEGER NOT NULL DEFAULT 31,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(carrier_name, zone)
+);
+```
+
+Plus free shipping threshold w osobnym config row (lub tabela divechat_shop_config key-value). Decyzja: osobna tabela `divechat_shop_config(key, value)` żeby trzymać też przyszłe parametry (threshold, godziny, itp.).
+
+**Logika językowa (instrukcja w SystemPrompt, T-016):**
+
+- Klient pyta po polsku → bot podaje stawki PL flat ("13 zł Paczkomat/InPost cała Polska, DPD 21,99 zł, pobranie 26 zł, darmowa od 299 zł")
+- Klient pyta w innym języku → bot NAJPIERW pyta o kraj, POTEM podaje stawki strefy (PL vs EU) z tabeli
+
+**Out of scope:**
+
+- Auto-sync z pr_carrier (gdyby kiedyś sklep wprowadził różnicowanie wagowe)
+- Kalkulacja kosztu per konkretny koszyk (waga produktów) — flat rate to niepotrzebne
+- Strefy EU per kraj (na razie jedna stawka "EU", rozbicie per kraj gdy potrzeba)
+
+**Powiązane:** ADR-052 (pricing table wzorzec), T-014 (implementacja), T-016 (instrukcja prompt)
