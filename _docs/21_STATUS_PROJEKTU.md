@@ -1,5 +1,5 @@
 # STATUS PROJEKTU: Czat AI divezone.pl
-# Wersja: 3.14 | Data: 2026-05-26 (po deploy T-017 — search category auto-fallback, Arkusz3 zamknięty)
+# Wersja: 3.15 | Data: 2026-05-26 (po deploy T-020 — strict exact-match fallback + int-cast fix, Arkusz3 W PEŁNI DOMKNIĘTY case 90/91/95)
 # Aktualizowany ręcznie po każdej sesji architekta
 
 ---
@@ -34,6 +34,7 @@
 | **T-017 search category auto-fallback (Arkusz3 case 90/91) — gdy search z filtrem kategorii zwraca 0, ProductSearch.execute() automatycznie ponawia cały pipeline bez kategorii (wyodrębniona prywatna runTracksAndMerge), nowe pola `search_debug.category_fallback` + `original_category` (T-018 PATCH 11 je konsumuje), deterministyczne — nie polega na posłuszeństwie modelu wobec reguły „uprość query gdy 0"** | DEPLOYED 2026-05-26 | `f9193be` |
 | **T-018 SystemPrompt v8 — 11 patchy Arkusz3 (limit głębokości 40m + fikcyjne certy case 85, instruktorzy odsyłanie do federacji case 80, research/magisterka → Encyklopedia case 87, tylko nowy sprzęt case 77, zakaz prania w pralce case 81, zakaz surowych statusów technicznych case 93, budżet nierealny dla kategorii case 93, format order status listą + brak obrazków case 74, zdarta płyta medyczna case 82, INT/DIN przy automatach rozszerzenie case 94, NIE fabrykuj awarii systemu + integracja z category_fallback T-017 case 91)** | DEPLOYED 2026-05-26 | `0b1215e` |
 | **T-019 git hygiene — repo uporządkowane (143 plików dodano: kod pipeline encyklopedii, dokumentacja, task specs T-002..T-018), .gitignore rozszerzony (aliasy/dane sprzedażowe/GSC/ffs_db NIGDY do gita), historia nietknięta** | DONE 2026-05-26 | `6e746ab` |
+| **T-020 strict exact-match fallback (case 90) + int-cast fix (case 91/95) — domknięcie Arkusza3: rozszerzenie triggera fallback (T-017) o warunek navigational-miss (gdy żaden wynik nie zawiera wszystkich exact_keywords w nazwie — Crystal Vu maskowany przez 5 substytutów Scubapro w błędnej kategorii), nowa metoda hasExactKeywordMatch, flaga `search_debug.exact_match_miss` dla T-018 PATCH 11, fix int-cast w `extractSignificantTokens` (T-015 bug — numeric token "4000" auto-castowany do int → TypeError w str_contains PHP 8.4)** | DEPLOYED 2026-05-26 | `4bcf955` |
 
 ### Aktywne instancje CC
 
