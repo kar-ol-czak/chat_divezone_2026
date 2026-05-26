@@ -99,3 +99,10 @@ _redteam/transcripts/
 _redteam/fixtures/real_test_orders*.json
 # Snapshoty z PII (gdyby kiedyś trzeba było — domyślnie skrypt PII nie pobiera)
 _redteam/fixtures/*.pii.json
+# T-024: pełne raporty JSON zawierają transcripty z dialogu (potencjalne PII);
+# summary MD bez transcriptów = commitable
+_redteam/reports/*.json
+# Local toolchain dla orchestratora (NOT commitable)
+_redteam/.venv/
+_redteam/.promptfoo/
+_redteam/package-lock.json
