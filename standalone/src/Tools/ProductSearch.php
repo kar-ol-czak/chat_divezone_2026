@@ -19,6 +19,13 @@ final class ProductSearch implements ToolInterface
     private const RRF_K = 60;
     private const TRACK_LIMIT = 30;
 
+    // T-015: gdy klient podaje budżet max bez min, odcinamy drobnicę poniżej tego ułamka.
+    // 0.25 = przy budżecie 700 zł floor = 175 zł (ładowarki 60 zł odpadają).
+    private const PRICE_FLOOR_RATIO = 0.25;
+
+    /** @var list<string>|null cache blacklisty marek (lowercased) */
+    private ?array $brandBlacklistCache = null;
+
     public function __construct(
         private readonly EmbeddingService $embeddingService,
         private readonly PostgresConnection $db,
@@ -132,11 +139,27 @@ final class ProductSearch implements ToolInterface
 
         // Fuzja RRF (5 torów) + real-time MySQL enrichment + editorial boost (ADR-054)
         $inStockOnly = !empty($normalized['in_stock_only']);
-        $merged = $this->mergeRRF($semanticName, $semanticDesc, $semanticJargon, $fulltext, $trigram, $limit, $inStockOnly, $normalized['category'] ?? null);
+        $merged = $this->mergeRRF(
+            $semanticName,
+            $semanticDesc,
+            $semanticJargon,
+            $fulltext,
+            $trigram,
+            $limit,
+            $inStockOnly,
+            $normalized['category'] ?? null,
+            $query,
+            $exactKeywords,
+        );
 
         // Dołącz search_plan do debug info
         if (!empty($searchPlan)) {
             $merged['search_debug']['search_plan'] = $searchPlan;
+        }
+
+        // T-015: dołącz meta z buildFilters (blacklist bypass, price floor)
+        foreach ($filters['meta'] ?? [] as $key => $value) {
+            $merged['search_debug'][$key] = $value;
         }
 
         if (empty($merged['products'])) {
@@ -168,12 +191,14 @@ final class ProductSearch implements ToolInterface
     /**
      * Buduje wspólne warunki WHERE + parametry dla 3 torów.
      * Obsługuje parent_category_name (ADR-027) i exclude_categories.
-     * @return array{where: string, params: list<mixed>}
+     * T-015: blacklist marek + price floor (drobnica wycinana gdy budżet max bez min).
+     * @return array{where: string, params: list<mixed>, meta: array<string, mixed>}
      */
     private function buildFilters(array $params): array
     {
         $conditions = ['is_active = true'];
         $sqlParams = [];
+        $meta = [];
 
         // in_stock_only filtrowane post-hoc z real-time MySQL (nie z pgvector)
 
@@ -192,6 +217,18 @@ final class ProductSearch implements ToolInterface
         if (!empty($params['max_price'])) {
             $sqlParams[] = (float) $params['max_price'];
             $conditions[] = 'price <= ?';
+        }
+
+        // T-015: price floor — przy budżecie max bez min odetnij produkty < ratio*max.
+        // Cel: klient pyta "latarki do 700 zł", ładowarki 60 zł i uchwyty nie wpadają.
+        if (!empty($params['max_price']) && empty($params['min_price'])) {
+            $impliedFloor = (float) $params['max_price'] * self::PRICE_FLOOR_RATIO;
+            if ($impliedFloor > 0) {
+                $sqlParams[] = $impliedFloor;
+                $conditions[] = 'price >= ?';
+                $meta['price_floor_applied'] = round($impliedFloor, 2);
+                $meta['price_floor_ratio'] = self::PRICE_FLOOR_RATIO;
+            }
         }
 
         if (!empty($params['brand'])) {
@@ -216,10 +253,71 @@ final class ProductSearch implements ToolInterface
             $conditions[] = "(parent_category_name IS NULL OR parent_category_name NOT IN ({$placeholders2}))";
         }
 
+        // T-015: blacklist marek (divechat_brand_blacklist).
+        // Normalizacja: lowercase + strip spaces/dashes — "Aqua Zone" / "AquaZone" / "aqua-zone"
+        // wszystkie matchują wpis "Aquazone". Wyjątek: klient explicite szuka blacklistowanej
+        // marki → bypass + flag dla SystemPrompt (T-016 doda ostrzeżenie "tej marki nie polecamy").
+        $blacklist = $this->getBrandBlacklist();
+        if (!empty($blacklist)) {
+            $explicitBrand = !empty($params['brand']) ? $this->normalizeBrand((string) $params['brand']) : null;
+            $bypass = $explicitBrand !== null && in_array($explicitBrand, $blacklist, true);
+
+            if ($bypass) {
+                $meta['brand_blacklisted'] = true;
+                $meta['brand_blacklisted_query'] = $params['brand'];
+            } else {
+                $placeholders = implode(',', array_fill(0, count($blacklist), '?'));
+                foreach ($blacklist as $b) {
+                    $sqlParams[] = $b;
+                }
+                $conditions[] = "(brand_name IS NULL OR LOWER(REPLACE(REPLACE(brand_name, ' ', ''), '-', '')) NOT IN ({$placeholders}))";
+            }
+        }
+
         return [
             'where' => implode(' AND ', $conditions),
             'params' => $sqlParams,
+            'meta' => $meta,
         ];
+    }
+
+    /**
+     * Lazy-load blacklisty marek z divechat_brand_blacklist (lowercase do case-insensitive matchu).
+     * Defensywnie: gdy tabela nie istnieje (migracja 014 nie zapplikowana) → pusta lista.
+     * @return list<string>
+     */
+    private function getBrandBlacklist(): array
+    {
+        if ($this->brandBlacklistCache !== null) {
+            return $this->brandBlacklistCache;
+        }
+
+        try {
+            $rows = $this->db->fetchAll('SELECT brand_name FROM divechat_brand_blacklist', []);
+        } catch (\PDOException $e) {
+            // Tabela nie istnieje → skip (pre-migration safety)
+            $this->brandBlacklistCache = [];
+            return [];
+        }
+
+        $list = [];
+        foreach ($rows as $row) {
+            $name = $row['brand_name'] ?? null;
+            if (is_string($name) && $name !== '') {
+                $list[] = $this->normalizeBrand($name);
+            }
+        }
+        $this->brandBlacklistCache = $list;
+        return $list;
+    }
+
+    /**
+     * Normalizuje nazwę marki: lowercase + strip spaces/dashes.
+     * "Aqua Zone" / "AquaZone" / "aqua-zone" → "aquazone".
+     */
+    private function normalizeBrand(string $name): string
+    {
+        return str_replace([' ', '-', '_'], '', mb_strtolower($name));
     }
 
     /**
@@ -336,6 +434,9 @@ final class ProductSearch implements ToolInterface
     /**
      * Reciprocal Rank Fusion: łączy wyniki 5 torów.
      * RRF score = sum(1 / (K + rank_i)) dla każdego toru.
+     * T-015: po RRF + editorial boost stosuje boolean re-rank — produkty matchujące
+     * więcej tokenów zapytania w product_name dostają boost (do +50% za pełny match).
+     * @param list<string> $exactKeywords nazwy własne z search_plan (dodatkowe tokeny)
      * @return array{products: list<array>, count: int, search_debug: array}
      */
     private function mergeRRF(
@@ -347,6 +448,8 @@ final class ProductSearch implements ToolInterface
         int $limit,
         bool $inStockOnly = true,
         ?string $category = null,
+        string $query = '',
+        array $exactKeywords = [],
     ): array {
         $k = self::RRF_K;
         $scores = [];
@@ -391,20 +494,31 @@ final class ProductSearch implements ToolInterface
             }
         }
 
+        // Pobierz nazwy WSZYSTKICH kandydatów z RRF (potrzebne do boolean re-rank + debug).
+        // T-015: re-rank musi widzieć cały zbiór, nie tylko top — produkt z niskim RRF
+        // ale matchem wszystkich tokenów może wskoczyć wyżej.
+        $allScoredIds = array_keys($scores);
+        $namesById = [];
+        if (!empty($allScoredIds)) {
+            $namesPlaceholders = implode(',', array_fill(0, count($allScoredIds), '?'));
+            $nameRows = $this->db->fetchAll(
+                "SELECT ps_product_id, product_name FROM divechat_product_embeddings WHERE ps_product_id IN ({$namesPlaceholders})",
+                $allScoredIds,
+            );
+            foreach ($nameRows as $row) {
+                $namesById[(int) $row['ps_product_id']] = $row['product_name'];
+            }
+        }
+
+        // T-015: boolean re-rank — boost dla multi-attribute match (np. pink+child+mask)
+        $booleanDebug = $this->applyMultiAttributeBoost($scores, $query, $exactKeywords, $namesById);
+        if (!empty($booleanDebug['boost_applied'])) {
+            arsort($scores);
+        }
+
         // Pobierz większy zbiór kandydatów (zapas na filtrowanie po MySQL)
         $candidateLimit = min(count($scores), $limit * 3);
         $candidateIds = array_slice(array_keys($scores), 0, $candidateLimit);
-
-        // Pobierz nazwy produktów z pgvector (do debug logów)
-        $namesPlaceholders = implode(',', array_fill(0, count($candidateIds), '?'));
-        $nameRows = $this->db->fetchAll(
-            "SELECT ps_product_id, product_name FROM divechat_product_embeddings WHERE ps_product_id IN ({$namesPlaceholders})",
-            $candidateIds,
-        );
-        $namesById = [];
-        foreach ($nameRows as $row) {
-            $namesById[(int) $row['ps_product_id']] = $row['product_name'];
-        }
 
         // Snapshot kandydatów PRZED MySQL enrichment (top 20)
         $candidatesBeforeMySQL = [];
@@ -593,9 +707,134 @@ final class ProductSearch implements ToolInterface
                 'candidates_before_mysql' => array_slice($candidatesBeforeMySQL, 0, 10),
                 'mysql_enrichment' => $mysqlLog,
                 'filtered_out' => $filteredOut,
+                'boolean_rerank' => $booleanDebug,
                 'items' => $debugItems,
             ],
         ];
+    }
+
+    /**
+     * T-015: boost dla produktów które matchują WIELE tokenów zapytania w product_name.
+     * Cel: gdy klient pyta "pink mask for child", produkt z dopasowaniem wszystkich
+     * 3 tokenów (różowa dziecięca maska) wskakuje wyżej niż produkty z 1 atrybutem
+     * (różowa dla dorosłych albo dziecięca niebieska).
+     *
+     * Boost = 1 + 0.5 * (matched/total). Pełen match = +50%, połowa = +25%.
+     * Aktywny tylko gdy zapytanie ma >= 2 znaczące tokeny — single-token nie niesie info.
+     *
+     * @param array<int, float> $scores referencja — modyfikujemy in place
+     * @param list<string> $exactKeywords nazwy własne z search_plan
+     * @param array<int, string> $namesById nazwy produktów z pgvector
+     * @return array{tokens: list<string>, boost_applied: bool, top_matches: array<int, int>}
+     */
+    private function applyMultiAttributeBoost(array &$scores, string $query, array $exactKeywords, array $namesById): array
+    {
+        $tokens = $this->extractSignificantTokens($query);
+        foreach ($exactKeywords as $kw) {
+            if (!is_string($kw)) {
+                continue;
+            }
+            foreach ($this->extractSignificantTokens($kw) as $t) {
+                $tokens[] = $t;
+            }
+        }
+        $tokens = array_values(array_unique($tokens));
+
+        $debug = ['tokens' => $tokens, 'boost_applied' => false, 'top_matches' => []];
+
+        if (count($tokens) < 2) {
+            return $debug;
+        }
+
+        $totalTokens = count($tokens);
+        $topMatchSample = [];
+
+        foreach ($scores as $pid => &$score) {
+            $name = $namesById[$pid] ?? '';
+            if ($name === '') {
+                continue;
+            }
+            $matched = $this->countTokenMatches($name, $tokens);
+            if ($matched === 0) {
+                continue;
+            }
+            $ratio = $matched / $totalTokens;
+            $score *= 1.0 + 0.5 * $ratio;
+
+            if ($matched === $totalTokens && count($topMatchSample) < 5) {
+                $topMatchSample[$pid] = $matched;
+            }
+        }
+        unset($score);
+
+        $debug['boost_applied'] = true;
+        $debug['top_matches'] = $topMatchSample;
+        return $debug;
+    }
+
+    /**
+     * Wyciąga znaczące tokeny z tekstu: lowercase + strip accents,
+     * pomija stopwordy PL/EN i tokeny krótsze niż 3 znaki.
+     * @return list<string>
+     */
+    private function extractSignificantTokens(string $text): array
+    {
+        static $stopwords = [
+            // PL
+            'do' => 1, 'na' => 1, 'po' => 1, 'ze' => 1, 'dla' => 1, 'pod' => 1, 'nad' => 1, 'bez' => 1,
+            'jest' => 1, 'lub' => 1, 'oraz' => 1, 'czy' => 1, 'mi' => 1, 'mnie' => 1, 'sie' => 1,
+            'mam' => 1, 'masz' => 1, 'chce' => 1, 'jaki' => 1, 'jaka' => 1, 'jakie' => 1,
+            // EN
+            'the' => 1, 'for' => 1, 'and' => 1, 'with' => 1, 'are' => 1, 'you' => 1, 'can' => 1,
+            'need' => 1, 'want' => 1, 'have' => 1, 'has' => 1, 'this' => 1, 'that' => 1, 'any' => 1,
+            'some' => 1, 'all' => 1,
+        ];
+
+        $normalized = mb_strtolower($this->stripDiacritics($text));
+        $tokens = preg_split('/[^a-z0-9]+/', $normalized);
+        if ($tokens === false) {
+            return [];
+        }
+
+        $significant = [];
+        foreach ($tokens as $t) {
+            if ($t === '' || mb_strlen($t) < 3) {
+                continue;
+            }
+            if (isset($stopwords[$t])) {
+                continue;
+            }
+            $significant[$t] = true;
+        }
+        return array_keys($significant);
+    }
+
+    /**
+     * Liczy ile z $tokens występuje jako substring w $text (po normalizacji).
+     */
+    private function countTokenMatches(string $text, array $tokens): int
+    {
+        $normalized = mb_strtolower($this->stripDiacritics($text));
+        $matched = 0;
+        foreach ($tokens as $t) {
+            if ($t !== '' && str_contains($normalized, $t)) {
+                $matched++;
+            }
+        }
+        return $matched;
+    }
+
+    /**
+     * Strip polskich znaków diakrytycznych (do case+accent-insensitive match).
+     */
+    private function stripDiacritics(string $text): string
+    {
+        return strtr($text, [
+            'ą' => 'a', 'ć' => 'c', 'ę' => 'e', 'ł' => 'l', 'ń' => 'n',
+            'ó' => 'o', 'ś' => 's', 'ź' => 'z', 'ż' => 'z',
+            'Ą' => 'a', 'Ć' => 'c', 'Ę' => 'e', 'Ł' => 'l', 'Ń' => 'n',
+            'Ó' => 'o', 'Ś' => 's', 'Ź' => 'z', 'Ż' => 'z',
+        ]);
     }
 
     /**
