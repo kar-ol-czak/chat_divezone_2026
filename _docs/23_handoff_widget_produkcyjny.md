@@ -108,3 +108,18 @@ Istnieje PUSTY szkielet modułu PrestaShop: `modules/divezone_chat/` (controller
 2. Potwierdź zrozumienie architektury (3 interfejsy, CORS gotowy, API endpointy)
 3. Z Karolem przejdź agendę (8 otwartych kwestii) — zacznij od kwestii 1 (sposób osadzenia) bo determinuje resztę
 4. Po decyzjach architektonicznych → ADR + taski CC + ewentualnie sesja Claude Design dla mockupów
+
+---
+
+## Research panelu ekspertow (dodane 2026-05-26)
+
+Przed projektowaniem widgetu PRZECZYTAJ 3 raporty Deep Research w `_docs/research_attachments/`:
+- `2026.05.26-compass_artifact_*.md` — 10 decyzji projektowych widgetu (Shadow DOM nie iframe, EAA/WCAG 2.2 AA obowiazkowe od 28.06.2025, RODO/ePrivacy, mobile hybrid bottom-sheet->fullscreen, SSE przez fetch+ReadableStream bo EventSource nie wspiera naglowkow auth).
+- `2026.05.26-deep-research-report.md` — architektura widgetu PrestaShop (pseudonimowy identyfikator odwiedzajacego, retencja, komunikat AI).
+- `2026.05.26-Projekt Widgetu Czat AI dla E-commerce.md` — najobszerniejszy (74 KB).
+
+Brief brandingu/tonu: `_docs/24_brief_widget_claude_design.md`.
+
+Kluczowe ustalenia z panelu: Shadow DOM w module PrestaShop (NIE iframe), transport SSE przez `fetch()`+`ReadableStream` (NIE EventSource — nie obsluguje custom headers, a my mamy X-DiveChat-* auth), krotki JWT w naglowku Authorization (NIE query param), localStorage historii prawdopodobnie 'strictly necessary' ale klauzula RODO o przekazaniu tresci do OpenAI/Anthropic obowiazkowa przed pierwsza wiadomoscia.
+
+Numeracja pytan: kontynuuj od 104 (ostatnie w glownym torze: 103).

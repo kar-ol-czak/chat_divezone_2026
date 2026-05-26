@@ -1,5 +1,5 @@
 # STATUS PROJEKTU: Czat AI divezone.pl
-# Wersja: 3.15 | Data: 2026-05-26 (po deploy T-020 — strict exact-match fallback + int-cast fix, Arkusz3 W PEŁNI DOMKNIĘTY case 90/91/95)
+# Wersja: 3.16 | Data: 2026-05-26 (Arkusz3 domkniety; red-team Faza 0 DONE T-021 commit b343495; panel ekspertow + ADR-060; analiza kosztow modelu)
 # Aktualizowany ręcznie po każdej sesji architekta
 
 ---
@@ -35,6 +35,7 @@
 | **T-018 SystemPrompt v8 — 11 patchy Arkusz3 (limit głębokości 40m + fikcyjne certy case 85, instruktorzy odsyłanie do federacji case 80, research/magisterka → Encyklopedia case 87, tylko nowy sprzęt case 77, zakaz prania w pralce case 81, zakaz surowych statusów technicznych case 93, budżet nierealny dla kategorii case 93, format order status listą + brak obrazków case 74, zdarta płyta medyczna case 82, INT/DIN przy automatach rozszerzenie case 94, NIE fabrykuj awarii systemu + integracja z category_fallback T-017 case 91)** | DEPLOYED 2026-05-26 | `0b1215e` |
 | **T-019 git hygiene — repo uporządkowane (143 plików dodano: kod pipeline encyklopedii, dokumentacja, task specs T-002..T-018), .gitignore rozszerzony (aliasy/dane sprzedażowe/GSC/ffs_db NIGDY do gita), historia nietknięta** | DONE 2026-05-26 | `6e746ab` |
 | **T-020 strict exact-match fallback (case 90) + int-cast fix (case 91/95) — domknięcie Arkusza3: rozszerzenie triggera fallback (T-017) o warunek navigational-miss (gdy żaden wynik nie zawiera wszystkich exact_keywords w nazwie — Crystal Vu maskowany przez 5 substytutów Scubapro w błędnej kategorii), nowa metoda hasExactKeywordMatch, flaga `search_debug.exact_match_miss` dla T-018 PATCH 11, fix int-cast w `extractSignificantTokens` (T-015 bug — numeric token "4000" auto-castowany do int → TypeError w str_contains PHP 8.4)** | DEPLOYED 2026-05-26 | `4bcf955` |
+| **T-021 red-team Faza 0 prerekwizyty (ADR-060) — repo `_redteam/` (snapshot_catalog.py ground truth case90/91, fixtures IDOR RODO-clean, domain_rules, pin modeli z poprawka 102b: target sonnet-4-6 / attacker gpt-5.4-mini / W1 gpt-5.4 / W2 panel opus-4-7+gpt-5.5), .gitignore patch. NIE stawiamy chat-test (czat nieopublikowany + 6 narzedzi read-only)** | DONE 2026-05-26 | `b343495` |
 
 ### Aktywne instancje CC
 
@@ -83,29 +84,44 @@ Prompt CC: `wykonaj _instances/backend/tasks/T-003_backend_systemprompt-v3.md`
 
 Stara konwencja (TASK-CHAT-007a/007b/007c, TASK-CHAT-010/011/012) zostaje w handoff i historycznych raportach. Numeracja T-NNN od 14.05.
 
-### Kolejka tasków (po deploy T-018 — Arkusz3 zamknięty)
+### Kolejka taskow (po T-021 — Arkusz3 domkniety, red-team Faza 0 DONE)
 
-**Faza 2 + Arkusz3 zamknięte:** T-014 (tool shipping) + T-015 (search logic) + T-016 (SystemPrompt v7) + T-017 (search category fallback) + T-018 (SystemPrompt v8) adresują wszystkie bugi z testów pracowników (Arkusz1 + Arkusz3) wymagające kodu lub promptu. Backlog niżej = wymaga osobnych tasków, danych Karola lub większego scope (red-team harness, encyklopedia gaps).
+**Status:** Arkusz1/2/3 w pelni domkniete (T-014..T-020 DEPLOYED). Red-team Faza 0 DONE (T-021). Dalej DWA ROWNOLEGLE TORY (decyzja 99a): red-team harness (backend/integration) oraz widget produkcyjny (frontend, OSOBNY CZAT).
+
+**TOR RED-TEAM (kolejnosc):**
 
 | Numer | Task | Priorytet | Status |
 |---|---|---|---|
-| T-XXX combination stock per wariant (test 102) | wymaga zmiany ProductSearch — łączenie statusów wariantów produktu | P2 | spec do napisania |
-| T-XXX encyklopedia gaps (testy 42/47) | Peregrine TX, Ammonite latarki — brakujące artykuły encyklopedii | P2 | osobny task encyklopedii |
-| seed stawek EU dla T-014 | Karol poda kwoty per zone='EU' → INSERT lub przyszłe UI shipping_rates | P2 | czeka na dane Karola |
-| UI shipping_rates / shop_config | analogicznie do model pricing UI — edycja online stawek + thresholdu | P3 | backlog |
-| T-XXX weekly notifications Editorial Picks | poniedziałek 9:00 CEST email + banner, 4 sekcje raportu | P2 | spec do napisania |
-| T-004 (proponowany) | refresh_stock_only.py cron daily (CC propozycja po T-001) | P1 | propozycja, czeka na decyzję |
-| T-005 (proponowany) | SynonymExpander rozbija multi-word frazy → FTS noise (CC propozycja po T-001) | P2 | propozycja, czeka na decyzję |
-| T-XXX subcategory_name w embeddings | backlog z T-009 review: kolumna analogiczna do parent_category_name ale deeper cat | P3 | backlog |
-| T-XXX leaf cat alias mechanism w ETL D1 | rozszerzenie etl_d1_parent_category.py o mapping level=3 cat → parent (np. Karabinki nurkowe/Retraktory/Sygnalizatory → Bezpieczeństwo zamiast Akcesoria Nurkowe). Fix dla drop -50 produktów w "Bezpieczeństwo" po T-010 | P3 | backlog (decyzja Karola po T-010 deploy) |
-| TASK-CHAT-014 audyt EXCLUDED_CATEGORY_IDS | po hotfixach, proaktywny audyt | P2 | spec gotowy |
-| TASK-CHAT-008 alias map statusów BARTEK/LESZEK w OrderStatus.php | po hotfixach, defense in depth | P1 | nie zaczęte |
+| T-022 | migracja `divechat_model_pricing` o gpt-5.5 ($5/$30) + weryfikacja gpt-5.4 ($2.5/$15); + CACHE FIX OpenAIProvider (czyta `prompt_tokens_details.cached_tokens` zamiast 0 — decyzja 101b, root cause: bledny komentarz ze OpenAI nie eksponuje cache; ClaudeProvider cache OK ale Claude nieuzywany) + wycena cache + weryfikacja kolejnosci promptu (stabilny prefiks) | P1 | spec do napisania |
+| T-023 | red-team Faza 1: scenariusze YAML (~50, 10 klas wg ADR-060) + orchestrator Promptfoo + custom HTTP provider na DEV endpoint | P1 | po T-022 |
+| T-024 | warstwy oceny W0 regex + W1 sedzia (gpt-5.4) + integracja domain_rules + meta-eval golden set (50-100 transkryptow, Cohen kappa >=0.7) + Gemini do W2 panel | P1 | po T-023 |
+| snapshot realny | `python _redteam/tools/snapshot_catalog.py --output ...` — wymaga dostepu do bazy (port 14368 Railway, odblokowac na VPS lub tunel) | P1 | czeka na dostep |
+
+**TOR WIDGET (osobny czat):**
+
+Handoff gotowy: `_docs/23_handoff_widget_produkcyjny.md`. Research panelu (3 pliki) w `_docs/research_attachments/2026.05.26-*` (Projekt Widgetu / compass_artifact 10 decyzji / deep-research-report — Shadow DOM, EAA/WCAG, RODO, SSE fetch+ReadableStream). Brief brandingu: `_docs/24_brief_widget_claude_design.md`. CORS juz skonfigurowany.
+
+**BACKLOG (wymaga osobnego scope / danych Karola):**
+
+| Numer | Task | Priorytet |
+|---|---|---|
+| T-XXX | combination stock per wariant (Arkusz2 test 102) — MAX(quantity) GROUP BY pr_product_attribute | P2 |
+| T-XXX | encyklopedia gaps (testy 42/47) — Peregrine TX, Ammonite latarki | P2 |
+| seed EU | stawki shipping zone=EU dla T-014 (czeka na kwoty Karola) | P2 |
+| UI | shipping_rates / shop_config / blacklist / aliasy — edycja online (wzorzec model pricing UI) | P3 |
+| T-XXX | weekly notifications Editorial Picks (pon 9:00 CEST) | P2 |
+| T-004 | refresh_stock_only.py cron daily (propozycja CC) | P1 |
+| T-005 | SynonymExpander multi-word splitting → FTS noise (propozycja CC) | P2 |
+| T-XXX | leaf cat alias w ETL D1 (Karabinki/Retraktory → Bezpieczenstwo) | P3 |
+| CHAT-008 | alias map statusow BARTEK/LESZEK w OrderStatus.php (defense in depth; dane pracownikow LOKALNE poza gitem) | P1 |
+| renumeracja | `_docs/` ma zdublowane numery (23, 24 x2-3 z roznych sesji) — uporzadkowac przy okazji | P3 |
+| PRICE_FLOOR_RATIO | przeniesc z const do shop_config (z T-015) | P3 |
 
 ### Decyzje czekające na Karola
 
 - **T-004 / T-005** — patrz tabela Kolejka tasków powyżej (refresh_stock_only.py cron, SynonymExpander multi-word splitting).
 
-### Ostatni numer pytania Karola: 57
+### Ostatni numer pytania Karola: 103
 
 W konwersacji architekt zadał 57 ponumerowanych pytań decyzyjnych z rekomendacjami. Karol odpowiedział na wszystkie aktywne. Nieodpowiedziane w trakcie: 56 (T-004 refresh_stock), 57 (T-005 SynonymExpander) — czekają na decyzję.
 
