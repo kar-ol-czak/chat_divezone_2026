@@ -140,11 +140,26 @@ final class ProductSearch implements ToolInterface
         );
 
         // T-017: auto-fallback — gdy 0 wyników i była użyta kategoria, ponów bez kategorii.
-        // Naprawia przypadek gdy model zgadł złą podkategorię dla konkretnego modelu
-        // (np. Crystal Vu = panoramiczna, model szukał w "Maski jednoszybowe" → 0 → "nie mamy").
+        // T-020: rozszerzony trigger — także gdy navigational + exact_keywords zwróciło tylko
+        // substytuty (żaden wynik nie zawiera wszystkich exact_keywords w nazwie). Crystal Vu
+        // (panoramiczna) był maskowany przez 5 substytutów Scubapro w błędnej kategorii.
         // Deterministyczne — nie zależy od posłuszeństwa modelu wobec reguły "uprość query gdy 0".
         $usedFilters = $filters;
-        if (empty($merged['products']) && !empty($normalized['category'])) {
+        $intent = $searchPlan['intent'] ?? '';
+        $needFallback = empty($merged['products']);
+        $navigationalMiss = false;
+        if (
+            !$needFallback
+            && $intent === 'navigational'
+            && !empty($exactKeywords)
+            && !empty($normalized['category'])
+            && !$this->hasExactKeywordMatch($merged['products'], $exactKeywords)
+        ) {
+            $needFallback = true;
+            $navigationalMiss = true;
+        }
+
+        if ($needFallback && !empty($normalized['category'])) {
             $fallbackNormalized = $normalized;
             $fallbackNormalized['category'] = null;
             $fallbackFilters = $this->buildFilters($fallbackNormalized);
@@ -156,7 +171,17 @@ final class ProductSearch implements ToolInterface
             );
             $merged['search_debug']['category_fallback'] = true;
             $merged['search_debug']['original_category'] = $normalized['category'];
+            if ($navigationalMiss) {
+                $merged['search_debug']['navigational_miss'] = true;
+            }
             $usedFilters = $fallbackFilters;
+        }
+
+        // T-020: sygnał dla promptu (PATCH 11 T-018) — czy mimo wszystko brak dokładnego dopasowania.
+        // Liczony na finalnym $merged (po ewentualnym fallbacku).
+        if ($intent === 'navigational' && !empty($exactKeywords)) {
+            $merged['search_debug']['exact_match_miss'] =
+                !$this->hasExactKeywordMatch($merged['products'] ?? [], $exactKeywords);
         }
 
         // Dołącz search_plan do debug info
@@ -850,7 +875,9 @@ final class ProductSearch implements ToolInterface
             }
             $significant[$t] = true;
         }
-        return array_keys($significant);
+        // T-020: numeric tokeny ("4000") muszą zostać string — PHP key auto-cast
+        // zamieniłby "4000" na int, co potem wybucha w str_contains() PHP 8.4.
+        return array_map('strval', array_keys($significant));
     }
 
     /**
@@ -861,11 +888,52 @@ final class ProductSearch implements ToolInterface
         $normalized = mb_strtolower($this->stripDiacritics($text));
         $matched = 0;
         foreach ($tokens as $t) {
-            if ($t !== '' && str_contains($normalized, $t)) {
+            // T-020: defensywny cast (string) — gdyby tokens przyszły z innego źródła.
+            if ($t !== '' && str_contains($normalized, (string) $t)) {
                 $matched++;
             }
         }
         return $matched;
+    }
+
+    /**
+     * Czy któryś produkt zawiera WSZYSTKIE exact_keywords w nazwie (case+accent-insensitive).
+     * Wieloczłonowe keywords (np. "Crystal Vu") sprawdzane jako całość (substring).
+     * Używane w T-020 do wykrycia "exact match miss" — gdy navigational query zwraca
+     * tylko substytuty.
+     */
+    private function hasExactKeywordMatch(array $products, array $exactKeywords): bool
+    {
+        if (empty($exactKeywords)) {
+            return true;
+        }
+        $normKeywords = [];
+        foreach ($exactKeywords as $kw) {
+            $n = mb_strtolower($this->stripDiacritics((string) $kw));
+            if ($n !== '') {
+                $normKeywords[] = $n;
+            }
+        }
+        if (empty($normKeywords)) {
+            return true;
+        }
+        foreach ($products as $p) {
+            $name = mb_strtolower($this->stripDiacritics((string) ($p['name'] ?? '')));
+            if ($name === '') {
+                continue;
+            }
+            $allMatch = true;
+            foreach ($normKeywords as $kw) {
+                if (!str_contains($name, $kw)) {
+                    $allMatch = false;
+                    break;
+                }
+            }
+            if ($allMatch) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
