@@ -1,0 +1,471 @@
+[
+  {
+    "id": "JACKET",
+    "nazwa_pl": "jacket nurkowy (BCD)",
+    "nazwa_en": "jacket BCD",
+    "definicja": "Jacket to kamizelka wypornosciowa typu BCD, w ktorej worek powietrzny czesciowo otacza nurka (plecy i boki), a uprzaz jest zintegrowana z konstrukcja kamizelki. Sluzy do kontroli plywalnosci przez dopompowanie i upuszczanie powietrza inflatorem oraz zaworami spustowymi, zwykle z mozliwoscia balastu zintegrowanego w kieszeniach. Typowy jacket ma miekkie plecy do butli, pas brzuszny, pas piersiowy, kieszenie oraz punkty mocowania akcesoriow. Kluczowe parametry zakupowe to rozmiar i dopasowanie, sila wypornosci, udzwig i typ kieszeni balastowych, liczba i polozenie dump valve oraz waga i pakownosc do podrozy.",
+    "podtypy": [
+      "rekreacyjny jacket",
+      "jacket podrozny (travel)",
+      "jacket z balastem zintegrowanym",
+      "jacket bez balastu zintegrowanego",
+      "jacket dla dzieci"
+    ],
+    "synonimy_pl": {
+      "exact": [
+        "jacket nurkowy",
+        "jacket BCD",
+        "stab jacket",
+        "kamizelka jacket"
+      ],
+      "near": [
+        "BCD",
+        "kamizelka wypornosciowa",
+        "kamizelka BCD",
+        "kamizelka wypornosciowa do butli"
+      ],
+      "potoczne": [
+        "jackety nurkowe",
+        "kamizelka do nurkowania",
+        "jacket do nurkowania",
+        "jacket nurkowy dla dzieci"
+      ],
+      "archaiczne": [
+        "kamizelka ratowniczo-wyrownawcza",
+        "KRW"
+      ]
+    },
+    "synonimy_en": {
+      "exact": [
+        "jacket BCD",
+        "stab jacket"
+      ],
+      "near": [
+        "BCD",
+        "buoyancy compensator"
+      ]
+    },
+    "nie_mylic_z": [
+      {
+        "concept": "SKRZYDLO",
+        "dlaczego": "Skrzydlo to worek wypornosciowy na plecach i zwykle element systemu modulowego, a jacket jest zintegrowana kamizelka z uprzeza."
+      },
+      {
+        "concept": "ZESTAW_SKRZYDLO_SINGLE",
+        "dlaczego": "Zestaw skrzydlo single to komplet wing plus plyta plus uprzaz, a jacket jest jednym zintegrowanym produktem."
+      },
+      {
+        "concept": "INFLATOR",
+        "dlaczego": "Inflator to czesc zamienna i mechanizm sterujacy powietrzem, a nie cala kamizelka BCD."
+      }
+    ],
+    "parametry_zakupowe": [
+      "rozmiar i zakres regulacji",
+      "sila wypornosci (lift)",
+      "balast zintegrowany i jego pojemnosc",
+      "liczba i polozenie dump valve",
+      "komfort i sztywnosc plecow do butli",
+      "liczba D-ring i kieszeni",
+      "waga i pakownosc (travel)",
+      "serwisowalnosc inflatora i zaworow"
+    ],
+    "marki_w_sklepie": [
+      "HOLLIS",
+      "MARES",
+      "SCUBAPRO",
+      "TUSA"
+    ],
+    "powiazane_produkty": [
+      "WAZ_INFLATORA",
+      "BALAST",
+      "PAS_BALASTOWY",
+      "KIESZENIE_ZINTEGROWANE",
+      "TRYMOWKA"
+    ],
+    "faq": [
+      {
+        "pytanie": "Jacket nurkowy jaki wybrac",
+        "odpowiedz": "Dobierz rozmiar pod pianke lub suchy skafander, sprawdz sile wypornosci dopasowana do butli i balastu oraz czy wolisz balast zintegrowany. Dla wyjazdow liczy sie niska waga i pakownosc, a do zimnej wody wygodne kieszenie i pewne dump valve."
+      },
+      {
+        "pytanie": "Jacket nurkowy dla dzieci czy jest inny",
+        "odpowiedz": "Tak, wersje dzieciece maja inna rozmiarowke, krotszy korpus i mniejsze pojemnosci kieszeni, zeby sprzet nie przesuwal sie na ciele. Najwazniejsze jest dopasowanie i mozliwosc precyzyjnej regulacji."
+      },
+      {
+        "pytanie": "Ranking jacketow nurkowych na co patrzec",
+        "odpowiedz": "Porownuj dopasowanie, sile wypornosci, stabilnosc butli, ergonomie dump valve i jakosc kieszeni balastowych. Marki i model sa wazne, ale najczesciej wygrywa jacket, ktory dobrze lezy w Twojej konfiguracji."
+      }
+    ],
+    "uwagi_dla_ai": "Nie traktuj slowa BCD jako synonimu jacketu, bo BCD obejmuje tez skrzydla. Klienci czesto pisza jacket majac na mysli dowolny BCD, dopytaj czy chca kamizelke z workiem wokol tułowia czy system skrzydlowy. Nie sugeruj jednego rozmiaru na podstawie samego wzrostu, potrzebne sa tez waga i ekspozycja (pianka lub suchy skafander)."
+  },
+  {
+    "id": "SKRZYDLO",
+    "nazwa_pl": "skrzydlo (wing, worek BCD)",
+    "nazwa_en": "wing (BCD bladder)",
+    "definicja": "Skrzydlo to worek wypornosciowy BCD montowany na plecach, ktory po napelnieniu tworzy wypornosc za nurkiem i stabilizuje konfiguracje butli. Sluzy do kontroli plywalnosci w systemach modulowych, najczesciej z plyta (backplate) i uprzeza, a w praktyce jest czescia zestawu BPW. Skrzydlo sklada sie z komory wypornosciowej w oslownie, zespolu inflatora z wezem karbowanym oraz zaworow spustowych. Kluczowe parametry zakupowe to przeznaczenie single lub twin, sila wypornosci, ksztalt donut lub horseshoe, szerokosc i dopasowanie do butli oraz odpornosc materialu oslony.",
+    "podtypy": [
+      "skrzydlo single",
+      "skrzydlo twin",
+      "donut",
+      "horseshoe",
+      "skrzydlo do nurkowan rekreacyjnych",
+      "skrzydlo do nurkowan technicznych"
+    ],
+    "synonimy_pl": {
+      "exact": [
+        "skrzydlo",
+        "wing",
+        "skrzydlo BCD"
+      ],
+      "near": [
+        "worek BCD",
+        "worek wypornosciowy",
+        "BCD skrzydlowe",
+        "worek wypornosciowy na plecy"
+      ],
+      "potoczne": [
+        "skrzydlo nurkowe wing",
+        "wing do nurkowania",
+        "worek do skrzydla"
+      ],
+      "archaiczne": []
+    },
+    "synonimy_en": {
+      "exact": [
+        "wing",
+        "BCD wing"
+      ],
+      "near": [
+        "bladder",
+        "back-mounted BCD bladder"
+      ]
+    },
+    "nie_mylic_z": [
+      {
+        "concept": "JACKET",
+        "dlaczego": "Jacket ma worek wokol tułowia i zintegrowana konstrukcje, a skrzydlo jest workiem na plecach i zwykle wymaga plyty oraz uprzezy."
+      },
+      {
+        "concept": "ZESTAW_SKRZYDLO_SINGLE",
+        "dlaczego": "Zestaw to komplet skrzydlo plus plyta plus uprzaz i osprzet, a skrzydlo samo w sobie jest tylko workiem BCD."
+      },
+      {
+        "concept": "BACKPLATE",
+        "dlaczego": "Backplate to sztywna plyta nosna, nie daje wypornosci i jest osobnym SKU od skrzydla."
+      },
+      {
+        "concept": "SIDEMOUNT",
+        "dlaczego": "Sidemount to konfiguracja noszenia butli po bokach i osobne systemy uprzezy, a skrzydlo to worek wypornosciowy do konfiguracji na plecach lub dedykowanej."
+      }
+    ],
+    "parametry_zakupowe": [
+      "przeznaczenie single lub twin",
+      "sila wypornosci (lift)",
+      "ksztalt donut lub horseshoe",
+      "szerokosc i dopasowanie do butli",
+      "polozenie i liczba dump valve",
+      "rodzaj i jakosc oslony (zewnetrzny shell)",
+      "typ i kompatybilnosc inflatora i laczen",
+      "waga i pakownosc do podrozy"
+    ],
+    "marki_w_sklepie": [
+      "HOLLIS",
+      "MARES",
+      "SCUBAPRO",
+      "TECLINE",
+      "xDEEP"
+    ],
+    "powiazane_produkty": [
+      "BACKPLATE",
+      "UPRZAZ",
+      "INFLATOR",
+      "WAZ_KARBOWANY",
+      "DUMP_VALVE",
+      "WAZ_INFLATORA",
+      "ZESTAW_SKRZYDLO_SINGLE",
+      "ZESTAW_SKRZYDLO_TWIN"
+    ],
+    "faq": [
+      {
+        "pytanie": "Skrzydlo nurkowe wing co to jest",
+        "odpowiedz": "To worek wypornosciowy BCD montowany z tylu na plecach, ktory po napompowaniu daje wypornosc i pomaga utrzymac pozycje w wodzie. Najczesciej pracuje w systemie z plyta i uprzeza."
+      },
+      {
+        "pytanie": "Skrzydlo nurkowe wing jak dobrac wypornosc",
+        "odpowiedz": "Lift dobiera sie do najciezszej konfiguracji, czyli butli, automatu, skafandra i dodatkowego sprzetu. Za male skrzydlo moze nie zapewnic kontroli plywalnosci na powierzchni i w sytuacji awaryjnej, a za duze moze pogorszyc oplywowosc i trym."
+      }
+    ],
+    "uwagi_dla_ai": "Kluczowe bezpieczenstwo: nie dobieraj skrzydla tylko po wzroscie, potrzebna jest konfiguracja (single czy twin, suchy skafander, dodatkowe butle). Nie polecaj skrzydla single jako rozwiazania do twinsetu, bo moze zabraknac wypornosci. Uwaga na jezyk klienta: czesto mowi jacket majac na mysli skrzydlo i odwrotnie, dopytaj o preferowana konstrukcje."
+  },
+  {
+    "id": "BACKPLATE",
+    "nazwa_pl": "backplate (plyta tylna)",
+    "nazwa_en": "backplate",
+    "definicja": "Backplate to sztywna plyta nosna systemu skrzydlowego, do ktorej mocuje sie uprzaz, skrzydlo oraz butle. Sluzy do przenoszenia obciazen, stabilizacji butli na plecach i poprawy trymu, a w wersji stalowej moze czesciowo zastepowac balast. Płyta ma standardowe otwory i szczeliny do pasow, srub i pasow do butli oraz odpowiedni profil dopasowany do plecow. Kluczowe parametry zakupowe to material (stal lub aluminium) i masa, kompatybilnosc z osprzetem i rozstaw otworow, rozmiar (standard lub krotka) oraz jakosc wykonczenia krawedzi.",
+    "podtypy": [
+      "plyta stalowa",
+      "plyta aluminiowa",
+      "plyta krotka (short)",
+      "plyta standard",
+      "plyta pod single z pasami",
+      "plyta pod twin z srubami"
+    ],
+    "synonimy_pl": {
+      "exact": [
+        "backplate",
+        "plyta tylna",
+        "plyta backplate"
+      ],
+      "near": [
+        "plyta do skrzydla",
+        "plyta do BPW",
+        "plyta pod skrzydlo"
+      ],
+      "potoczne": [
+        "backplate nurkowy",
+        "blacha do skrzydla",
+        "plyta do winga"
+      ],
+      "archaiczne": []
+    },
+    "synonimy_en": {
+      "exact": [
+        "backplate",
+        "back plate"
+      ],
+      "near": [
+        "BP plate",
+        "plate for wing"
+      ]
+    },
+    "nie_mylic_z": [
+      {
+        "concept": "UPRZAZ",
+        "dlaczego": "Uprzaz to pasy i okucia, a backplate to sztywna plyta, te elementy kupuje sie osobno lub w zestawie."
+      },
+      {
+        "concept": "SKRZYDLO",
+        "dlaczego": "Skrzydlo daje wypornosc, a backplate nie ma komory powietrznej i nie steruje plywalnoscia."
+      },
+      {
+        "concept": "BALAST",
+        "dlaczego": "Balast to odpinane ciezarki, a backplate jest stala czescia zestawu, nawet jesli jest ciezki."
+      }
+    ],
+    "parametry_zakupowe": [
+      "material i masa plyty",
+      "rozmiar i dopasowanie do sylwetki",
+      "standard rozstawu otworow do skrzydla i twina",
+      "liczba i uklad szczelin pod pasy do butli",
+      "kompatybilnosc z uprzeza i akcesoriami",
+      "jakosc wykonczenia i ochrona przed korozja"
+    ],
+    "marki_w_sklepie": [
+      "HOLLIS",
+      "TECLINE",
+      "xDEEP",
+      "SCUBAPRO"
+    ],
+    "powiazane_produkty": [
+      "UPRZAZ",
+      "SKRZYDLO",
+      "ZESTAW_SKRZYDLO_SINGLE",
+      "ZESTAW_SKRZYDLO_TWIN",
+      "TRYMOWKA"
+    ],
+    "faq": [
+      {
+        "pytanie": "Backplate nurkowy stal czy aluminium",
+        "odpowiedz": "Stal jest ciezsza i pozwala zdjac czesc balastu z pasa, co bywa korzystne w zimnej wodzie. Aluminium jest lzejsze i czesto wybierane do podrozy oraz tam, gdzie nie chcesz dodawac stalej masy."
+      },
+      {
+        "pytanie": "Backplate nurkowy czy zastapi balast",
+        "odpowiedz": "Moze czesciowo zastapic balast, ale nie zawsze calkowicie. Finalna ilosc balastu zalezy od skafandra, butli i konfiguracji, dlatego i tak warto wykonac probe wywazenia."
+      }
+    ],
+    "uwagi_dla_ai": "Nie sugeruj, ze kazdy backplate pasuje do kazdego skrzydla bez sprawdzenia standardu otworow i zastosowania single lub twin. Klienci myla backplate z balastem, wyjasnij ze masa plyty jest stala i nie dziala jak szybkozdejmowane ciezarki."
+  },
+  {
+    "id": "INFLATOR",
+    "nazwa_pl": "inflator BCD (glowica)",
+    "nazwa_en": "BCD power inflator",
+    "definicja": "Inflator BCD to glowica sterujaca doplywem i spustem powietrza w BCD, montowana na koncu weza karbowanego skrzydla lub jacketu. Sluzy do dopompowania BCD z automatu przez szybkozlacze oraz do kontrolowanego upuszczania, zwykle ma tez ustnik do dopompowania ustami. W srodku znajduje sie zawor dodawczy i przycisk upustu, a na zewnatrz standardowe gniazdo szybkozlacza do weza inflatora. Kluczowe parametry zakupowe to kompatybilnosc gwintu i srednicy polaczenia z wezem karbowanym, typ szybkozlacza, ergonomia przyciskow oraz mozliwosc serwisowania i dostepnosc czesci.",
+    "podtypy": [
+      "inflator standardowy",
+      "inflator niskoprofilowy",
+      "inflator z metalowymi przyciskami",
+      "inflator z tworzywa"
+    ],
+    "synonimy_pl": {
+      "exact": [
+        "inflator BCD",
+        "glowica inflatora",
+        "power inflator"
+      ],
+      "near": [
+        "inflator nurkowy",
+        "zawor inflatora"
+      ],
+      "potoczne": [
+        "inflator do jacketu",
+        "inflator do skrzydla",
+        "glowica do BCD"
+      ],
+      "archaiczne": [
+        "zawor dodawczy"
+      ]
+    },
+    "synonimy_en": {
+      "exact": [
+        "power inflator",
+        "BCD inflator"
+      ],
+      "near": [
+        "inflator head",
+        "LPI inflator"
+      ]
+    },
+    "nie_mylic_z": [
+      {
+        "concept": "WAZ_INFLATORA",
+        "dlaczego": "Waz inflatora to cienki waz LP z szybkozlaczem od automatu do BCD, a inflator to glowica z przyciskami na BCD."
+      },
+      {
+        "concept": "WAZ_KARBOWANY",
+        "dlaczego": "Waz karbowany to gruby waz BCD miedzy skrzydlem a inflatorem, a inflator jest osobna glowica na jego koncu."
+      },
+      {
+        "concept": "DUMP_VALVE",
+        "dlaczego": "Dump valve to osobny zawor spustowy na skrzydle lub jackecie, a inflator to sterowanie przy wezu karbowanym."
+      }
+    ],
+    "parametry_zakupowe": [
+      "kompatybilnosc z wezem karbowanym (gwint i srednica)",
+      "standard szybkozlacza do weza inflatora",
+      "ergonomia i wielkosc przyciskow",
+      "material i odpornosc na korozje",
+      "mozliwosc serwisowania",
+      "kompatybilnosc z jacket i skrzydlo (zamienniki)"
+    ],
+    "marki_w_sklepie": [
+      "HOLLIS",
+      "MARES",
+      "SCUBAPRO",
+      "TECLINE",
+      "xDEEP"
+    ],
+    "powiazane_produkty": [
+      "WAZ_INFLATORA",
+      "WAZ_KARBOWANY",
+      "DUMP_VALVE",
+      "JACKET",
+      "SKRZYDLO"
+    ],
+    "faq": [
+      {
+        "pytanie": "Inflator nurkowy do jakiego BCD pasuje",
+        "odpowiedz": "Nie kazdy pasuje jeden do jednego, bo roznia sie gwintem i srednica polaczenia z wezem karbowanym oraz detalami szybkozlacza. Najpewniej dobrac inflator po modelu BCD lub po wymiarach laczenia i standardzie szybkozlacza."
+      },
+      {
+        "pytanie": "Inflator nurkowy a waz do inflatora czy to to samo",
+        "odpowiedz": "Nie, inflator to glowica z przyciskami na BCD, a waz do inflatora to przewod LP od pierwszego stopnia automatu do inflatora. To dwa rozne produkty i dwa rozne SKU."
+      }
+    ],
+    "uwagi_dla_ai": "To newralgiczny element bezpieczenstwa. Zawsze dopytaj o model BCD i typ polaczenia z wezem karbowanym, bo zly inflator moze nie pasowac lub powodowac nieszczelnosc. Nie myl inflatora z wezem inflatora ani z wezem karbowanym."
+  },
+  {
+    "id": "SIDEMOUNT",
+    "nazwa_pl": "system sidemount",
+    "nazwa_en": "sidemount system",
+    "definicja": "Sidemount to konfiguracja nurkowa, w której butle są mocowane po bokach ciała, a nie na plecach, co poprawia dostęp do zaworów i ułatwia transport sprzętu. W sklepie jest to zwykle kompletny system sidemount, czyli uprząż z workiem wypornościowym, punktami mocowań, gumami bungee i osprzętem do prowadzenia butli. System działa jak BCD, ale jest zaprojektowany do stabilnego ułożenia jednej lub dwóch butli bocznych i utrzymania prawidłowego trymu. Kluczowe parametry zakupowe to rozmiar i regulacja uprzęży, wyporność worka, geometria i punkty mocowań, kompatybilność z suchym skafandrem oraz to, czy system jest zoptymalizowany pod jedną czy dwie butle.",
+    "podtypy": [
+      "rekreacyjny sidemount na jedną butlę",
+      "techniczny sidemount na dwie butle",
+      "sidemount minimalistyczny",
+      "sidemount z rozbudowaną uprzężą komfortową"
+    ],
+    "synonimy_pl": {
+      "exact": [
+        "sidemount",
+        "system sidemount"
+      ],
+      "near": [
+        "konfiguracja boczna",
+        "uprząż sidemount",
+        "kamizelka sidemount",
+        "BCD sidemount"
+      ],
+      "potoczne": [
+        "sidemount nurkowanie",
+        "nurkowanie sidemount",
+        "sidemount xdeep",
+        "zestaw sidemount"
+      ],
+      "archaiczne": []
+    },
+    "synonimy_en": {
+      "exact": [
+        "sidemount",
+        "sidemount BCD"
+      ],
+      "near": [
+        "sidemount harness",
+        "sidemount buoyancy system"
+      ]
+    },
+    "nie_mylic_z": [
+      {
+        "concept": "ZESTAW_SKRZYDLO_SINGLE",
+        "dlaczego": "Zestaw skrzydło single jest do butli na plecach, a sidemount jest do butli po bokach i ma inne mocowania i geometrię."
+      },
+      {
+        "concept": "ZESTAW_SKRZYDLO_TWIN",
+        "dlaczego": "Zestaw twin jest do dwóch butli na plecach połączonych manifoldem, a sidemount zakłada niezależne butle boczne."
+      },
+      {
+        "concept": "SZELKI_STAGE",
+        "dlaczego": "Szelki stage służą do podwieszenia dodatkowej butli jako stage, a nie zastępują systemu wyporności i uprzęży sidemount."
+      }
+    ],
+    "parametry_zakupowe": [
+      "wyporność worka",
+      "zakres regulacji i rozmiar uprzęży",
+      "punkty mocowań i liczba D-ringów",
+      "system prowadzenia butli i bungee",
+      "stabilność trymu z jedną butlą i z dwiema butlami",
+      "masa i pakowność do podróży",
+      "kompatybilność z akcesoriami i kieszeniami balastowymi"
+    ],
+    "marki_w_sklepie": [
+      "HOLLIS",
+      "MARES",
+      "SCUBAPRO",
+      "TECLINE",
+      "TUSA",
+      "xDEEP"
+    ],
+    "powiazane_produkty": [
+      "BALAST",
+      "KIESZENIE_ZINTEGROWANE",
+      "TRYMOWKA",
+      "SZELKI_STAGE",
+      "INFLATOR",
+      "WAZ_INFLATORA"
+    ],
+    "faq": [
+      {
+        "pytanie": "Sidemount xdeep, jaki model wybrać na początek",
+        "odpowiedz": "Dobór zależy głównie od tego, czy planujesz nurkować z jedną czy dwiema butlami oraz czy nurkujesz w suchym skafandrze. Wybierz system z dużym zakresem regulacji i stabilnym trymem, a w razie wątpliwości dopytaj o warunki i typ butli."
+      },
+      {
+        "pytanie": "Kurs sidemount, czy muszę mieć własny sprzęt",
+        "odpowiedz": "Na kurs sidemount często da się wypożyczyć system, ale własny zestaw ułatwia dopasowanie i późniejsze treningi. Jeśli kupujesz przed kursem, wybierz system popularny szkoleniowo i łatwy w regulacji, żeby instruktor mógł go dobrze ustawić."
+      },
+      {
+        "pytanie": "Butle do sidemount, czy każda butla pasuje",
+        "odpowiedz": "Najłatwiej ustawia się system z podobnymi butlami i podobną pływalnością, a mocowania dobiera się do średnicy i długości butli. Sam system sidemount dobiera się tak, żeby zapewniał stabilne punkty zaczepu i możliwość korekty trymu."
+      }
+    ],
+    "uwagi_dla_ai": "SIDEMOUNT traktuj jako konfigurację i kategorię systemów, nie jako pojedynczą część jak skrzydło czy uprząż. Zawsze dopytaj: jedna czy dwie butle, mokro czy sucho, poziom doświadczenia i typ nurkowań, bo od tego zależy potrzebna wyporność i konstrukcja systemu. Nie mieszaj sidemount z riggingiem stage, to inne zastosowanie."
+  }
+]

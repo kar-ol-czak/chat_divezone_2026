@@ -1,0 +1,107 @@
+{
+  "concept_key": "backplate",
+  "canonical_term_pl": "backplate (płyta)",
+  "canonical_term_en": "backplate",
+  "definition_operational_pl": "Sztywna płyta (stalowa lub aluminiowa) stanowiąca rdzeń systemu wypornościowego typu skrzydło, do której mocuje się uprząż oraz worek wypornościowy. W odróżnieniu od skrzydła (worka), sama płyta nie zapewnia regulacji pływalności, a w przeciwieństwie do balastu, jej główną funkcją jest konstrukcja nośna, a nie dociążenie.",
+  "definition_pl": "Płyta nurkowa, potocznie nazywana \"blachą\", to kluczowy element modułowego systemu wypornościowego, popularnego w nurkowaniu technicznym (np. w konfiguracji Hogarthian). Jest to sztywna, wyprofilowana płyta wykonana ze stali nierdzewnej lub aluminium, stanowiąca noszak dla zestawu butlowego (pojedynczej butli lub twinsetu) oraz skrzydła (worka wypornościowego). Do płyty montuje się również uprząż z jednego kawałka taśmy. Płyta stalowa, ze względu na swoją wagę (2-3 kg), pełni dodatkowo funkcję stałego elementu balastowego, redukując ilość potrzebnego ołowiu na pasie balastowym.",
+  "definition_en": "A rigid plate, typically made of stainless steel or aluminum, that forms the structural core of a back-mounted buoyancy control system, commonly referred to as a \"wing\" system. The backplate serves as the mounting point for the harness webbing, the buoyancy cell (wing), and the scuba cylinder(s). This configuration is the standard in technical diving, where the wing is sandwiched between the backplate harness and the cylinders.",
+  "synonyms": [
+    {
+      "term": "płyta nurkowa",
+      "type": "exact_synonym",
+      "language": "pl",
+      "note": null
+    },
+    {
+      "term": "płyta",
+      "type": "exact_synonym",
+      "language": "pl",
+      "note": null
+    },
+    {
+      "term": "blacha",
+      "type": "colloquial",
+      "language": "pl",
+      "note": "Potoczne określenie, szczególnie w kontekście konfiguracji technicznej."
+    },
+    {
+      "term": "backplate",
+      "type": "anglicyzm",
+      "language": "pl",
+      "note": null
+    }
+  ],
+  "relations": [
+    {
+      "type": "nie_mylic_z",
+      "target_concept_key": "skrzydlo",
+      "why": "Płyta (backplate) to sztywny element konstrukcyjny do mocowania sprzętu, podczas gdy skrzydło (wing) to nadmuchiwany worek wypornościowy zapewniający kontrolę pływalności.",
+      "disambiguation_clues": [
+        "sztywna płyta vs. nadmuchiwany worek",
+        "element nośny vs. element wypornościowy",
+        "stal/aluminium vs. cordura/nylon"
+      ]
+    },
+    {
+      "type": "nie_mylic_z",
+      "target_concept_key": "uprzaz",
+      "why": "Płyta (backplate) to sztywny element na plecach, do którego mocuje się resztę sprzętu. Uprząż to system pasów i taśm przymocowany do płyty, który służy do założenia całego zestawu na nurka.",
+      "disambiguation_clues": [
+        "sztywna płyta vs. system pasów",
+        "rdzeń konstrukcji vs. system nośny na ciele"
+      ]
+    },
+    {
+      "type": "nie_mylic_z",
+      "target_concept_key": "balast",
+      "why": "Płyta stalowa zapewnia stałą, ujemną pływalność, ale jej główną funkcją jest konstrukcja nośna. Balast to system wymiennych ciężarków służący do precyzyjnej regulacji pływalności w zależności od konfiguracji i skafandra.",
+      "disambiguation_clues": [
+        "element konstrukcyjny vs. ciężarki do regulacji",
+        "stała waga vs. zmienna waga",
+        "mocowanie sprzętu vs. kompensacja wyporności"
+      ]
+    },
+    {
+      "type": "czesc_zestawu",
+      "target_concept_key": "skrzydlo",
+      "why": "Płyta stanowi podstawę montażową dla skrzydła w systemach modułowych.",
+      "disambiguation_clues": []
+    },
+    {
+      "type": "czesc_zestawu",
+      "target_concept_key": "uprzaz",
+      "why": "Uprząż jest montowana bezpośrednio do płyty, tworząc razem system nośny.",
+      "disambiguation_clues": []
+    }
+  ],
+  "evidence": [
+    {
+      "source_id": "source_data_1_padi_en",
+      "quote": "Today it is the standard BCD used in the tec community, consisting of a high capacity BCD sandwiched between a backplate harness and your doubles.",
+      "language": "en"
+    },
+    {
+      "source_id": "source_data_4_nurkomania_sprzet_pl",
+      "quote": "Płyta - to podstawowy element sprzętu nurka technicznego. Właśnie do niej mocuje się pozostałe elementy sprzętu, jak uprząż, butle, skrzydło. Płyty wykonywane są głównie ze stali nierdzewnej oraz aluminium.",
+      "language": "pl"
+    },
+    {
+      "source_id": "source_data_4_nurkomania_sprzet_pl",
+      "quote": "Noszak może być typu: twardego - płyta - stalowa płyta odpowiednio wyprofilowana, może mieć bardzo różny kształt oraz grubość. Wykonywana jest ze stali nierdzewnej lub aluminium.",
+      "language": "pl"
+    },
+    {
+      "source_id": "source_data_4_nurkomania_teoria_pl",
+      "quote": "Uprząż z płytą",
+      "language": "pl"
+    },
+    {
+      "source_id": "source_data_4_nurkomania_teoria_pl",
+      "quote": "Płyta do zestawu podwójnego wraz z uprzężą i systemem balastowym - o ile potrzebny",
+      "language": "pl"
+    }
+  ],
+  "confidence": "high",
+  "status": "needs_review",
+  "version": 1
+}

@@ -1,0 +1,129 @@
+{
+  "concept_key": "jacket",
+  "canonical_term_pl": "jacket (BCD)",
+  "canonical_term_en": "jacket BCD",
+  "definition_operational_pl": "Jacket to kamizelka wypornościowa, w której worki powietrzne oplatają nurka po bokach i z tyłu, stanowiąc zintegrowaną całość z uprzężą. Jest to najpopularniejsze rozwiązanie w nurkowaniu rekreacyjnym, w odróżnieniu od skrzydła, którego worek znajduje się wyłącznie na plecach i jest częścią systemu modułowego.",
+  "definition_pl": "Jacket, znany również jako BCD lub kamizelka ratowniczo-wyrównawcza (KRW), to kluczowy element sprzętu nurkowego pełniący trzy główne funkcje: zapewnia dodatnią pływalność na powierzchni, pozwala na precyzyjną kontrolę pływalności pod wodą oraz integruje cały system SCUBA (butlę, automaty) w jedną całość noszoną na plecach. Współczesne jackety to najczęściej konstrukcje jednopowłokowe z wytrzymałych materiałów (np. Cordura), z workiem wypornościowym zintegrowanym z uprzężą i noszakiem. Najpopularniejszym stylem jest jacket regulowany, który zapewnia komfort i stabilność, w odróżnieniu od historycznych modeli typu chomąto.",
+  "definition_en": "The Buoyancy Control Device (BCD), commonly a jacket-style BCD, is an inflatable vest worn by divers. It serves three primary functions: providing positive buoyancy for resting or swimming on the surface, allowing for precise buoyancy adjustments underwater to compensate for depth changes and exposure suit compression, and acting as a harness that integrates the entire scuba system (cylinder, regulator) into a single unit on the diver's back. Modern jacket BCDs, particularly the 'Advanced Design Jacket', feature a bladder that wraps from the back around the hips, eliminating bulk from the chest and shoulders, which enhances comfort and stability both on the surface and underwater.",
+  "synonyms": [
+    {
+      "term": "kamizelka ratowniczo-wyrównawcza",
+      "type": "exact_synonym",
+      "language": "pl",
+      "note": null
+    },
+    {
+      "term": "krw",
+      "type": "exact_synonym",
+      "language": "pl",
+      "note": "Skrót od 'kamizelka ratowniczo-wyrównawcza'."
+    },
+    {
+      "term": "bcd",
+      "type": "anglicyzm",
+      "language": "en",
+      "note": "Skrót od 'Buoyancy Control Device', powszechnie używany w polskim żargonie."
+    },
+    {
+      "term": "jacket",
+      "type": "anglicyzm",
+      "language": "en",
+      "note": "Powszechnie używany w Polsce, często jako synonim BCD."
+    },
+    {
+      "term": "kamizelka wypornościowa",
+      "type": "colloquial",
+      "language": "pl",
+      "note": null
+    },
+    {
+      "term": "stab jacket",
+      "type": "anglicyzm",
+      "language": "en",
+      "note": "Termin historyczny, pochodzący od nazwy jednego z pierwszych popularnych modeli (Scubapro Stabilizing Jacket), czasami używany potocznie na określenie każdego jacketa."
+    },
+    {
+      "term": "chomąto",
+      "type": "legacy_name",
+      "language": "pl",
+      "note": "Określenie przestarzałego typu kamizelki BCD montowanej z przodu (tzw. 'horse collar')."
+    },
+    {
+      "term": "ablj",
+      "type": "anglicyzm",
+      "language": "en",
+      "note": "Skrót od 'Adjustable Buoyancy Life Jacket', historyczne określenie używane w Europie dla kamizelek typu chomąto."
+    }
+  ],
+  "relations": [
+    {
+      "type": "nie_mylic_z",
+      "target_concept_key": "skrzydlo",
+      "why": "Jacket to kamizelka wypornościowa z workami oplatającymi nurka po bokach, popularna w nurkowaniu rekreacyjnym. Skrzydło to worek wypornościowy montowany wyłącznie na plecach, standard w nurkowaniu technicznym.",
+      "disambiguation_clues": [
+        "miejsce umieszczenia worka wypornościowego (boki vs. plecy)",
+        "przeznaczenie (rekreacja vs. techniczne)",
+        "konstrukcja (zintegrowana vs. modułowa z płytą)"
+      ]
+    },
+    {
+      "type": "nie_mylic_z",
+      "target_concept_key": "inflator",
+      "why": "Jacket to cała kamizelka wypornościowa. Inflator to jedynie mechanizm (wąż z przyciskami) służący do dodawania i upuszczania powietrza z jacketa.",
+      "disambiguation_clues": [
+        "cały system vs. komponent",
+        "funkcja (wyporność vs. sterowanie wypornością)"
+      ]
+    },
+    {
+      "type": "nie_mylic_z",
+      "target_concept_key": "boja_dekompresyjna",
+      "why": "Jacket jest noszony na ciele nurka przez całe nurkowanie do kontroli pływalności. Boja dekompresyjna to nadmuchiwana tuba wysyłana na powierzchnię pod koniec nurkowania w celach sygnalizacyjnych lub dekompresyjnych.",
+      "disambiguation_clues": [
+        "noszony na ciele vs. wypuszczany na powierzchnię",
+        "kontrola pływalności vs. sygnalizacja/dekompresja"
+      ]
+    },
+    {
+      "type": "czesc_zestawu",
+      "target_concept_key": "inflator",
+      "why": null,
+      "disambiguation_clues": []
+    }
+  ],
+  "evidence": [
+    {
+      "source_id": "padi_ch3",
+      "quote": "Your BCD is an inflatable jacket that you wear. It holds your scuba system together and allows you to control your buoyancy by adding or releasing air. By inflating or deflating the BCD, you can float easily at the surface or swim effortlessly over the bottom.",
+      "language": "en"
+    },
+    {
+      "source_id": "padi_ch3",
+      "quote": "The modern BCD has three primary functions: 1) to let you float on the surface to rest or swim, 2) to allow you to adjust changes in your buoyancy while underwater, and 3) to act as the harness that holds the entire scuba system together on you.",
+      "language": "en"
+    },
+    {
+      "source_id": "padi_ch3",
+      "quote": "The first jacket style BCDs came into the market to provide the single-unit advantage of back mounted BCDs while redistributing the buoyancy for more balance, especially at the surface... This changed with the debut of the Advanced Design jacket BCD... which used short straps to eliminate the bladder from the low chest to the top of your shoulders. This improvement was so significant that it almost entirely replaced the older jacket design within two years. Today this is the most common and popular configuration in recreational diving.",
+      "language": "en"
+    },
+    {
+      "source_id": "iantd_owd",
+      "quote": "BCD (Buoyancy Control Device - sprzęt do kontroli wyporności) - Jacket. Aby umieścić butle wygodnie na plecach nurka. używa się tzw. backpacków lub specjalnych rzemieni. W większości backpacki połączone są na stałe z BCD. Znamy różne konfiguracje i typy takich systemów. Urzadzenia do regulacji wyporności najczęściej wyglądają jak kamizelki.",
+      "language": "pl"
+    },
+    {
+      "source_id": "nurkomania_sprzet_pl",
+      "quote": "KRW - kamizelka ratowniczo-wyrównawcza (w skrócie BCD , z an. BCD) zwiększa komfort oraz bezpieczeństwo nurkowania dzięki temu że:;umożliwia zmianę pływalności, od ujemnej przez obojętną do dodatniej,utrzymuje nurka na powierzchni wody, najlepiej w pozycji bezpiecznej (twarzą do góry)pozwala wypłynąć na powierzchnię w sytuacji awaryjnej.",
+      "language": "pl"
+    },
+    {
+      "source_id": "nurkomania_sprzet_pl",
+      "quote": "Jacket- obecnie rozwiązanie najszerzej stosowane. Wygodne, łatwe w użyciu, duży wybór modeli. Jacket może być: regulowany - najszerzej stosowany, pełny - nie regulowany typu skrzydło - z workiem wypornościowym na plecach.",
+      "language": "pl"
+    }
+  ],
+  "confidence": "high",
+  "status": "needs_review",
+  "version": 1
+}

@@ -1,0 +1,206 @@
+concept_key,term,source,recommendation,suggested_type,comment
+automat_oddechowy,aparat tlenowy,oba,accept,misleading_term,mylenie ze sprzętem medycznym/strażackim + błąd "tlen"
+automat_oddechowy,oddechówka,oba,accept,misleading_term,nieistniejący neologizm
+automat_oddechowy,maska tlenowa,gemini,accept,misleading_term,mylenie ustnika z maską medyczną
+automat_oddechowy,tlenówka,openai,accept,misleading_term,skrót od butli tlenowej przenoszony na automat
+backplate,blacha do butli,gemini,review,colloquial?,zbyt potoczne ale czy klienci tak mówią?
+backplate,plecak,gemini,accept,misleading_term,błędne uproszczenie
+backplate,plecak do butli,openai,accept,misleading_term,j.w. pełniejsza forma
+backplate,stelaż do butli,openai,review,near_synonym?,uogólnienie z turystyki ale funkcjonalnie blisko
+backplate,plate,openai,review,anglicyzm?,EN skrót bez kontekstu BP&W
+balast,ołów,gemini,accept,misleading_term,materiał zamiast funkcji produktu
+balast,pas balastowy,gemini,reject_to_nie_mylic_z,nie_mylic_z,osobny produkt (taśma/pas) nie synonim ciężarków
+balast,ciężarki wędkarskie,openai,accept,misleading_term,mylenie z wędkarstwem
+balast,obciążniki do pływania,openai,accept,misleading_term,mylenie ze sprzętem pływackim
+balast,pas obciążeniowy,openai,review,nie_mylic_z?,komponent mylony z całością
+boja_dekompresyjna,kiełbasa,oba,accept,misleading_term,kalka z ang. safety sausage
+boja_dekompresyjna,balon,gemini,accept,misleading_term,błąd pojęciowy
+boja_dekompresyjna,spadochron,gemini,accept,misleading_term,to lift bag do wydobywania nie boja. Dobre rozróżnienie!
+boja_dekompresyjna,boja ratunkowa,openai,accept,misleading_term,mylenie ze sprzętem ratowniczym
+boja_dekompresyjna,bojka do pływania,openai,accept,misleading_term,mylenie z bojką pływacką
+butla_nurkowa,butla tlenowa,oba,accept,misleading_term,nurkowie oddychają powietrzem/nitroxem nie czystym tlenem
+butla_nurkowa,butla z tlenem,oba,accept,misleading_term,j.w.
+butla_nurkowa,butla z gazem,gemini,accept,misleading_term,kojarzy się z propan-butanem
+butla_nurkowa,zbiornik na tlen,gemini,accept,misleading_term,j.w. wariant
+butla_nurkowa,butla do paintballa,openai,reject,—,nikt nie wpisze tego w sklepie nurkowym
+butla_stage,butla ucieczkowa,gemini,review,misleading_term?,mylenie z bailout ale czy klienci tak szukają?
+butla_stage,mała butla tlenowa,gemini,accept,misleading_term,błąd "tlen" + uproszczenie
+butla_stage,butla pomocnicza do nurkowania,openai,review,near_synonym?,zbyt ogólne ale funkcjonalnie bliskie
+butla_stage,bailout tank,openai,review,nie_mylic_z?,stage ≠ bailout ale w rekreacji mylone
+buty_nurkowe,buty do wody,oba,accept,misleading_term,plażowe obuwie ≠ buty do płetw paskowych
+buty_nurkowe,skarpetki do wody,gemini,accept,misleading_term,inny produkt
+buty_nurkowe,kalosze,gemini,reject,—,absurdalny termin w kontekście nurkowania
+buty_nurkowe,skarpetki neoprenowe,openai,review,nie_mylic_z?,komponent mylony z butami
+buty_nurkowe,buty do płetw,openai,review,colloquial?,mylące ale klienci mogą tak szukać
+drugi_stopien,ustnik,oba,accept,misleading_term,komponent (silikon w zębach) mylony z całym 2. stopniem
+drugi_stopien,oktopus,gemini,accept,misleading_term,oktopus to ZAPASOWY nie główny 2. stopień
+drugi_stopien,oddychacz,openai,accept,misleading_term,potoczne uogólnienie
+fajka,rurka do pływania,gemini,review,near_synonym?,potoczne ale blisko funkcjonalnie
+fajka,chrapka,gemini,reject_to_legacy,legacy_name,archaiczny ale POPRAWNY synonim fajki z lat 70.
+fajka,snorkel mask,openai,accept,misleading_term,mylenie fajki z maską z rurką
+inflator,wąż do jacketu,gemini,accept,misleading_term,komponent mylony z całym mechanizmem
+inflator,spłuczka,gemini,review,colloquial?,żartobliwy slang ale używany w środowisku
+inflator,pompka do BCD,openai,accept,misleading_term,mylenie mechanizmu z narzędziem
+inflator,zawór do jacketa,openai,review,misleading_term?,mylenie inflator vs zawory upustu
+jacket,kamizelka ratunkowa,oba,accept,misleading_term,mylenie BCD z ratownictwem
+jacket,kamizelka tlenowa,gemini,accept,misleading_term,błąd "tlen" + ratownictwo
+jacket,skrzydło,openai,reject_to_nie_mylic_z,nie_mylic_z,osobna kategoria w encyklopedii (skrzydlo)
+jacket,life jacket,openai,accept,misleading_term,EN mylone z BCD
+kaptur,kominiarka,oba,accept,misleading_term,zapożyczenie ze sportów zimowych/motocyklowych
+kaptur,czepek,oba,accept,misleading_term,sprzęt basenowy bez ochrony termicznej
+kaptur,hoodie,openai,reject,—,nikt nie wpisze hoodie szukając kaptura neoprenowego
+karabinek,karabinek alpinistyczny,gemini,accept,misleading_term,mylenie z alpinizmem (karabinek gate ≠ bolt snap)
+karabinek,agrafka,gemini,review,misleading_term?,wątpliwe czy ktoś tak szuka
+karabinek,klips,gemini,accept,misleading_term,zbyt ogólne
+karabinek,hak,openai,accept,misleading_term,zbyt ogólne
+karabinek,snap hook,openai,review,anglicyzm?,EN może oznaczać inne zaczepy
+kolowrotek,szpulka,oba,accept,misleading_term,szpulka to OSOBNY produkt bez korbki. Kluczowa para!
+kolowrotek,nawijak,gemini,review,colloquial?,czy klienci tak mówią?
+kolowrotek,finger spool,openai,review,nie_mylic_z?,wariant szpulki mylony z kołowrotkiem
+kolowrotek,reel 15m,openai,review,misleading_term?,krótkie modele mylą klientów z szpulkami
+kompas,busola,openai,review,near_synonym?,zbyt ogólne ale czy klienci szukają kompasu jako busoli?
+komputer_nurkowy,zegarek nurkowy,oba,accept,misleading_term,zegarek ≠ komputer
+komputer_nurkowy,zegarek do nurkowania,oba,accept,misleading_term,j.w. wariant
+komputer_nurkowy,stoper podwodny,gemini,accept,misleading_term,komputer to nie stoper
+komputer_nurkowy,głębokościomierz,gemini,accept,misleading_term,to tylko jedna funkcja komputera
+komputer_nurkowy,smartwatch do nurkowania,openai,accept,misleading_term,mylenie kategorii
+konsola,licznik,gemini,accept,misleading_term,skojarzenie motoryzacyjne/hydrauliczne
+konsola,zegary,gemini,accept,misleading_term,j.w.
+konsola,deska rozdzielcza,gemini,accept,misleading_term,j.w.
+konsola,panel zegarów,openai,accept,misleading_term,zapożyczenie motoryzacyjne
+konsola,obudowa manometru,openai,review,misleading_term?,komponent mylony z całością
+latarka_nurkowa,lampka,gemini,accept,misleading_term,brzmi jak słabe oświetlenie
+latarka_nurkowa,flesz,gemini,accept,misleading_term,sprzęt fotograficzny ≠ światło ciągłe
+latarka_nurkowa,szperacz,gemini,review,near_synonym?,nie każda latarka to szperacz ale szperacz to typ latarki
+latarka_nurkowa,latarka wodoszczelna,openai,review,near_synonym?,zbyt ogólne ale funkcjonalnie bliskie
+latarka_nurkowa,latarka taktyczna,openai,accept,misleading_term,mylenie zastosowania
+manifold,trójnik,gemini,accept,misleading_term,terminologia wodno-kanalizacyjna
+manifold,złączka do butli,gemini,accept,misleading_term,zbyt ogólne i potoczne
+manifold,rurka łącząca,gemini,accept,misleading_term,j.w.
+manifold,mostek do butli,openai,review,colloquial?,"mostek" jest w canonical_term — czy to synonim?
+manifold,zawór podwójny,openai,accept,misleading_term,zbyt ogólne
+manifold,separator,openai,review,nie_mylic_z?,separator to element manifoldu nie cały manifold
+manometr,ciśnieniomierz,oba,accept,misleading_term,kojarzy się z urządzeniem medycznym do ciśnienia krwi
+manometr,licznik powietrza,gemini,accept,misleading_term,mylenie z komputerem
+manometr,zegar,gemini,accept,misleading_term,j.w.
+manometr,wskaźnik powietrza,openai,review,near_synonym?,mylące ale funkcjonalnie bliskie
+manometr,gauge,openai,review,anglicyzm?,EN ogólne ale poprawne w kontekście nurkowania
+maska_dwuszybowa,gogle do nurkowania,oba,accept,misleading_term,gogle to pływanie nie nurkowanie
+maska_dwuszybowa,okulary do nurkowania,oba,accept,misleading_term,j.w.
+maska_dwuszybowa,diving goggles,openai,accept,misleading_term,EN błędne użycie dla maski
+maska_jednoszybowa,gogle do nurkowania,oba,accept,misleading_term,gogle to pływanie nie nurkowanie
+maska_jednoszybowa,okulary do nurkowania,oba,accept,misleading_term,j.w.
+maska_jednoszybowa,maska bezramkowa,gemini,reject_to_near_synonym,near_synonym,frameless to PODTYP maski jednoszybowej nie misleading
+maska_jednoszybowa,snorkeling goggles,openai,accept,misleading_term,EN błędne
+maska_jednoszybowa,lusterko nurkowe,golden_test,accept,misleading_term,z golden test set — zupełnie inny przedmiot
+maska_pelnotwarzowa,maska do snorkelingu,openai,accept,misleading_term,snorkelingowa full-face ≠ nurkowa FFM z automatem. Kluczowe!
+maska_pelnotwarzowa,gogle pełnotwarzowe,openai,accept,misleading_term,marketingowe błędne nazewnictwo
+maska_pelnotwarzowa,full face snorkel mask,openai,accept,misleading_term,EN: snorkeling ≠ FFM z automatem
+nitrox,tlen,gemini,accept,misleading_term,"nurkuję na tlenie" zamiast "na nitroxie"
+nitrox,tlen do nurkowania,openai,accept,misleading_term,nitrox to mieszanka nie czysty tlen
+nitrox,powietrze tlenowe,gemini,accept,misleading_term,nieistniejący termin
+nitrox,powietrze z tlenem,openai,review,misleading_term?,zbyt ogólne i mylące ale czy klienci tak piszą?
+nitrox,O2 32,openai,review,misleading_term?,myli nazwę mieszanki z czystym tlenem
+noz_nurkowy,sztylet,gemini,accept,misleading_term,broń a nie narzędzie ratownicze
+noz_nurkowy,sekator,gemini,review,nie_mylic_z?,sekator to nożyczki. Nóż-nożyce to osobny produkt w divezone
+noz_nurkowy,scyzoryk,oba,accept,misleading_term,zbyt ogólne i nie do wody
+noz_nurkowy,nóż wędkarski,openai,accept,misleading_term,mylenie branży
+ocieplacz,polar,gemini,review,misleading_term?,polar to materiał ale klienci mogą tak szukać
+ocieplacz,podpinka,gemini,review,colloquial?,używane w wojsku/outdoorze czy w nurkowaniu?
+ocieplacz,dres,gemini,accept,misleading_term,absurdalne ale początkujący mogą mylić
+ocieplacz,bielizna termiczna,openai,accept,misleading_term,zbyt ogólne niekoniecznie pod suchy skafander
+ocieplacz,kombinezon ocieplany,openai,accept,misleading_term,mylenie z odzieżą zimową
+octopus,drugi stopień,gemini,review,nie_mylic_z?,brak rozróżnienia główny vs zapasowy
+octopus,żółty wąż,gemini,accept,misleading_term,klient myli wąż z urządzeniem
+octopus,alternatywa,gemini,reject,—,zbyt ogólne słowo
+octopus,automat zapasowy,openai,reject_to_near_synonym,near_synonym,to w zasadzie poprawny opis octopusa
+octopus,drugi automat,openai,review,near_synonym?,mylenie: oktopus to zapasowy 2. stopień nie cały automat
+octopus,backup regulator,openai,review,anglicyzm?,EN może oznaczać różne konfiguracje
+pianka_mokra,kombinezon do pływania,oba,accept,misleading_term,kombinezon pływacki/triathlonowy ≠ nurkowy
+pianka_mokra,guma do nurkowania,gemini,review,colloquial?,żargonowe ale czy misleading?
+pianka_mokra,strój neoprenowy,openai,accept,misleading_term,zbyt ogólne
+pianka_mokra,waders,openai,reject,—,EN wodery wędkarskie. Nikt nie wpisze w PL sklepie
+pianka_polsucha,sucha pianka,oba,accept,misleading_term,oksymoron — półsucha wciąż wpuszcza wodę
+pianka_polsucha,suchy kombinezon,gemini,reject_to_nie_mylic_z,nie_mylic_z,to suchy skafander (inna kategoria)
+pianka_polsucha,semi dry drysuit,openai,accept,misleading_term,EN błędna hybryda
+pierwszy_stopien,aparat oddechowy,gemini,accept,misleading_term,sam 1. stopień nie pozwala oddychać — to komponent
+pierwszy_stopien,przejściówka do butli,gemini,accept,misleading_term,1. stopień to nie przejściówka
+pierwszy_stopien,reduktor,openai,reject_to_near_synonym,near_synonym,technicznie poprawny termin (redukuje ciśnienie). W branży gazowej synonim
+pierwszy_stopien,złącze do butli,openai,accept,misleading_term,1. stopień ≠ złącze DIN/INT
+pletwy_jet,krótkie płetwy,gemini,accept,misleading_term,nie każda krótka płetwa to Jet Fin
+pletwy_jet,flippery,gemini,accept,misleading_term,z ang. flippers — niepoprawny polski
+pletwy_jet,płetwy wojskowe,gemini,review,near_synonym?,jet fins popularne wśród wojskowych nurków ale to nie nazwa
+pletwy_jet,płetwy ratownicze,openai,accept,misleading_term,mylenie zastosowania
+pletwy_jet,płetwy do freedivingu,openai,reject,—,BŁĄD MODELU: freediving = długie miękkie płetwy = totalne przeciwieństwo jet fins
+pletwy_jet,jety,openai,review,colloquial?,skrót bez doprecyzowania. Czy klienci tak szukają?
+pletwy_kaloszowe,płetwy basenowe,gemini,accept,misleading_term,kaloszowe stosuje się też w tropikach nie tylko basenie
+pletwy_kaloszowe,płetwy bez paska,gemini,review,near_synonym?,opisowe ale technicznie prawdziwe
+pletwy_kaloszowe,flippery,gemini,accept,misleading_term,j.w. jak przy jet
+pletwy_kaloszowe,płetwy do pływania,openai,accept,misleading_term,mylenie z basenowymi
+pletwy_kaloszowe,płetwy treningowe,openai,accept,misleading_term,j.w.
+pletwy_kaloszowe,płetwy na buty,openai,reject,—,BŁĄD MODELU: na buty = paskowe nie kaloszowe
+pletwy_paskowe,płetwy na buty,gemini,reject_to_near_synonym,near_synonym,poprawne funkcjonalnie ale opisowe
+pletwy_paskowe,płetwy z paskiem,gemini,reject_to_near_synonym,near_synonym,j.w.
+pletwy_paskowe,płetwy na gołą stopę,openai,reject,—,BŁĄD MODELU: na gołą stopę = kaloszowe nie paskowe
+pletwy_paskowe,płetwy basenowe,openai,accept,misleading_term,mylenie z pływaniem
+pletwy_paskowe,straps do płetw,openai,review,nie_mylic_z?,komponent mylony z całością
+rebreather,automat tlenowy,openai,accept,misleading_term,CCR ≠ automat oddechowy
+rebreather,butla tlenowa do oddychania,openai,accept,misleading_term,mylenie idei obiegu zamkniętego
+rebreather,rebreathing mask,openai,accept,misleading_term,EN ogólne i mylące
+rekawice,łapawice,gemini,review,colloquial?,często używane dla 3-palczastych ale ze sportów zimowych
+rekawice,rękawiczki do pływania,gemini,accept,misleading_term,z błonami do aqua aerobiku ≠ nurkowe
+rekawice,rękawice neoprenowe do pływania,openai,accept,misleading_term,j.w.
+rekawice,rękawice robocze,openai,reject,—,nikt nie szuka rękawic roboczych w sklepie nurkowym
+rekawice,dry gloves,openai,review,nie_mylic_z?,system suchych rękawic to osobny produkt vs zwykłe rękawice
+retractor,smycz,oba,accept,misleading_term,smycz = prosta linka bez mechanizmu sprężynowego
+retractor,jo-jo,gemini,reject_to_colloquial,colloquial,slangowe ale UŻYWANE w polskim nurkowaniu
+retractor,linka zwijana,openai,review,near_synonym?,opisowe ale blisko funkcji
+retractor,lanyard,openai,review,nie_mylic_z?,EN: smycz nie retractor
+sidemount,butle z boku,gemini,review,misleading_term?,opisowe — klient może szukać uprzęży nie butli
+sidemount,boczne mocowanie,gemini,review,near_synonym?,opisowe ale funkcjonalnie bliskie
+sidemount,zestaw jaskiniowy,gemini,accept,misleading_term,sidemount ≠ wyłącznie jaskiniowy
+sidemount,butla boczna,openai,review,nie_mylic_z?,komponent mylony z konfiguracją
+sidemount,uprząż boczna,openai,review,near_synonym?,część zestawu mylona z całością
+sidemount,stage diving,openai,reject,—,BŁĄD MODELU: to skakanie w tłum na koncercie!
+skrzydlo,worek,gemini,accept,misleading_term,worek to wewnętrzny pęcherz nie cały system
+skrzydlo,jacket,openai,reject_to_nie_mylic_z,nie_mylic_z,osobna kategoria (jacket). Relacja już istnieje
+skrzydlo,kamizelka,openai,accept,misleading_term,zbyt ogólne
+skrzydlo,jacket typu skrzydło,openai,accept,misleading_term,sprzeczne nazewnictwo z ofert allegro
+suchy_skafander,sucha pianka,gemini,accept,misleading_term,skafandry często z membrany/trylaminatu nie neoprenu
+suchy_skafander,kombinezon ratunkowy,gemini,accept,misleading_term,mylenie z ratownictwem
+suchy_skafander,woder,openai,accept,misleading_term,wędkarskie brodacze. Dobre trafienie!
+suchy_skafander,kombinezon wodoszczelny,openai,accept,misleading_term,zbyt ogólne
+szpulka,kołowrotek,oba,accept,misleading_term,kołowrotek ma korbkę i obudowę. Kluczowa para!
+szpulka,rolka,gemini,review,colloquial?,czy klienci tak mówią?
+szpulka,szpulka z nitką,gemini,reject,—,absurdalne w kontekście nurkowania
+szpulka,mini reel,openai,review,nie_mylic_z?,często mylone nazewniczo z szpulką
+szpulka,reel 15m,openai,review,misleading_term?,krótkie modele mylą klientów
+twinset,dwie butle,oba,accept,misleading_term,bez manifoldu to nie twinset
+twinset,dubla,gemini,review,colloquial?,żargonowe ale czy poprawne?
+twinset,dwubutlowiec,gemini,review,colloquial?,j.w.
+twinset,podwójna butla,openai,accept,misleading_term,zbyt ogólne
+twinset,double tank,openai,review,anglicyzm?,EN ogólne
+uprzaz,aparat oddechowy,oba,accept,misleading_term,KRYTYCZNY błąd z e-commerce — uprząż nie podaje gazu!
+uprzaz,szelki,gemini,accept,misleading_term,zbyt ogólne
+uprzaz,plecak do butli,gemini,review,misleading_term?,czy klienci tak szukają uprzęży?
+uprzaz,kamizelka,openai,accept,misleading_term,mylenie uprząż ≠ BCD
+uprzaz,pas nośny,openai,accept,misleading_term,zbyt ogólne
+waz_do_automatu,rurka do powietrza,gemini,accept,misleading_term,zbyt ogólne i potoczne
+waz_do_automatu,kabel,gemini,accept,misleading_term,kable = prąd nie gaz
+waz_do_automatu,szlauch,gemini,review,colloquial?,germanizm ale używany potocznie w PL
+waz_do_automatu,rurka do oddychania,openai,reject_to_nie_mylic_z,nie_mylic_z,to raczej fajka (snorkel)
+waz_do_automatu,wąż do tlenu,openai,accept,misleading_term,błąd "tlen"
+waz_do_automatu,hose do BCD,openai,accept,misleading_term,mylenie: wąż LP inflatora ≠ wąż automatu
+zawor_butlowy,kran,oba,accept,misleading_term,terminologia z hydrauliki domowej
+zawor_butlowy,kurek,gemini,accept,misleading_term,j.w.
+zawor_butlowy,wentyl,gemini,accept,misleading_term,kojarzy się z oponami
+zawor_butlowy,reduktor,openai,accept,misleading_term,mylenie funkcji (reduktor = 1. stopień)
+zawor_butlowy,valve knob,openai,review,misleading_term?,EN gałka nie cały zawór
+zlacze_din,wkręcane,gemini,review,colloquial?,opisowe ale czy klienci tak szukają?
+zlacze_din,gwint,gemini,accept,misleading_term,zbyt ogólne słowo
+zlacze_din,jarzmo,openai,reject,—,BŁĄD MODELU: jarzmo to INT/yoke nie DIN!
+zlacze_din,złącze INT,openai,reject,—,BŁĄD MODELU: INT to inny standard!
+zlacze_din,yoke,openai,reject,—,BŁĄD MODELU: yoke = INT nie DIN!
+zlacze_int,DIN,openai,reject,—,BŁĄD MODELU: DIN to inny standard!
+zlacze_int,gwint,openai,reject,—,BŁĄD MODELU: INT nie jest gwintowane
+zlacze_int,DIN clamp,openai,reject,—,BŁĄD MODELU: EN hybryda mylących standardów

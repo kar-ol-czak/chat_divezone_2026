@@ -1,0 +1,5 @@
+Przeczytaj plik handoff i wykonaj instrukcje w nim zawarte:
+
+/Users/karol/Documents/3_DIVEZONE/Aplikacje/Chat_dla_klientow_2026/_docs/handoff_synteza_encyklopedia.md
+
+Zacznij od przeczytania wszystkich 5 plików wymienionych w handoffie (w podanej kolejności), potem wykonaj kroki 2-3.

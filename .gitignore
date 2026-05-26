@@ -70,3 +70,18 @@ embeddings/output/
 *.bak
 *.tmp
 *~
+
+# ============================================
+# T-019: dane wrażliwe i śmieci (repo prywatne, ale te NIGDY do gita)
+# ============================================
+# FreeFileSync cache
+.sync.ffs_db
+
+# Aliasy statusów — zawierają wewnętrzne nazwy pracowników (BARTEK) i komunikaty operacyjne
+_docs/aliasy*
+
+# Dane sprzedażowe (decyzja 91b — wrażliwe biznesowo, lokalnie)
+_docs/dane_sprzedazowe_*
+
+# Dane zewnętrzne wyszukiwań (GSC, Luigi's Box) — dane biznesowe + binarne zip
+_docs/dane_zewnetrzne_wyszukiwania/
