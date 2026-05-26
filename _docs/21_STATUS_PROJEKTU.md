@@ -1,5 +1,5 @@
 # STATUS PROJEKTU: Czat AI divezone.pl
-# Wersja: 3.10 | Data: 2026-05-26 (po deploy T-014 — dane wysyłki z tabeli PG, fix hardcoded ShippingInfo)
+# Wersja: 3.11 | Data: 2026-05-26 (po deploy T-015 — search logic: blacklista marek, price floor, boolean re-rank)
 # Aktualizowany ręcznie po każdej sesji architekta
 
 ---
@@ -29,6 +29,7 @@
 | **T-012 hotfix Editorial Picks: PUT 403 fix (X-HTTP-Method-Override) + boost-vs-filters (ADR-058) + Prompt v6 + 3 endpointy follow-up (pending-reviews, products/search, last_review_at sort)** | DEPLOYED 2026-05-15 11:12 CEST | `df8ba9a` |
 | **T-013 Editorial Picks UI polish: kolumny 28%/7%/5%, boost numeric, ikony akcji, sortable headers ▲▼, autocomplete /products/search, banner pending-reviews, needs_review filter client-side, mobile cards** | DEPLOYED 2026-05-15 | `781c550` |
 | **T-014 dane wysyłki z tabeli PG (ADR-059) — migracja 013 `divechat_shipping_rates` + `divechat_shop_config`, edytowalne online, prawidłowe stawki PL 13/13/21.99 + pobranie 26 + darmowa od 299, strefa EU graceful (brak danych = kontakt)** | DEPLOYED 2026-05-26 | `167f973` |
+| **T-015 search logic — migracja 014 `divechat_brand_blacklist` (Aquazone, edytowalna online, case+space-insensitive match), price floor `max_price*0.25` gdy budżet max bez min, boolean re-rank multi-attribute (+50% za pełen match) — testy pracowników 15/8+26/23** | DEPLOYED 2026-05-26 | (commit T-015) |
 
 ### Aktywne instancje CC
 
@@ -77,12 +78,11 @@ Prompt CC: `wykonaj _instances/backend/tasks/T-003_backend_systemprompt-v3.md`
 
 Stara konwencja (TASK-CHAT-007a/007b/007c, TASK-CHAT-010/011/012) zostaje w handoff i historycznych raportach. Numeracja T-NNN od 14.05.
 
-### Kolejka tasków (po deploy T-014)
+### Kolejka tasków (po deploy T-015)
 
 | Numer | Task | Priorytet | Status |
 |---|---|---|---|
-| T-015 backend search logic | spec gotowy w `_instances/backend/tasks/T-015_backend_search-logic.md` | TBD | spec gotowy |
-| T-016 SystemPrompt PL/EU shipping language | reguła językowa: klient w PL → stawki PL flat; klient w innym języku → najpierw pytanie o kraj, potem stawki strefy z tabeli (ADR-059) | P2 | spec do napisania |
+| T-016 SystemPrompt v3 (równoległy z T-015) | obsługa flagi `brand_blacklisted` z ProductSearch + ostrzeżenie "tej marki nie polecamy" + PL/EU shipping language | P1 | spec do napisania (po T-015 deploy) |
 | seed stawek EU dla T-014 | Karol poda kwoty per zone='EU' → INSERT lub przyszłe UI shipping_rates | P2 | czeka na dane Karola |
 | UI shipping_rates / shop_config | analogicznie do model pricing UI — edycja online stawek + thresholdu | P3 | backlog |
 | T-XXX weekly notifications Editorial Picks | poniedziałek 9:00 CEST email + banner, 4 sekcje raportu | P2 | spec do napisania |
