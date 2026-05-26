@@ -85,3 +85,17 @@ _docs/dane_sprzedazowe_*
 
 # Dane zewnętrzne wyszukiwań (GSC, Luigi's Box) — dane biznesowe + binarne zip
 _docs/dane_zewnetrzne_wyszukiwania/
+
+# ============================================
+# T-021: red-team harness (Faza 0)
+# Sam katalog _redteam/ wersjonujemy; wyjątki to PII / discovery z PII / nieanonimizowane snapshoty.
+# ============================================
+# Lokalne reguły z PII pracowników (nazwiska z aliasów, T-019)
+_redteam/**/*.local.yaml
+_redteam/**/*.local.json
+# Transcripty z runów (Discovery T>0 może zahaczyć o PII)
+_redteam/transcripts/
+# Realne zamówienia testowe Karola (positive case dla OrderStatus, jeśli kiedyś)
+_redteam/fixtures/real_test_orders*.json
+# Snapshoty z PII (gdyby kiedyś trzeba było — domyślnie skrypt PII nie pobiera)
+_redteam/fixtures/*.pii.json
