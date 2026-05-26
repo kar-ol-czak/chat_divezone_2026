@@ -16,6 +16,7 @@ enum AIModel: string
     case CLAUDE_HAIKU_45 = 'claude-haiku-4-5';
 
     // OpenAI
+    case GPT_55 = 'gpt-5.5';
     case GPT_54 = 'gpt-5.4';
     case GPT_41 = 'gpt-4.1';
     case GPT_54_MINI = 'gpt-5.4-mini';
@@ -32,6 +33,8 @@ enum AIModel: string
 
     public function tier(): string
     {
+        // gpt-5.5 zostaje primary zgodnie z migracją 015 (is_escalation=false);
+        // produkcyjne użycie czatu na gpt-5.5 to osobna decyzja, na razie wpis gotowy.
         return match ($this) {
             self::CLAUDE_OPUS_47, self::GPT_54 => 'escalation',
             default => 'primary',
@@ -44,6 +47,7 @@ enum AIModel: string
             self::CLAUDE_OPUS_47 => 'Claude Opus 4.7',
             self::CLAUDE_SONNET_46 => 'Claude Sonnet 4.6',
             self::CLAUDE_HAIKU_45 => 'Claude Haiku 4.5',
+            self::GPT_55 => 'GPT-5.5',
             self::GPT_54 => 'GPT-5.4',
             self::GPT_41 => 'GPT-4.1',
             self::GPT_54_MINI => 'GPT-5.4 Mini',

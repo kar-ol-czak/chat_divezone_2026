@@ -20,7 +20,13 @@ use GuzzleHttp\Exception\ServerException;
  * GPT-4.1 (single model with `supports_temperature=true`) → wysyłane temperature.
  * Modele rozumujące → bez temperature.
  *
- * Cache: OpenAI nie eksponuje cache_*_tokens w usage, więc zwracamy 0.
+ * Cache (T-022, decyzja 101b): OpenAI eksponuje cached prefix przez
+ * `usage.prompt_tokens_details.cached_tokens` (od końca 2024, prompt caching
+ * automatyczny dla prefiksów >= 1024 tok). UWAGA na konwencję: u OpenAI
+ * `prompt_tokens` ZAWIERA cached (TOTAL), inaczej niż u Anthropic (gdzie
+ * `input_tokens` jest już non-cached). Tu wystawiamy w ujednoliconym formacie
+ * `input_tokens = prompt_tokens - cached_tokens`, żeby PricingService liczyło
+ * non-cached × input_price + cached × cache_read_price bez podwójnego liczenia.
  */
 final class OpenAIProvider implements AIProviderInterface
 {
@@ -188,14 +194,22 @@ final class OpenAIProvider implements AIProviderInterface
         }
 
         $usage = $data['usage'] ?? [];
+        $promptTokens = (int) ($usage['prompt_tokens'] ?? 0);
+        $cachedTokens = (int) ($usage['prompt_tokens_details']['cached_tokens'] ?? 0);
+        // U OpenAI prompt_tokens = TOTAL (zawiera cached). Wystawiamy w ujednoliconym
+        // formacie input_tokens = część NIE-cached (zgodnie z konwencją Claude).
+        // max(0, ...) na wypadek dziwactw API (cached > prompt nigdy nie powinno wystąpić,
+        // ale lepiej nie wypluwać ujemnej liczby tokenów do logera).
+        $nonCachedInput = max(0, $promptTokens - $cachedTokens);
 
         return new AIResponse(
             content: $content,
             toolCalls: $toolCalls,
             usage: [
-                'input_tokens' => (int) ($usage['prompt_tokens'] ?? 0),
+                'input_tokens' => $nonCachedInput,
                 'output_tokens' => (int) ($usage['completion_tokens'] ?? 0),
-                'cache_read_tokens' => 0,
+                'cache_read_tokens' => $cachedTokens,
+                // OpenAI: cache creation jest automatyczne i bezpłatne (brak osobnego pola w usage).
                 'cache_creation_tokens' => 0,
             ],
         );
