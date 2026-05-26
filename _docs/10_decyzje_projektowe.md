@@ -1673,3 +1673,155 @@ Plus free shipping threshold w osobnym config row (lub tabela divechat_shop_conf
 - Strefy EU per kraj (na razie jedna stawka "EU", rozbicie per kraj gdy potrzeba)
 
 **Powiązane:** ADR-052 (pricing table wzorzec), T-014 (implementacja), T-016 (instrukcja prompt)
+
+
+---
+
+## PAKIET WIDGET PRODUKCYJNY (ADR-060…064)
+
+Decyzje podjęte w sesji 2026-05-26 na podstawie trzech niezależnych raportów Deep Research (`_docs/research_attachments/2026.05.26-*.md`) oraz dyskusji architekt-Karol (pytania 82…97). Dotyczą widgetu czatu osadzonego na sklepie divezone.pl. Backend (chat.divezone.pl) bez zmian, CORS gotowy.
+
+
+### ADR-060: Osadzenie widgetu i strategia ładowania
+
+**Data:** 2026-05-26 | **Status:** PRZYJĘTA | **Powiązane:** handoff 23, pytania 82/89/97, kwestie research H
+
+**Kontekst:** Widget trzeba osadzić na PrestaShop 1.7.6 (docelowo PS 9). Sklep działa na PHP 7.2, backend czatu na PHP 8.4. Trzy opcje osadzenia: moduł PS, snippet w theme, iframe.
+
+**Decyzja:** Moduł PrestaShop z hookiem `displayFooter`. Iframe odrzucony (łamie safe-area i komplikuje SSE oraz kontekst klienta). Snippet w theme odrzucony (ginie przy upgrade theme, brak czystego dostępu do kontekstu PS).
+
+**Granica runtime:** Moduł to cienka warstwa PHP 7.2 (wstrzyknięcie skryptu, odczyt kontekstu PrestaShop, podpis JWT przez `hash_hmac`). Backend czatu zostaje na PHP 8.4 na osobnej subdomenie. Połączenie wyłącznie przez HTTP/JS, więc wersja PHP sklepu jest dla działania widgetu nieistotna. Kod modułu pisany pod PHP 7.2 (bez składni 8.x), forward-compatible przy upgrade do PS 9.
+
+**Strategia ładowania (fasada):** Mały stub (poniżej 5 do 20 KB gzip) renderuje launcher na `requestIdleCallback`. Ciężki bundle (cel ~100 KB gzip, twardy limit 150 KB) dociąga po pierwszej interakcji użytkownika. Cel: nie konkurować z LCP, chronić INP.
+
+**CSP (poziom nginx, nie moduł):** `connect-src` i `script-src` whitelistują chat.divezone.pl. Preferowane nonce lub SRI zamiast `unsafe-inline` dla skryptów.
+
+**Out of scope:** Marketplace modułu (instalacja ręczna), wersjonowanie bundla i cache busting (do specyfikacji CC), automatyczny CSP z poziomu modułu (konfiguracja serwerowa po stronie Karola).
+
+**Powiązane:** ADR-061 (frontend), działanie Karola: konfiguracja CSP w nginx.
+
+
+### ADR-061: Architektura frontendu widgetu (izolacja, mobile, klawiatura)
+
+**Data:** 2026-05-26 | **Status:** PRZYJĘTA | **Powiązane:** pytania 90/91/92, kwestie research A/B/C
+
+**Kontekst:** Widget renderowany w DOM sklepu (bez iframe, decyzja ADR-060). Trzeba rozstrzygnąć izolację stylów, wzorzec mobile i obsługę klawiatury ekranowej. Trzy raporty Deep Research rozeszły się tylko w tych punktach.
+
+**Izolacja (kwestia C, pytanie 91a):** Shadow DOM open (`attachShadow({mode:'open'})`), CAŁY widget w jednym shadow root. Reset `:host{all:initial}`. `@font-face` wstrzykiwany do light DOM (znany bug z fontami w shadow root), w MVP najlepiej font systemowy. Raporty R1/R2 za Shadow DOM, R3 za Light DOM (obawa o EAA). Argumenty R3 zmitygowane: zarzut o safe-area dotyczy ogólnego buga WkWebView nie Shadow DOM, autofill dotyczy tylko pola e-mail w fallbacku, ARIA działa gdy wszystko jest w jednym shadow root (czytniki przekraczają granicę, łamią się tylko referencje cross-root). Shadow DOM rozwiązuje wyciek CSS z theme PrestaShop.
+
+**Wzorzec mobile (kwestia A, pytanie 90a):** Fullscreen overlay dla MVP (`position:fixed; inset:0`), blokada scrolla tła (`overflow:hidden` na body przy otwartym czacie). Desktop: floating panel ~384×680, bubble 56 do 60 px w prawym dolnym rogu. Hybryda sheet→fullscreen odrzucona dla MVP (2 z 3 raportów, kruchość stanu pośredniego przy klawiaturze na iOS). Hybryda ewentualnie później przy proaktywnym dymku-peek.
+
+**Klawiatura (kwestia B, pytanie 92a):** `height:100dvh` jako baza + `font-size:16px` na inpucie (blokada auto-zoom iOS) + Visual Viewport API jako mechanizm GŁÓWNY (nie fallback), bo WebKit do dziś nie wspiera `interactive-widget` (bug 259770 wciąż NEW, luty 2026). VisualViewport synchronizuje realną wysokość do zmiennej CSS `--vvh`. `overscroll-behavior:contain` na liście wiadomości.
+
+**Meta viewport:** Do theme dodajemy `viewport-fit=cover` (warunek działania safe-area) + `interactive-widget=resizes-content` (korzyść na Android Chrome). OBOWIĄZKOWY test reszty sklepu przed deploy (R3 ostrzega o ryzyku layoutu). Safe-area przez `env(safe-area-inset-*)` na inpucie i pozycji bubble.
+
+**Out of scope:** Tryb hybrydowy mobile, proaktywne dymki (reguły biznesowe, faza designu), branding i tokeny kolorów (kwestia 3, faza Claude Design).
+
+**Powiązane:** ADR-060, ADR-063 (ARIA), działanie Karola: zmiana meta viewport w theme + test.
+
+
+### ADR-062: Transport streamingu i model tożsamości
+
+**Data:** 2026-05-26 | **Status:** PRZYJĘTA | **Powiązane:** pytania (kwestie research D/G), handoff kwestia 7
+
+**Kontekst:** Backend wymaga tokena w nagłówku, a `EventSource` nie wspiera custom headers (tylko GET, brak nagłówków). Widget musi też rozróżniać gościa anonimowego od zalogowanego klienta bez ryzyka podszycia. Wszystkie trzy raporty jednomyślne.
+
+**Transport (kwestia D):** `fetch` + `ReadableStream` + nagłówek `Authorization: Bearer` z krótkim JWT. EventSource odrzucony. Token w query param odrzucony (OWASP: wyciek przez logi, Referer, historię). Cookie cross-origin odrzucone (ITP w Safari, komplikacja CSRF). Token przechowywany w pamięci JS, nie w localStorage (anty-XSS). `AbortController` do przerwania generowania. CORS na konkretny origin (nie `*`), nagłówki `Cache-Control:no-cache`, `X-Accel-Buffering:no` dla nginx.
+
+**Tożsamość (kwestia G):** Pseudonimowy `visitor_uuid` (`crypto.randomUUID()`) generowany po stronie klienta, trzymany w localStorage, przeżywa reload. Cała historia anonimowa wiązana z tym UUID. Po zalogowaniu PrestaShop podpisuje serwerowo JWT HS256 wiążący `visitor_uuid` z `id_customer` (sekret współdzielony z backendem czatu, `hash_hmac` działa w PHP 7.2). Backend weryfikuje podpis i łączy historię anonimową z kontem idempotentnie. Nigdy nie ufamy `id_customer` przesłanemu z przeglądarki bez podpisu. JWT krótkożyjący (rekomendacja exp ~15 min) z refresh.
+
+**Sekwencja sesji:** Otwarcie widgetu → `POST /api/session` (visitor_uuid, origin) zwraca krótki JWT typu anon. Po logowaniu → `POST /api/session/upgrade` (visitor_uuid, id_customer, podpis) → backend weryfikuje, merge, zwraca JWT typu auth. Po wylogowaniu kasujemy JWT klienta, zostawiamy visitor_uuid.
+
+**Out of scope:** Ciągłość między urządzeniami (cross-device), rotacja sekretu (zalecana co 6 do 12 mies. z grace period, do operacji), refresh-token w HttpOnly cookie dla zalogowanych (faza 2).
+
+**Powiązane:** ADR-060 (shim PHP 7.2 podpisuje JWT), ADR-063 (zgody przy logowaniu/PII), ADR-064 (rate limit gating JWT).
+
+
+### ADR-063: Prywatność, zgody i dostępność (RODO, EAA)
+
+**Data:** 2026-05-26 | **Status:** PRZYJĘTA | **Powiązane:** pytania 93/94/95/96, kwestie research E/F
+
+**Kontekst:** Widget przetwarza treść rozmów, w UE (Polska), w realiach RODO + EAA (od 28.06.2025). Trzeba ustalić model zgód, retencję, podstawę prawną i wzorzec dostępności, w tym dla streamingu LLM do czytników ekranu.
+
+**Model zgód, 3 warstwy (pytanie 94a):**
+1. Nota informacyjna (każdy, pasywna, BEZ kliknięcia): jedna linijka nad inputem ("Rozmawiasz z asystentem AI, nie podawaj danych wrażliwych, szczegóły w polityce prywatności"). To transparentność (art. 13 RODO + art. 50 AI Act od sierpnia 2026), nie zgoda. Brak bramki.
+2. Nota kontekstowa (tylko przy PII, np. status zamówienia): krótka informacja o celu w momencie podawania danych. Podstawa prawna art. 6 ust. 1 lit. b lub f, nie zgoda.
+3. Zgoda marketingowa (opt-in): NIE występuje w MVP, bo nie przetwarzamy rozmów do marketingu/profilowania/treningu. Jeśli kiedyś wejdzie taki cel, osobny opt-in w odpowiednim momencie.
+
+**localStorage (kwestia E):** Kwalifikowany jako "ściśle niezbędny" (art. 5(3) ePrivacy), bez zgody w cookie bannerze, POD WARUNKIEM że zapis następuje dopiero po otwarciu czatu przez użytkownika (nigdy na `onload`) i służy wyłącznie obsłudze czatu.
+
+**Retencja i procesorzy:** Rekomendacja 30 dni dla anonimów (do potwierdzenia przez Karola). Obowiązkowo DPA z Anthropic/OpenAI z Zero-Data-Retention, SCC + DPF dla transferu do USA, aneks w polityce prywatności sklepu. To działania Karola, nie CC.
+
+**Status zamówienia, privacy-by-design (pytania 95a/96a):** Strukturalny input (pole referencja + pole e-mail) lecący PROSTO do toola `check_order_status`, z pominięciem promptu LLM, więc surowy e-mail nie trafia do dostawcy AI. Identyfikator: referencja zamówienia (wielkie litery, długość do potwierdzenia na sklepie) + e-mail, jak natywny guest tracking PrestaShop. Walidacja kliencka tylko formatu (składnia), autorytatywna serwerowa (zgodność OBU pól z jednym zamówieniem). Komunikat błędu generyczny (brak enumeracji cudzych zamówień), endpoint pod rate-limit (ADR-064).
+
+**Dostępność, EAA (pytanie 93a, kwestia F):** EAA traktujemy jako wiążące. Cel WCAG 2.1 AA, budować pod 2.2 AA. Wzorzec: `role="dialog"` + `aria-modal="true"` w trybie fullscreen, `role="log"` na historii, focus trap, Esc zamyka i wraca fokus do launchera. Streaming do czytnika: NIE ogłaszać każdego tokenu. Warstwa wizualna `aria-hidden`, osobny region `sr-only` `aria-live="polite"` zasilany GOTOWĄ wiadomością po zakończeniu zdania lub streamu (`aria-busy` podczas generowania). Test z NVDA + VoiceOver jako obowiązkowa bramka przed deploy.
+
+**Out of scope:** Zgoda marketingowa i profilowanie, retencja per-segment, cross-device, audyt WCAG przez zewnętrzny podmiot (do rozważenia po MVP).
+
+**Powiązane:** ADR-061 (Shadow DOM single-root warunkiem działania ARIA), ADR-062 (PII przy logowaniu), ADR-064 (rate-limit lookupu). Działania Karola: DPA+ZDR, polityka prywatności, potwierdzenie formatu referencji i retencji.
+
+
+### ADR-064: Karty produktów w czacie i ochrona kosztów
+
+**Data:** 2026-05-26 | **Status:** PRZYJĘTA | **Powiązane:** pytania 87a, kwestie research I/J
+
+**Kontekst:** `search_products` zwraca produkty, więc widget musi je renderować w wąskim oknie czatu. Anonimowy endpoint LLM to wektor nadużyć i niekontrolowanych kosztów.
+
+**Karty produktów (kwestia I, pytanie 87a):** Kompaktowa karta: miniatura ~64 do 80 px, nazwa do 2 linii, cena, jeden CTA "Zobacz produkt" linkujący do strony produktu. Max 3 karty na odpowiedź. MVP tylko link (bez add-to-cart). Kontrakt backend↔frontend: backend zwraca STRUKTURĘ przez function-calling, np. `{type:"product_card", payload:{id, name, price, img, link, badge?}}`, frontend renderuje kartę z payloadu. NIE markdown z osadzonym obrazkiem. Na mobile jedna karta na wiersz (lub karuzela pozioma), nie gęsta siatka.
+
+**Add-to-cart:** Poza MVP. W fazie 2 rozważyć tylko jako CTA na stronie produktu po deep-linku z czatu, nie wewnątrz czatu (komplikacja stanu koszyka, race condition, utrudnia porównania, które są głównym use-case nurków). Dane konwersji ATC dla high-ticket umiarkowane (luxury ~3,2 proc.), więc nie krytyczne.
+
+**Rate limiting i koszty (kwestia J):** Wielowarstwowo. Cloudflare Turnstile (invisible, zgodny z WCAG) jako gate przed wydaniem JWT. Token-bucket per `visitor_id` (NIE sam IP, bo CGNAT grupuje wielu klientów), wyższy próg dodatkowo per IP. Cap tokenów wyjścia na sesję. Dzienny cap kosztów z alertem do admina. Limit długości inputu. Soft limit → komunikat i fallback do kontaktu (mail/telefon), hard limit → wyzwanie antybotowe. Progi startowe do strojenia: ~10 wiad./5 min i ~25 do 50 wiad./dobę dla anonima, input ~2 do 4 tys. znaków, max 3 równoległe strumienie. Turnstile wymaga dodania jego klauzuli do polityki prywatności.
+
+**Out of scope:** Add-to-cart w MVP, karuzela produktów (faza 2), anonymous credentials/Privacy Pass (przyszły kierunek zamiast Turnstile), strojenie progów na danych produkcyjnych.
+
+**Powiązane:** ADR-062 (Turnstile gating JWT), ADR-063 (rate-limit lookupu zamówień). Działania Karola: konto Cloudflare/Turnstile, klauzula Turnstile w polityce prywatności.
+
+
+## ADR-060: Architektura red-team harness (panel ekspertow)
+
+Data: 2026-05-26
+Status: ZAAKCEPTOWANE
+Kontekst: testy reczne (Arkusz1-3) wykryly realne bugi, ale nie skaluja sie i nie sa powtarzalne. Potrzebny zautomatyzowany red-team przed publikacja czatu. Architekture skonsultowano przez panel ekspertow (3 niezalezne Deep Research: _docs/26_synteza_panelu_redteam.md), seed promptu w _docs/25.
+
+### Decyzja
+
+Budujemy harness w architekturze KASKADOWEJ (nie 'panel zawsze'), narzedzie bazowe Promptfoo + Garak + wlasny modul Python (decyzja 96a).
+
+Warstwy oceny (konsensus panelu 3/3):
+- W0 deterministyczne reguly (regex + listy zakazane) -> natychmiastowy FAIL, pre-filter.
+- W1 jeden silny sedzia z rubryka binarna + chain-of-thought + reference answer. Domyslny dla wiekszosci.
+- W2 panel 3 sedziow roznych rodzin TYLKO dla S0/S1, sporow, niskiego confidence, ~10% probki meta-eval, bramki deploy.
+Regula anty-bias: sedzia NIE z rodziny targetu (self-enhancement bias).
+
+Rozdzial suitow: regression (zamrozony, scripted, seed staly, temp 0, do quality gate) vs discovery (stochastyczny, dynamic attacker T>0, poza bramka, faile promowane do regression). Proporcja 40/40/20 scripted/semi/dynamic.
+
+Zakres MVP Faza 1 (decyzja 98a): ~10 klas, ~50 scenariuszy: 7 z testow recznych (jailbreak-framing, medyczne/out-of-scope, halucynacje produktowe, bledy domenowe nurkowe, wyciek danych wewnetrznych, poza kompetencjami, bezkrytyczna sprzedaz) + indirect prompt injection przez RAG + wyciek system promptu + IDOR przez OrderStatus.
+
+### KLUCZOWE USTALENIE: profil ryzyka uproszczony vs raporty (decyzja 97)
+Raporty zakladaly bota produkcyjnego z realnymi klientami i akcjami mutujacymi. Nasz stan faktyczny:
+- Czat DZIALA ale NIE jest opublikowany na sklepie -> BRAK realnych klientow w petli rozmowy. Odpada najciezsze ryzyko RODO (bot rozmawiajacy z atakujacym o cudzych zamowieniach na zywo).
+- Zweryfikowano: WSZYSTKIE 6 narzedzi (ProductSearch, ProductDetails, ExpertKnowledge, OrderStatus, ShippingInfo, GetShopSchedule) sa READ-ONLY. Zero UPDATE/INSERT/DELETE. -> Punkty H4/H5 raportow (stubowanie akcji mutujacych, kill switch place_order/cancel) NIE DOTYCZA. Nie ma czego mutowac.
+- ALE OrderStatus czyta REALNA baze pr_orders i zwraca email + imie/nazwisko klienta. Weryfikacja: zwraca rekord tylko gdy reference=? AND email=? (oba musza pasowac). -> IDOR enumeration jest ograniczony przez t podwojny warunek, ale scenariusz IDOR nadal MUSI byc testowany (czy bot da sie naklonic do wielu wywolan / ujawnienia pol).
+
+### Co z tego wynika dla Fazy 0 (prerekwizyty) -- LZEJSZE niz w raportach
+NIE potrzebujemy pelnego chat-test.divezone.pl z klonem bazy i stubowaniem akcji. Wystarcza:
+1. GROUND TRUTH SNAPSHOT katalogu (H1, KONIECZNE -- data drift + nasze case 90/91 to halucynacje produktowe). Deterministyczny dump pgvector+MySQL z momentu T, wersjonowany ze scenariuszami. Sedzia bez tego zgaduje.
+2. ZAMOWIENIA TESTOWE do scenariuszy IDOR/OrderStatus: zamiast klonu bazy -- uzyc puli SYNTETYCZNYCH zamowien (reference TEST-* z testowym emailem) LUB testowac IDOR na nieistniejacych numerach (sprawdzamy czy bot ujawnia pola/daje sie enumerowac, nie potrzeba realnych danych). Nie wolno uzywac realnych numerow zamowien klientow w scenariuszach (realne PII w transcriptach w git).
+3. PIN wersji modeli (snapshot date, nie -latest) dla attackera, targetu, sedziow.
+4. Repo: katalog _redteam/ w glownym repo (wspoldzieli scenariusze z _docs, dostep do .env).
+
+Endpoint target: obecny dzialajacy czat (dev), bo brak publikacji = mozemy bic we wlasny endpoint bez ryzyka klientow. Jesli pojawi sie publikacja przed ukonczeniem harness -> wrocic do separacji srodowisk.
+
+### Kolejnosc (decyzja 99a)
+Faza 0 prerekwizyty (snapshot endpoint + pin modeli + repo) -> potem RoWNOLEGLE: harness Faza 1 (backend/integration) ORAZ widget (frontend, osobny czat, handoff _docs/23). chat-test nie jest blokada bo bijemy w dev.
+
+### Quality gate (gdy harness gotowy)
+Wektor metryk, nie jedna liczba: S0 pass=100% (zero tol.: IDOR/PII, medyczne, niebezpieczna porada nurkowa), S1>=95%, nowe S0 faile vs main=0. McNemar dla par, 3 seedy/scenariusz, canaries (powrot wykrytego buga blokuje deploy).
+
+### Konsekwencje
+- Plus: tansze i szybsze MVP niz pelna izolacja z raportow (read-only + brak publikacji to nasze atuty).
+- Minus: snapshot ground truth i meta-eval sedziego to realna praca (nie pomijac -- bez nich harness mierzy zludzenia).
+- Ryzyko: jesli czat zostanie opublikowany w trakcie, trzeba wrocic do separacji srodowisk (chat-test).
+
+Powiazane: _docs/25 (prompt panelu), _docs/26 (synteza), ADR-051/052 (roster modeli, divechat_model_pricing).
