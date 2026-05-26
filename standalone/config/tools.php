@@ -29,7 +29,7 @@ return static function (EmbeddingService $embeddingService): ToolRegistry {
     $registry->register(new ProductDetails());
     $registry->register(new ExpertKnowledge($embeddingService, $pg));
     $registry->register(new OrderStatus());
-    $registry->register(new ShippingInfo());
+    $registry->register(new ShippingInfo($pg));
     $registry->register(new GetShopSchedule(new ShopCalendar(new DbOverrideProvider($pg))));
 
     return $registry;
