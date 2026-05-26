@@ -1,5 +1,5 @@
 # STATUS PROJEKTU: Czat AI divezone.pl
-# Wersja: 3.16 | Data: 2026-05-26 (Arkusz3 domkniety; red-team Faza 0 DONE T-021 commit b343495; panel ekspertow + ADR-060; analiza kosztow modelu)
+# Wersja: 3.17 | Data: 2026-05-26 (T-022 DEPLOYED: cache fix OpenAIProvider + migracja pricing gpt-5.5 + cache_read dla wszystkich OpenAI; commit e09a00b)
 # Aktualizowany ręcznie po każdej sesji architekta
 
 ---
@@ -36,6 +36,7 @@
 | **T-019 git hygiene — repo uporządkowane (143 plików dodano: kod pipeline encyklopedii, dokumentacja, task specs T-002..T-018), .gitignore rozszerzony (aliasy/dane sprzedażowe/GSC/ffs_db NIGDY do gita), historia nietknięta** | DONE 2026-05-26 | `6e746ab` |
 | **T-020 strict exact-match fallback (case 90) + int-cast fix (case 91/95) — domknięcie Arkusza3: rozszerzenie triggera fallback (T-017) o warunek navigational-miss (gdy żaden wynik nie zawiera wszystkich exact_keywords w nazwie — Crystal Vu maskowany przez 5 substytutów Scubapro w błędnej kategorii), nowa metoda hasExactKeywordMatch, flaga `search_debug.exact_match_miss` dla T-018 PATCH 11, fix int-cast w `extractSignificantTokens` (T-015 bug — numeric token "4000" auto-castowany do int → TypeError w str_contains PHP 8.4)** | DEPLOYED 2026-05-26 | `4bcf955` |
 | **T-021 red-team Faza 0 prerekwizyty (ADR-060) — repo `_redteam/` (snapshot_catalog.py ground truth case90/91, fixtures IDOR RODO-clean, domain_rules, pin modeli z poprawka 102b: target sonnet-4-6 / attacker gpt-5.4-mini / W1 gpt-5.4 / W2 panel opus-4-7+gpt-5.5), .gitignore patch. NIE stawiamy chat-test (czat nieopublikowany + 6 narzedzi read-only)** | DONE 2026-05-26 | `b343495` |
+| **T-022 cache fix OpenAI + migracja pricing gpt-5.5 (decyzja 101b) — OpenAIProvider.parseResponse() czyta `usage.prompt_tokens_details.cached_tokens` (poprzednio 0 na sztywno z bledna adnotacja), wystawia w ujednoliconym formacie input_tokens=non-cached + cache_read_tokens=cached (konwencja Claude, brak podwojnego liczenia). Migracja 015: INSERT gpt-5.5 ($5/$30, cache_read $0.5), korekta gpt-5.4 output 14→15 (websearch), cache_read NULL→10% input dla wszystkich OpenAI (gpt-4.1: 0.20, gpt-5.4: 0.25, gpt-5.4-mini: 0.075, o3-mini: 0.11, gpt-5-mini: 0.025). AIModel enum: dodany case GPT_55. Empirycznie zweryfikowane na prod: probe 94.7% cache hit, smoke deployed kod 95.6%. FINDING (osobny task): AI_MAX_TOKENS=4096 default blokuje cache hit dla gpt-5-mini z reasoning** | DEPLOYED 2026-05-26 | `e09a00b` |
 
 ### Aktywne instancje CC
 
@@ -92,7 +93,9 @@ Stara konwencja (TASK-CHAT-007a/007b/007c, TASK-CHAT-010/011/012) zostaje w hand
 
 | Numer | Task | Priorytet | Status |
 |---|---|---|---|
-| T-022 | migracja `divechat_model_pricing` o gpt-5.5 ($5/$30) + weryfikacja gpt-5.4 ($2.5/$15); + CACHE FIX OpenAIProvider (czyta `prompt_tokens_details.cached_tokens` zamiast 0 — decyzja 101b, root cause: bledny komentarz ze OpenAI nie eksponuje cache; ClaudeProvider cache OK ale Claude nieuzywany) + wycena cache + weryfikacja kolejnosci promptu (stabilny prefiks) | P1 | spec do napisania |
+| ~~T-022~~ | ~~migracja `divechat_model_pricing` o gpt-5.5 + CACHE FIX OpenAIProvider~~ | ~~P1~~ | **DEPLOYED 2026-05-26 `e09a00b` (patrz tabela glowna)** |
+| T-022b | empiryczna kalibracja `AI_MAX_TOKENS` — finding z T-022: default 4096 blokuje cache hit dla gpt-5-mini z reasoning (z 50 cache=95.6%, z 4096 cache=0). Zbadac optymalny pulap (1024-2048?) lub przekazywac max dynamicznie z UI per turn. Bez tego fix odczytu cache nie da realnych oszczednosci na produkcji. | P1 | spec do napisania |
+| T-022c | (opcjonalne) drift detection: logowanie `model_actual` snapshot ID (np. `gpt-5-mini-2025-08-07`) z `data.model` response do osobnej kolumny `divechat_message_usage.model_id_snapshot`. Powiazane T-021 alias + log strategy. | P2 | spec do napisania |
 | T-023 | red-team Faza 1: scenariusze YAML (~50, 10 klas wg ADR-060) + orchestrator Promptfoo + custom HTTP provider na DEV endpoint | P1 | po T-022 |
 | T-024 | warstwy oceny W0 regex + W1 sedzia (gpt-5.4) + integracja domain_rules + meta-eval golden set (50-100 transkryptow, Cohen kappa >=0.7) + Gemini do W2 panel | P1 | po T-023 |
 | snapshot realny | `python _redteam/tools/snapshot_catalog.py --output ...` — wymaga dostepu do bazy (port 14368 Railway, odblokowac na VPS lub tunel) | P1 | czeka na dostep |
