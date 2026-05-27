@@ -111,3 +111,6 @@ _redteam/package-lock.json
 _redteam/redteam_dashboard.html
 _redteam/reports/dashboard.html
 _redteam/**/dashboard.html
+
+# Podsumowania AI runow (pochodne transcriptow)
+_redteam/reports/*_summaries.json

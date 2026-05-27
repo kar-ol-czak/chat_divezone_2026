@@ -16,7 +16,8 @@ from pathlib import Path
 CANARY = {"HALLU-001", "HALLU-002", "DOMAIN-002"}
 
 
-def extract(run: dict) -> dict:
+def extract(run: dict, summaries: dict | None = None) -> dict:
+    summaries = summaries or {}
     """Mapuje pelny run JSON (klucz 'records' z polami scenariusza) do lekkiego formatu dashboardu."""
     records = run.get("records") or run.get("results") or []
     out = []
@@ -33,6 +34,7 @@ def extract(run: dict) -> dict:
             "w0": r.get("w0") or {},
             "w1_criteria": crit or [],
             "canary": r.get("scenario_id") in CANARY,
+            "human_summary": summaries.get(r.get("scenario_id"), ""),
         })
     meta = {"run_id": run.get("run_id"), "gt": run.get("ground_truth_available"),
             "agg": run.get("aggregate", {})}
@@ -112,6 +114,14 @@ tr.row.open{background:var(--panel2)}
 .w0hit code{background:#000;padding:1px 5px;border-radius:4px;color:var(--fail)}
 .empty{color:var(--muted);font-style:italic;font-size:12px}
 .note{background:rgba(210,153,34,.08);border:1px solid var(--uv);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--txt);margin-bottom:16px}
+.story{background:linear-gradient(180deg,rgba(79,157,255,.10),rgba(79,157,255,.04));border:1px solid var(--accent);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:13px;line-height:1.6}
+.story h3{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--accent);margin-bottom:8px}
+.story .verdict-word{font-weight:700;padding:1px 6px;border-radius:4px;background:var(--panel2);font-size:11px}
+.story .vw-POPRAWNIE,.story .vw-FALSE{color:var(--pass)}
+.story .vw-REALNY{color:var(--fail)}
+.story .vw-NIEPEWNE{color:var(--uv)}
+.story p{margin-bottom:6px}
+.story strong{color:var(--txt)}
 .tools-tag{display:inline-block;background:var(--panel2);border:1px solid var(--border);padding:1px 7px;border-radius:5px;font-size:11px;font-family:ui-monospace,monospace;margin-right:4px}
 </style>
 </head>
@@ -208,7 +218,22 @@ function detailHTML(r){
   } else if(!(r.w0&&r.w0.hit)){
     evalHTML += '<div class="panel-box"><h3>Ocena</h3><div class="empty">Brak szczegółów oceny (werdykt: '+esc(r.verdict)+').</div></div>';
   }
-  return `<div class="dwrap">
+  let story = '';
+  if(r.human_summary){
+    // wyroznij slowo-werdykt na poczatku (POPRAWNIE/REALNY PROBLEM/FALSE-POSITIVE/NIEPEWNE)
+    let h = esc(r.human_summary)
+      .replace(/^\*\*(POPRAWNIE|FALSE-POSITIVE|REALNY PROBLEM|NIEPEWNE):?\*\*/m, (m,w)=>{
+        const cls = w.startsWith('POPRAWNIE')?'POPRAWNIE':w.startsWith('FALSE')?'FALSE':w.startsWith('REALNY')?'REALNY':'NIEPEWNE';
+        return '<span class="verdict-word vw-'+cls+'">'+w+'</span>';
+      })
+      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+      .replace(/
+
+/g,'</p><p>').replace(/
+/g,'<br>');
+    story = '<div class="story"><h3>Co się stało — opis AI (orientacyjny, nie zastępuje transcriptu)</h3><p>'+h+'</p></div>';
+  }
+  return `${story}<div class="dwrap">
     <div><div class="meta-row"><b>${esc(r.title)}</b></div>
       <div class="meta-row">seed: ${esc(r.seed)||'—'} · narzędzia: ${(r.tools||[]).map(t=>'<span class="tools-tag">'+esc(t)+'</span>').join('')||'—'} · czas: ${r.dur}s</div>
       ${turns}</div>
@@ -291,7 +316,12 @@ def main():
         print(f"Nie znaleziono: {run_path}", file=sys.stderr)
         return 1
     run = json.loads(run_path.read_text(encoding="utf-8"))
-    data = extract(run)
+    summaries = {}
+    sp = run_path.with_name(run_path.stem + "_summaries.json")
+    if sp.exists():
+        summaries = json.loads(sp.read_text(encoding="utf-8"))
+        print(f"  + dolaczono {len(summaries)} podsumowan PL z {sp.name}")
+    data = extract(run, summaries)
     payload = json.dumps(data, ensure_ascii=False)
     html = TEMPLATE.replace("__PAYLOAD__", payload)
 
