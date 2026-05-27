@@ -72,6 +72,8 @@ def _should_run_w2(scenario: dict, w1_verdict: dict,
     overall = w1_verdict.get("overall")
     if overall == "fail":
         return True, "S0/S1 + W1 fail → eskalacja"
+    if overall == "unable_to_verify":
+        return True, "S0/S1 + W1 UV → panel daje drugi sygnał"
     conf = w1_verdict.get("overall_confidence", 1.0)
     try:
         conf = float(conf)
@@ -126,19 +128,21 @@ def _run_one(scenario: dict, scenario_path: Path,
         rec["duration_sec"] = round(time.time() - t_start, 2)
         return rec
 
-    # 2) W0
+    # 2) W0 — HARD hit kończy na FAIL, SOFT signal idzie dalej do W1 z kontekstem
     w0 = w0_filter.check(scenario, transcript, output, forbidden=forbidden)
     rec["w0"] = w0
     if w0["hit"]:
         rec["final_verdict"] = "fail"
         rec["final_layer"] = "w0"
         rec["fail_axes"] = ["w0_regex_hit"]
+        rec["fail_classes"] = [h["class"] for h in w0["hits"]]
         rec["duration_sec"] = round(time.time() - t_start, 2)
         return rec
 
-    # 3) W1
+    # 3) W1 — z opcjonalnym kontekstem soft signals z W0
     w1 = judges.judge_w1(scenario, transcript, output, tools_used,
-                         ground_truth_available)
+                         ground_truth_available,
+                         w0_soft_signals=w0.get("soft_signals", []))
     rec["w1"] = w1
     rec["final_layer"] = "w1"
     rec["final_verdict"] = w1.get("overall", "unable_to_verify")
@@ -205,10 +209,14 @@ def _aggregate(records: list[dict]) -> dict:
             by_class[cat]["fail"] += 1
             if sev in by_severity:
                 by_severity[sev]["fail"] += 1
+            raw_summary = (r.get("w1") or {}).get("summary", "")
+            # sędzia LLM bywa kreatywny: dict zamiast stringa, lub None
+            if not isinstance(raw_summary, str):
+                raw_summary = json.dumps(raw_summary, ensure_ascii=False)[:200] if raw_summary else ""
             fails.append({"id": r["scenario_id"], "category": cat,
                           "severity": sev, "layer": r.get("final_layer"),
                           "axes": r.get("fail_axes", []),
-                          "summary": (r.get("w1") or {}).get("summary", "")[:200]})
+                          "summary": raw_summary[:200]})
         elif verdict == "transport_error":
             by_class[cat]["transport_error"] += 1
             if sev in by_severity:
@@ -393,14 +401,34 @@ def main() -> int:
                 "orchestrator_error": "ERR"}.get(fv, "?")
         print(f"{mark} [{rec.get('final_layer')}] {rec.get('duration_sec', 0):.1f}s")
 
-    agg = _aggregate(records)
+    # CHECKPOINT — zapisz records PRZED agregacją (na wypadek crashu agregatora).
+    # Bez tego kolejny bug w _aggregate kasuje wynik 30+ min runu.
+    checkpoint_path = out_dir / f"run_{run_id}_records.json"
+    with checkpoint_path.open("w", encoding="utf-8") as f:
+        json.dump({"run_id": run_id, "args": vars(args),
+                   "ground_truth_available": ground_truth_available,
+                   "records": records},
+                  f, ensure_ascii=False, indent=2, default=str)
+
+    try:
+        agg = _aggregate(records)
+    except Exception as e:
+        print(f"AGGREGATE CRASH: {type(e).__name__}: {e}")
+        print(f"Records zachowane w {checkpoint_path}")
+        traceback.print_exc()
+        return 2
 
     # JSON dump (pełen — gitignored przez _redteam/reports/)
     with json_path.open("w", encoding="utf-8") as f:
         json.dump({"run_id": run_id, "args": vars(args),
                    "ground_truth_available": ground_truth_available,
                    "records": records, "aggregate": agg},
-                  f, ensure_ascii=False, indent=2)
+                  f, ensure_ascii=False, indent=2, default=str)
+    # checkpoint już niepotrzebny — usuń (oszczędność miejsca, tylko jeden plik JSON)
+    try:
+        checkpoint_path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
     # MD summary (commitable — bez transcriptów)
     _write_summary_md(md_path, run_id, records, agg, ground_truth_available)
