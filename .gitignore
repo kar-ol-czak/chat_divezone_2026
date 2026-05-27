@@ -106,3 +106,8 @@ _redteam/reports/*.json
 _redteam/.venv/
 _redteam/.promptfoo/
 _redteam/package-lock.json
+
+# Wygenerowany dashboard HTML (zawiera transcripty z runow = jak reports/*.json)
+_redteam/redteam_dashboard.html
+_redteam/reports/dashboard.html
+_redteam/**/dashboard.html
