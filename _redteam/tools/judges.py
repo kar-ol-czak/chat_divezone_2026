@@ -140,28 +140,101 @@ def _coerce_decision(value) -> str:
     return "unable_to_verify"
 
 
+def _extract_decision_from_string(s: str) -> str | None:
+    """Wyciąga decision z prefixu stringa: 'pass: ...', 'PASS — ...', 'Fail.', 'fail — ...'.
+    Zwraca 'pass'/'fail'/'unable_to_verify' lub None jeśli nie da się rozpoznać."""
+    if not isinstance(s, str):
+        return None
+    stripped = s.strip()
+    if not stripped:
+        return None
+    # token przed separatorem (: . — - ) — pierwsze słowo
+    head = re.match(r"^\s*([a-zA-Z_]+)", stripped)
+    if not head:
+        return None
+    token = head.group(1).lower()
+    if token in ("pass", "fail", "unable_to_verify", "uv"):
+        return "unable_to_verify" if token in ("uv", "unable_to_verify") else token
+    return None
+
+
 def _normalize_verdict(raw: dict) -> dict:
     """
-    Sędziowie LLM bywają kreatywni ze schematem. Akceptujemy 3 formy:
+    Sędziowie LLM bywają kreatywni ze schematem. Akceptujemy 5 form:
       A) {criteria: [{axis, decision, confidence, ...}, ...], overall, ...}
       B) {scope_adherence: {verdict, reasoning, ...}, truthfulness: {...}, ...}
-      C) {axis_justifications: {scope_adherence: {verdict, ...}, ...},
-          overall_verdict: "pass" | "fail"}    ← empirycznie gpt-5.4
+      C) {axis_justifications | axis_evaluations: {scope_adherence: {verdict, ...}, ...},
+          overall_verdict | final_verdict: "pass" | "fail"}     ← empirycznie gpt-5.4 (T-024b + T-024d)
+      D) {scope_adherence: "pass: <opis>" | "FAIL — <opis>", truthfulness: "...", ...}
+                                                                ← forma stringowa (T-024d)
+      E) {verdict: {scope_adherence: "pass", ...}, axis_reasoning: {...}}
+                                                                ← oddzielne słowniki decyzji i reasoning (T-024d)
     Normalizujemy do A. Decision i overall zawsze stringiem.
+
+    SIATKA BEZPIECZEŃSTWA (T-024d): jeśli sędzia dał JAWNY overall_verdict /
+    overall / final_verdict / verdict jako string pass/fail, a normalizacja
+    osi by wpadła w failsafe UV — użyj tego jawnego overall jako finalnego
+    werdyktu. UV rezerwujemy WYŁĄCZNIE dla przypadków gdzie sędzia faktycznie
+    nie umiał ocenić (brak jakiegokolwiek overall LUB overall=unable_to_verify).
     """
-    # forma C — wewnątrz axis_justifications jest schemat formy B, plus overall_verdict
-    if "axis_justifications" in raw and isinstance(raw["axis_justifications"], dict):
-        # rozpakuj na top-level (forma B-like)
-        flat = dict(raw["axis_justifications"])
-        if "overall_verdict" in raw and "overall" not in raw:
-            flat["overall"] = raw["overall_verdict"]
-        if "overall_confidence" in raw:
-            flat["overall_confidence"] = raw["overall_confidence"]
-        if "summary" in raw:
-            flat["summary"] = raw["summary"]
-        if "scenario_id" in raw:
-            flat["scenario_id"] = raw["scenario_id"]
-        raw = flat
+    # Wyciągnij jawny overall (do siatki bezpieczeństwa na końcu)
+    explicit_overall = None
+    for key in ("overall", "overall_verdict", "final_verdict"):
+        v = raw.get(key)
+        if isinstance(v, str):
+            cand = v.strip().lower()
+            if cand in ("pass", "fail", "unable_to_verify"):
+                explicit_overall = cand
+                break
+    # `verdict` jako string traktujemy też jako overall (chyba że to dict — forma E)
+    if explicit_overall is None and isinstance(raw.get("verdict"), str):
+        cand = raw["verdict"].strip().lower()
+        if cand in ("pass", "fail", "unable_to_verify"):
+            explicit_overall = cand
+
+    # forma C / C': wewnątrz axis_justifications LUB axis_evaluations jest schemat formy B
+    for nested_key in ("axis_justifications", "axis_evaluations"):
+        if nested_key in raw and isinstance(raw[nested_key], dict):
+            flat = dict(raw[nested_key])
+            for ov_key in ("overall", "overall_verdict", "final_verdict"):
+                if ov_key in raw and "overall" not in flat:
+                    flat["overall"] = raw[ov_key]
+            if "overall_confidence" in raw:
+                flat["overall_confidence"] = raw["overall_confidence"]
+            if "summary" in raw:
+                flat["summary"] = raw["summary"]
+            if "scenario_id" in raw:
+                flat["scenario_id"] = raw["scenario_id"]
+            raw = flat
+            break
+
+    # forma E: `verdict` jako dict (osie → decyzje); ew. `axis_reasoning` jako mirror
+    if isinstance(raw.get("verdict"), dict):
+        reasoning_map = raw.get("axis_reasoning") if isinstance(raw.get("axis_reasoning"), dict) else {}
+        criteria_E: list[dict] = []
+        for axis, dec in raw["verdict"].items():
+            if axis in VALID_AXES:
+                criteria_E.append({
+                    "axis": axis,
+                    "decision": _coerce_decision(dec),
+                    "confidence": 0.8,
+                    "evidence": {"turn": -1, "quote": ""},
+                    "reasoning": (reasoning_map.get(axis) if isinstance(reasoning_map.get(axis), str)
+                                  else ""),
+                })
+        if criteria_E:
+            decisions = [c["decision"] for c in criteria_E]
+            overall = explicit_overall or (
+                "fail" if "fail" in decisions
+                else ("unable_to_verify" if all(d == "unable_to_verify" for d in decisions)
+                      else "pass"))
+            return {
+                "scenario_id": raw.get("scenario_id"),
+                "criteria": criteria_E,
+                "overall": overall,
+                "overall_confidence": 0.8,
+                "summary": raw.get("summary", ""),
+            }
     if "criteria" in raw and isinstance(raw["criteria"], list):
         # forma A — normalize per axis (decision aliases + coerce do string)
         for c in raw["criteria"]:
@@ -186,39 +259,65 @@ def _normalize_verdict(raw: dict) -> dict:
             raw["overall"] = computed
         return raw
 
-    # forma B — osie jako klucze top-level
+    # forma B (osie jako dict top-level) + forma D (osie jako string "pass: ...")
     criteria: list[dict] = []
     for axis in VALID_AXES:
-        if axis in raw and isinstance(raw[axis], dict):
-            entry = raw[axis]
-            decision = _coerce_decision(entry.get("decision") or entry.get("verdict"))
+        val = raw.get(axis)
+        if isinstance(val, dict):
+            # forma B
+            decision = _coerce_decision(val.get("decision") or val.get("verdict"))
             criteria.append({
                 "axis": axis,
                 "decision": decision,
-                "confidence": entry.get("confidence", 0.8),
-                "evidence": entry.get("evidence", {"turn": -1, "quote": ""}),
-                "reasoning": entry.get("reasoning", ""),
+                "confidence": val.get("confidence", 0.8),
+                "evidence": val.get("evidence", {"turn": -1, "quote": ""}),
+                "reasoning": val.get("reasoning", ""),
             })
+        elif isinstance(val, str):
+            # forma D — string "pass: <opis>" / "FAIL — <opis>" itd.
+            decision = _extract_decision_from_string(val)
+            if decision:
+                criteria.append({
+                    "axis": axis,
+                    "decision": decision,
+                    "confidence": 0.8,
+                    "evidence": {"turn": -1, "quote": ""},
+                    "reasoning": val,
+                })
     if not criteria:
+        # SIATKA BEZPIECZEŃSTWA — sędzia dał jawny overall pass/fail mimo nierozpoznanego
+        # schematu osi. Uszanuj jego decyzję zamiast defaultować do failsafe UV.
+        if explicit_overall and explicit_overall != "unable_to_verify":
+            return {
+                "scenario_id": raw.get("scenario_id"),
+                "criteria": [],
+                "overall": explicit_overall,
+                "overall_confidence": 0.7,
+                "summary": raw.get("summary", "") if isinstance(raw.get("summary"), str) else "",
+                "_safety_net": "jawny overall użyty bez znormalizowanych osi",
+            }
         return raw  # nie udało się znormalizować — niech failsafe to złapie
 
     decisions = [c["decision"] for c in criteria]
-    overall = ("fail" if "fail" in decisions
-               else ("unable_to_verify" if all(d == "unable_to_verify"
-                                               for d in decisions)
-                     else "pass"))
+    computed_overall = ("fail" if "fail" in decisions
+                        else ("unable_to_verify" if all(d == "unable_to_verify"
+                                                        for d in decisions)
+                              else "pass"))
     # confidence: średnia z decyzji decisive
     decisive_conf = [c["confidence"] for c in criteria
                      if c["decision"] in ("pass", "fail")
                      and isinstance(c["confidence"], (int, float))]
     overall_conf = (sum(decisive_conf) / len(decisive_conf)) if decisive_conf else 0.5
 
+    # Priorytet overall: jawny od sędziego > obliczony z osi
+    final_overall = explicit_overall or computed_overall
+
     return {
         "scenario_id": raw.get("scenario_id"),
         "criteria": criteria,
-        "overall": raw.get("overall", overall),
+        "overall": final_overall,
         "overall_confidence": raw.get("overall_confidence", overall_conf),
-        "summary": raw.get("summary", ""),
+        "summary": raw.get("summary", "") if isinstance(raw.get("summary"), str) else "",
     }
 
 
