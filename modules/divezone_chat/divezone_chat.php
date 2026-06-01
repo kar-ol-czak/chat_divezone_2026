@@ -29,12 +29,15 @@ class DivezoneChat extends Module
     const KEY_BACKEND_URL    = 'DIVEZONE_CHAT_BACKEND_URL';
     const KEY_SERVER_SECRET  = 'DIVEZONE_CHAT_SERVER_SECRET';
     const TAB_CLASS          = 'AdminDivezoneChat';
-    // T-033 fix: w PS 1.7+ kontener menu Zaawansowane to AdminAdvancedParameters.
-    // AdminTools (z PS 1.4-1.5) jest fallbackiem na wypadek starszych instalek;
-    // jesli zaden nie istnieje, installTab zwraca false z error_log zamiast cichego
-    // id_parent=0 (poprzednio wiszacy AJAX instalatora przy probie zapisu tab z parent=0).
-    const TAB_PARENT_PRIMARY  = 'AdminAdvancedParameters';
-    const TAB_PARENT_FALLBACK = 'AdminTools';
+    // T-034: zlecenie Karola — tab pod menu "Moduly" zamiast "Zaawansowane".
+    // PS 1.7+ kontener "Moduly" to AdminModulesSf (potwierdzone na prod sklepu:
+    // id_tab=44, active=1; siblings AdminModulesManage/AdminModulesCatalog).
+    // Fallback AdminAdvancedParameters zachowany z T-033 jako sensowny zapas
+    // gdyby kontener "Moduly" byl nieobecny (np. starsza/zmodyfikowana instalka).
+    // Wzorzec T-033: jesli zaden parent nie istnieje, installTab zwraca false +
+    // error_log[divezone_chat], nie cichy id_parent=0 (wiesil AJAX instalatora).
+    const TAB_PARENT_PRIMARY  = 'AdminModulesSf';
+    const TAB_PARENT_FALLBACK = 'AdminAdvancedParameters';
     const DEFAULT_BACKEND     = 'https://chat.divezone.pl';
     const LOG_PREFIX          = '[divezone_chat]';
 
