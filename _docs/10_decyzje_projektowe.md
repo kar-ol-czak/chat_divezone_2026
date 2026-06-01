@@ -2050,3 +2050,33 @@ Kregoslup projektujemy tak by uniosl wszystkie trzy (swiadoma rezerwa na real-ti
 - Real-time (faza 3): SSE dwukierunkowe vs WebSocket vs polling dla live chat.
 
 **Powiazane:** ADR-054 (editorial picks), ADR-065 (kuratorowane rekomendacje + uzup. 1-3), ADR-052 (analityka/koszty w obecnym /admin), T-029 (backend rekomendacji gotowy), modul `divezone_chat` (pusty szkielet do zbudowania). Nastepny krok: ADR fazy 1 (szczegoly implementacji panelu rekomendacji) gdy ruszymy implementacje — w NOWEJ konwersacji (decyzja 154a: planowanie tu, implementacja osobno).
+
+---
+
+## ADR-065 UZUPELNIENIE 4 (zrodlo danych sprzedazowych: Subiekt, nie PrestaShop — decyzje 172c/173)
+
+### Odkrycie: dane sprzedazowe PrestaShop sa niewiarygodne
+T-030 (skrypt sprzedazy z MySQL PrestaShop) dal FALSZYWY obraz. Porownanie na automatach oddechowych:
+- PrestaShop: Apeks = 0 zam, Scubapro = 0 zam/12mc, grupa = 7 produktow ze sprzedaza.
+- Subiekt (eksport CSV 12mc): Apeks ~100 szt (ATX40/DS4 #1, 64 szt + zestawy), Scubapro ~25 szt (MK25 Evo), Tecline ~50 szt, Aqualung Legend 3 ~19 szt. Grupa = 141 pozycji, 1212 szt, 841 tys. zl netto.
+Przyczyny bledu PrestaShop: problemy ze statusami zamowien (valid — state 2 "Zaplacone" z valid=0 odpada; pobraniowe; anomalie) ORAZ mapowanie kategorii (id_category_default produktow czesto wskazuje inna kategorie niz oczekiwana — potwierdzone tez anomaliami w piankach/suchych). Karol potwierdzil intuicyjnie: "dane PrestaShop nie do konca dobre".
+
+### Decyzja 172c: Subiekt = zrodlo POPULARNOSCI, PrestaShop = zrodlo STANU
+- **Subiekt** (system ksiegowo-magazynowy, rejestruje faktyczne wydania towaru): odpowiada "co sie sprzedaje" -> fundament wyboru produktow do rekomendacji. Czyste grupy towarowe (kolumny: Nazwa, Symbol/SKU, Grupa, Ilosc, J.M., Netto).
+- **PrestaShop** (przez istniejacy enrichWithMySQLData): odpowiada "ile kosztuje + czy dostepne" -> zywy stan w odpowiedzi bota. Bez zmian.
+Odrzucone: naprawianie danych sprzedazowych PrestaShop (b) — duza, niepewna robota; Subiekt juz daje czysty obraz.
+
+### Wyzwanie mapowania: Symbol (Subiekt) -> product_id (PrestaShop)
+Kuratorowana rekomendacja wskazuje product_id PrestaShop, a Subiekt operuje na Symbol/SKU. Re-seed wymaga mapowania SKU Subiekta -> product_id PrestaShop (przez reference/SKU w pr_product). Do zaplanowania w re-seedzie.
+Uwaga: Subiekt miesza w grupach wlasciwe produkty z akcesoriami (np. w "Automaty Oddechowe" sa ustniki, o-ringi, zaczepy). Przy doborze rekomendacji filtrowac do wlasciwych produktow (nie czesci).
+
+### Decyzja 173: eksport jednorazowy teraz, docelowo wlasna apka feed
+- TERAZ: jednorazowy eksport CSV z Subiekta (mamy: reports/sales_subiekt_12mcy.csv, 3419 pozycji 12mc) — wystarcza na pierwszy re-seed.
+- DOCELOWO: Karol napisze prosta apke pod Windows (tam gdzie serwer Subiekta), ktora bedzie cyklicznie dostarczac dane sprzedazowe do bazy czatu (feed do tabeli sprzedazy/popularnosci). Precedens: istnieje juz komercyjna integracja Subiekt<->PrestaShop "FirmsLink" (synchronizacja stanow i zamowien) — ale ona NIE dostarcza danych sprzedazowych do czatu, stad osobna apka.
+
+### Konsekwencje dla panelu (ADR-067) i rekomendacji
+- Panel maczowania (faza 1 ADR-067) powinien pokazywac pracownikowi dane popularnosci z Subiekta obok produktu PrestaShop — zeby maczowal w oparciu o realne sprzedaze.
+- Re-seed T-029: oparty na Subiekt (popularnosc) + swieze hity recznie (np. Suunto Nautic, product_id 7515-7517/7548 — w bazie, brak historii sprzedazy) + koncept produkty sprawdzone (Apeks ATX40/DS4 = wzorcowy proven_model, ~20 lat, #1 w sprzedazy).
+- Docelowa tabela popularnosci w bazie czatu (zasilana apka feed) — do zaprojektowania gdy apka powstanie.
+
+**Powiazane:** reports/sales_subiekt_12mcy.csv (zrodlo teraz, gitignored), T-030 (skrypt PrestaShop — zostaje jako pomocniczy, ale NIE glowne zrodlo popularnosci), ADR-067 (panel pokazuje dane Subiekta), przyszla apka feed Subiekt->czat.
