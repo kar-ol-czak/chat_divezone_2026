@@ -1844,3 +1844,45 @@ W0 regex pre-filter ma DWIE klasy klas (nie tylko jeden poziom hit):
 Powod: run T-024 2026-05-26T203757Z mial 4 W0 hits, 2 z nich byly false-positive (DOMAIN-004 + JAIL-005 mialy bota UDZIELAJACEGO ODMOWY z echo terminu). Bez splitu kazdy bot ostrzegajacy o ryzyku life-safety dostawal automatyczne FAIL — odwrotnosc celu.
 
 Powiazane: `_redteam/tools/w0_filter.py` (`SOFT_CLASSES` set), `_redteam/judge_prompts/w1_default_v1.md` v1.1 (regula 11: ocena soft signala z kontekstu).
+---
+
+## ADR-065: Kuratorowane rekomendacje produktowe (curated recommendations)
+
+**Status:** Zaakceptowany (decyzje 127c, 128b, 129 MVP, 130a, 131a)
+**Data:** 2026-05-27
+**Kontekst:** Analiza 24 realnych pytan klientow ze sklepu (`_redteam/pytania_ze_sklepu_{1,2,3}.txt`) ujawnila, ze ~8 z nich to pytania o DOBOR produktu ("jaki komputer na start", "pianka w duzym rozmiarze", "maska korekcyjna"). `search_products` ich nie obsluguje, bo "najlepszy komputer na start" to NIE atrybut w bazie, lecz OSAD EKSPERCKI zespolu. Bot bez tej warstwy albo halucynuje rekomendacje, albo odsyla wszystkich do kontaktu (bezuzyteczny).
+
+**Decyzja:** Wprowadzamy warstwe kuratorowanych rekomendacji — most miedzy zywa baza produktow a wiedza zespolu.
+
+### Model trojwarstwowy
+1. **Regula doboru** (stala, w bazie wiedzy bota): np. "duzy rozmiar pianki -> elastyczne marki jak Bare", "korekcja -> modele z wymiennymi szklami". Nie starzeje sie. Idzie do SystemPrompt/ExpertKnowledge.
+2. **Kuratorowana rekomendacja** (polstala, NOWA tabela): kategoria -> 1-3 konkretne produkty wybrane recznie przez zespol. Zmienia sie rzadko.
+3. **Zywy stan** (dynamiczny, MySQL): cena + dostepnosc przez istniejacy `enrichWithMySQLData`.
+Bot laczy trzy: zna regule, pobiera kuratorowana liste, doklada zywa cene/dostepnosc.
+
+### Dwa niezalezne mechanizmy staleness (NIE jeden)
+- **Twardy (automatyczny):** czy product_id nadal istnieje i jest aktywny w PrestaShop. Czesty (cron dzienny lub walidacja przy wywolaniu). Produkt skasowany/wycofany -> bot natychmiast przestaje polecac + alert. To FAKT (maszyna sprawdza).
+- **Miekki (ekspercki, interwal):** czy to nadal NAJLEPSZA rada. Per kategoria 3/6/12 mies (maski dlugi interwal, komputery krotki). Przypomnienie, NIE blokuje. To OPINIA (czlowiek ocenia).
+Powod rozdzielenia: produkt moze zniknac PRZED uplywem interwalu eksperckiego — sam interwal nie wystarczy.
+
+### Niedostepnosc kuratorowanego produktu
+Bot pobiera 3 skuratorowane, filtruje przez zywy stan: wszystkie dostepne -> poleca z cena; czesc niedostepna -> pomija/oznacza "na zamowienie"; ZERO dostepnych -> fallback "sprawdzmy dostepnosc, najlepiej kontakt" (zgodne z polityka redirect przy maskach).
+
+### Dopasowanie pytania do kategorii
+Bot (LLM) dostaje narzedzie `get_curated_recommendations(category)` z lista kategorii + opisami i SAM klasyfikuje pytanie (rozpoznanie intencji, NIE slowa kluczowe). Naturalne dla architektury function-calling.
+
+### Zakres MVP (decyzja 129) — przed pelna wersja
+MVP: tabela `divechat_curated_recommendations` (PostgreSQL, decyzja 130a) + narzedzie `get_curated_recommendations` z JOIN MySQL + integracja z SystemPrompt + seed reczny kilku kategorii. BEZ panelu admina, BEZ crona na start (walidacja twarda przy wywolaniu).
+Pelna wersja (pozniej, gdy MVP sie sprawdzi): panel admina z autocomplete (wybor 1-3 produktow per kategoria), cron staleness z powiadomieniami o interwalach.
+Powod MVP-first: wartosc biznesowa jest w jakosci doradztwa, nie w wygodzie edycji. Najpierw udowodnic mechanizm (re-run harness pokaze poprawe na scenariuszach doboru), potem panel.
+
+### Schemat tabeli (PostgreSQL, decyzja 130a)
+`divechat_curated_recommendations`: category_key, category_label_pl (opis dla bota: kiedy stosowac), product_id (-> pr_product przez enrichWithMySQLData), priority (1-3), rationale_pl (czemu polecamy), verified_at, recheck_interval_days (30/90/180/365), active (bool).
+Powod PostgreSQL nie MySQL: to dane czatu, nie sklepu; laczenie z produktami i tak przez enrichWithMySQLData.
+
+### Kolejnosc (decyzja 131a)
+ADR teraz (utrwala model), implementacja PO domknieciu golden set / harness — zeby nie mieszac dwoch duzych strumieni. Harness ~90% gotowy.
+
+**Konsekwencje:** Bot zmienia sie z wyszukiwarki w doradce. Wymaga utrzymania (zespol pielegnuje liste), ale to swiadomy koszt — alternatywa (halucynacje lub "zadzwon do nas") jest gorsza. Czesc z 24 pytan klientow (dobor) bedzie zaliczona dopiero po implementacji tej warstwy; do tego czasu to znany gap w golden set.
+
+**Powiazane:** `_instances/backend/notes/v11_backlog_polityk.md` (polityki z r2), 24 pytania w `_redteam/pytania_ze_sklepu_*.txt`, przyszly task implementacyjny (po golden set).
