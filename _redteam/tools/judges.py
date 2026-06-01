@@ -51,10 +51,17 @@ _load_env()
 
 
 def _extract_system_prompt(md_path: Path, section_header: str) -> str:
-    """Wycina sekcję markdown zaczynającą się od `## {section_header}` do następnego `## `."""
+    """
+    Wycina sekcję markdown OD `## {section_header}` DO KOŃCA pliku.
+
+    UWAGA (T-025c): wcześniej brało tylko do następnego `## ` — przez to sędzia
+    NIGDY nie widział sekcji "7 OSI RUBRYKI", "FORMAT WYJŚCIA", "ANTI-PATTERNS",
+    "BIAS MITIGATIONS" ani "POLITYKI DIVEZONE". Zmiana: wczytujemy całość prompt
+    file od `## SYSTEM PROMPT` w dół (cała rubryka jest częścią system prompt).
+    """
     text = md_path.read_text(encoding="utf-8")
     pattern = re.compile(
-        rf"^##\s+{re.escape(section_header)}.*?$\n(.*?)(?=^##\s|\Z)",
+        rf"^##\s+{re.escape(section_header)}.*?$\n(.*)\Z",
         re.MULTILINE | re.DOTALL,
     )
     m = pattern.search(text)

@@ -112,5 +112,14 @@ _redteam/redteam_dashboard.html
 _redteam/reports/dashboard.html
 _redteam/**/dashboard.html
 
+# T-025: golden set zawiera transcripty + recznie wpisane werdykty Karola (potencjalnie cytaty botów)
+# Tylko zagregowane metryki kappa w reports/meta_eval_*.md = commitable
+_redteam/golden/
+
 # Podsumowania AI runow (pochodne transcriptow)
 _redteam/reports/*_summaries.json
+
+# T-025: wypelnione oceny eksperckie (transcripty + werdykty Karola) — poza katalogiem golden/
+_redteam/golden_REVIEW_filled*.md
+# Material zrodlowy: realne pytania/odpowiedzi ze sklepu (robocze, wewnetrzne)
+_redteam/pytania_ze_sklepu_*.txt
