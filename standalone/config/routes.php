@@ -7,12 +7,15 @@ use DiveChat\AI\PricingService;
 use DiveChat\AI\UsageLogger;
 use DiveChat\Admin\ConversationViewer;
 use DiveChat\Admin\CostAnalytics;
+use DiveChat\Auth\ServerHmacVerifier;
+use DiveChat\Config;
 use DiveChat\Chat\ChatService;
 use DiveChat\Chat\ConversationStore;
 use DiveChat\Chat\SettingsStore;
 use DiveChat\Controller\AdminController;
 use DiveChat\Controller\AdminEditorialPicksController;
 use DiveChat\Controller\AdminPricingController;
+use DiveChat\Controller\AdminWhoamiController;
 use DiveChat\Controller\ChatController;
 use DiveChat\Controller\ConversationsController;
 use DiveChat\Controller\HealthController;
@@ -90,4 +93,13 @@ return static function (
 
     // Admin: Products search (autocomplete dla form Add picka, T-012)
     $router->get('/api/admin/products/search', $editorialPicksController->productsSearch(...));
+
+    // Panel admin PrestaShop — kanal serwerowy (ADR-068 174a/175a/176a, T-032).
+    // Echo endpoint: weryfikacja podpisu modulu PS (DIVECHAT_SERVER_SECRET) +
+    // lookup roli w divechat_admin_roles. NIE chroniony przez AdminAuthMiddleware
+    // (basic auth) — wlasny kanal serwerowy z innym sekretem niz kliencki HMAC.
+    $serverSecret = Config::get('DIVECHAT_SERVER_SECRET', '');
+    $serverVerifier = new ServerHmacVerifier($serverSecret);
+    $whoamiController = new AdminWhoamiController($serverVerifier, $db);
+    $router->get('/api/admin/whoami', $whoamiController->handle(...));
 };
