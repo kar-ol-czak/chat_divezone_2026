@@ -24,7 +24,7 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-class DivezoneChat extends Module
+class Divezone_Chat extends Module
 {
     const KEY_BACKEND_URL    = 'DIVEZONE_CHAT_BACKEND_URL';
     const KEY_SERVER_SECRET  = 'DIVEZONE_CHAT_SERVER_SECRET';

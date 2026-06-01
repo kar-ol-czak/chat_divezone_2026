@@ -48,8 +48,8 @@ class AdminDivezoneChatController extends ModuleAdminController
                 $html .= '<pre style="background:#f5f5f5;padding:10px;border:1px solid #ddd;overflow:auto;">' . htmlspecialchars((string)$result['details'], ENT_QUOTES) . '</pre>';
             }
             $html .= '<p>' . $this->l('Diagnostyka:') . '</p><ul>';
-            $html .= '<li>' . $this->l('Backend URL') . ': <code>' . htmlspecialchars((string)Configuration::get(DivezoneChat::KEY_BACKEND_URL), ENT_QUOTES) . '</code></li>';
-            $html .= '<li>' . $this->l('Sekret ustawiony') . ': ' . ((string)Configuration::get(DivezoneChat::KEY_SERVER_SECRET) !== '' ? $this->l('TAK') : '<strong style="color:#a94442;">' . $this->l('NIE') . '</strong>') . '</li>';
+            $html .= '<li>' . $this->l('Backend URL') . ': <code>' . htmlspecialchars((string)Configuration::get(Divezone_Chat::KEY_BACKEND_URL), ENT_QUOTES) . '</code></li>';
+            $html .= '<li>' . $this->l('Sekret ustawiony') . ': ' . ((string)Configuration::get(Divezone_Chat::KEY_SERVER_SECRET) !== '' ? $this->l('TAK') : '<strong style="color:#a94442;">' . $this->l('NIE') . '</strong>') . '</li>';
             $html .= '<li>' . $this->l('Employee ID (kontekst)') . ': <code>' . (int)$employeeId . '</code></li>';
             $html .= '</ul>';
             $html .= '<p>' . $this->l('Jesli sekret nie jest ustawiony, otworz Moduly -> DiveZone Chat -> Konfiguruj.') . '</p>';
@@ -79,8 +79,8 @@ class AdminDivezoneChatController extends ModuleAdminController
      */
     private function callWhoami($employeeId)
     {
-        $backendUrl = trim((string)Configuration::get(DivezoneChat::KEY_BACKEND_URL));
-        $secret     = (string)Configuration::get(DivezoneChat::KEY_SERVER_SECRET);
+        $backendUrl = trim((string)Configuration::get(Divezone_Chat::KEY_BACKEND_URL));
+        $secret     = (string)Configuration::get(Divezone_Chat::KEY_SERVER_SECRET);
 
         if ($backendUrl === '' || $secret === '') {
             return array('error' => $this->l('Konfiguracja niekompletna — wypelnij Backend URL i sekret w konfiguracji modulu.'));
