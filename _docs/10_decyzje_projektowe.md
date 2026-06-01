@@ -2080,3 +2080,43 @@ Uwaga: Subiekt miesza w grupach wlasciwe produkty z akcesoriami (np. w "Automaty
 - Docelowa tabela popularnosci w bazie czatu (zasilana apka feed) — do zaprojektowania gdy apka powstanie.
 
 **Powiazane:** reports/sales_subiekt_12mcy.csv (zrodlo teraz, gitignored), T-030 (skrypt PrestaShop — zostaje jako pomocniczy, ale NIE glowne zrodlo popularnosci), ADR-067 (panel pokazuje dane Subiekta), przyszla apka feed Subiekt->czat.
+
+
+---
+
+## ADR-068 (kontrakt panelu admin faza 1: kanal serwerowy, render UI, model rol)
+
+Domyka 3 z 4 kwestii zostawionych jako otwarte w ADR-067 (czwarta — SKU Subiekta w pr_product — rozwiazana w T-031: pr_product.reference, fallback pr_product_attribute.reference dla wariantow). Podjete po rozpoznaniu istniejacego kodu backendu (AdminAuthMiddleware, HmacVerifier, Router, config/routes.php, wzorzec /api/admin/* + AdminEditorialPicksController).
+
+### Punkt wyjscia (stan faktyczny po rozpoznaniu 2026-06-01)
+- Modul PS `modules/divezone_chat` = PUSTY szkielet (same katalogi, brak glownego pliku modulu). Budowa od zera.
+- Backend ma DWA rozdzielne mechanizmy auth:
+  - `HmacVerifier` (Auth/): wspoldzielony sekret + customerId + timestamp, anti-replay 5 min. Kanal front PrestaShop -> backend dla KLIENTA czatu. Dojrzaly.
+  - `AdminAuthMiddleware` (Http/): Basic Auth p-ko .htpasswd, jednopoziomowy, tozsamosc = user z pliku, ZERO rol. Chroni dzisiejszy /admin.
+- Wzorzec `/api/admin/*` spojny: kontroler dostaje $adminAuth w konstruktorze; AdminEditorialPicksController to gotowy szablon CRUD (list/add/update/delete + products/search) do nasladowania dla rekomendacji.
+- Napiecie: dzisiejszy AdminAuthMiddleware NIE udzwignie wizji panelu (pracownik pr_employee, role operator/admin, docelowo employee_id w live chat). Stad ponizsze 3 decyzje.
+
+### Decyzja 174a: kanal serwerowy = HMAC serwerowy z employee_id (rozszerzenie istniejacego wzorca)
+Modul PS (serwer, NIE przegladarka) podpisuje request do backendu sekretem SERWEROWYM, innym niz kliencki HMAC. Ladunek podpisu zawiera employee_id + timestamp (anti-replay analogicznie do HmacVerifier). Backend weryfikuje osobnym sekretem i wyciaga employee_id z podpisanego ladunku.
+- Odrzucone: mTLS (przerost na faze 1, trudny w utrzymaniu na hostingu PS); bezposredni dostep modulu do PG (lamie "backend jedynym wlascicielem PG", 157a); reuzycie klienckiego sekretu HMAC (rozdzielenie zaufania klient/serwer).
+- Konsekwencja: employee_id obecny w podpisie OD POCZATKU = gotowy fundament pod live chat fazy 3 (kto obsluguje czat).
+- Sekret serwerowy poza repo (.env, wzorzec jak istniejace sekrety).
+
+### Decyzja 175a: render UI = natywny AdminController tab PrestaShop
+Modul rejestruje natywny kontroler admina PS (np. `AdminDivezoneChatController`) + tab w instalatorze modulu. UI renderowane natywnie w PrestaShop; dane ciagniete z backendu kanalem 174a.
+- Odrzucone: iframe do chat.divezone.pl/admin (rozbija tozsamosc pracownika, wyglada obco, drugie logowanie); helper/template bez wlasnego kontrolera (slabsza kontrola nad routingiem/uprawnieniami PS).
+- Powod: wizja "jedno stanowisko pracy obslugi" (166b) — pracownik w natywnym UI PS, tozsamosc z pr_employee, bez drugiego logowania.
+
+### Decyzja 176a: model rol = osobna tabela mapujaca w PG (NIE dziedziczenie z pr_profile)
+Tabela w PG (robocza nazwa `divechat_admin_roles`: employee_id -> role) mapuje pracownika PS na role czatu (operator / admin). Autoryzacja endpointu: employee_id z podpisu 174a -> lookup roli -> decyzja dostepu.
+- Role czatu (decyzja 164a): operator (maczuje rekomendacje, uzasadnienia, przeglad) / admin (to + koszty/modele/ustawienia).
+- Odrzucone: dziedziczenie z pr_profile (sztywno wiaze uprawnienia czatu z profilami sklepu, ktorych projekt nie kontroluje; miesza dwa rozne wymiary uprawnien).
+- Powod: backend pozostaje wlascicielem autoryzacji (spojne z 157a "backend jedynym wlascicielem PG"); role czatu nadawane niezaleznie od profili PS.
+
+### Spojnosc calosci
+Trzy decyzje skladaja sie w jeden lancuch: modul PS podpisuje request (174a, employee_id w ladunku) -> backend weryfikuje sekretem serwerowym i czyta employee_id -> lookup roli w divechat_admin_roles (176a) -> autoryzacja endpointu /api/admin/* -> natywny AdminController (175a) renderuje UI z danymi z backendu. Kazda decyzja to najprostszy wariant nie zamykajacy drogi do fazy 2-3 (employee_id pod live chat, osobna tabela rol rozszerzalna).
+
+### Granica fazy 1
+ADR-068 dotyczy kregoslupa + sekcji kuratorowanych rekomendacji (read + maczowanie). NIE obejmuje: powiadomien (faza 2), live chat / real-time (faza 3, osobny duzy ADR — decyzje SSE/WebSocket dopiero tam). AdminAuthMiddleware (Basic Auth) ZOSTAJE dla dzisiejszego backendowego /admin; kanal serwerowy 174a to NOWY tryb auth obok istniejacego, nie zamiennik.
+
+**Powiazane:** ADR-067 (kregoslup panelu — kwestie tu domkniete), ADR-054 (AdminEditorialPicksController = wzorzec CRUD do nasladowania), ADR-065 + uzup.4 (rekomendacje + dane Subiekta obok produktu w panelu), T-029 (backend rekomendacji gotowy), T-031 (mapowanie SKU rozwiazane), modul divezone_chat (pusty szkielet — budowa od zera). Nastepny krok: task(i) CC fazy 1 — instancja backend prowadzi (decyzja: UI w PS, logika+dane w backendzie, 163a).
