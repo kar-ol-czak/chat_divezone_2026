@@ -1886,3 +1886,23 @@ ADR teraz (utrwala model), implementacja PO domknieciu golden set / harness — 
 **Konsekwencje:** Bot zmienia sie z wyszukiwarki w doradce. Wymaga utrzymania (zespol pielegnuje liste), ale to swiadomy koszt — alternatywa (halucynacje lub "zadzwon do nas") jest gorsza. Czesc z 24 pytan klientow (dobor) bedzie zaliczona dopiero po implementacji tej warstwy; do tego czasu to znany gap w golden set.
 
 **Powiazane:** `_instances/backend/notes/v11_backlog_polityk.md` (polityki z r2), 24 pytania w `_redteam/pytania_ze_sklepu_*.txt`, przyszly task implementacyjny (po golden set).
+
+---
+
+## ADR-066: Kalibracja ruchu produkcyjnego + szybka sciezka dla pytan prostych
+
+**Status:** Planowany (realizacja PO zebraniu realnego ruchu z czatu klientow)
+**Data:** 2026-05-27
+**Kontekst:** Myśl Karola (poniedzialek): obecny bot uzywa pelnego modelu (Sonnet/GPT-5.4) dla KAZDEGO pytania, w tym dla trywialnych powtarzalnych ("kiedy dojdzie zamowienie", "czy macie rozmiary", "godziny pracy"). To wolne i drogie tam, gdzie nie trzeba. Dane z meta-eval pokazaly tez, ze 91% kosztu to input (40:1 input:output), wiec kazde wywolanie pelnego modelu na proste pytanie jest marnotrawstwem.
+
+**Decyzja (kierunek, do realizacji po zebraniu ruchu):**
+Po uruchomieniu czatu z prawdziwymi klientami przeprowadzic KALIBRACJE RUCHU: zebrac realne pytania, zklasteryzowac, znalezc najczestsze powtarzalne wzorce. Na tej podstawie wprowadzic SZYBKA SCIEZKE dla pytan prostych, jedna z (do rozstrzygniecia danymi):
+- **a) Deterministyczny router (Python, slowa kluczowe):** wylapuje proste/powtarzalne pytania, odpowiada z szablonu/bazy bez wolania LLM. Najszybszy, najtanszy, zero halucynacji, ale kruchy (klient pyta na 100 sposobow).
+- **b) Najtanszy model (Haiku / GPT-5-mini) jako pierwsza linia:** szybka tania odpowiedz na proste, eskalacja do pelnego modelu (is_escalation juz istnieje) dla zlozonych. Elastyczniejszy niz a, nadal duzo tanszy niz pelny model.
+- **c) Hybryda:** deterministyczny router dla NAJCZESTSZYCH twardych przypadkow (status zamowienia, godziny, zwroty), tani model dla reszty prostych, pelny model dla zlozonych/doradczych.
+
+**Rekomendacja architekta (wstepna, do walidacji danymi):** c) hybryda. Deterministyka tam gdzie pytanie jest jednoznaczne i czeste (FAQ procesowe z ADR-134/v11 — zwroty, wysylka, godziny), tani model dla prostych wariantowych, pelny model dla doradztwa (dobor sprzetu, kuratorowane rekomendacje ADR-065). Ale DECYZJA WYMAGA DANYCH — bez realnego ruchu nie wiadomo, co sie faktycznie powtarza.
+
+**Warunek wejscia:** min. kilka tygodni ruchu produkcyjnego + analiza klastrow pytan. Przedwczesna optymalizacja bez danych = ryzyko zbudowania routera dla pytan, ktore klienci nie zadaja.
+
+**Powiazane:** `divechat_message_usage` (zrodlo danych o ruchu + kosztach), is_escalation (mechanizm eskalacji modelu juz istnieje), ADR-065 (kuratorowane rekomendacje = przypadki dla pelnego modelu), FAQ procesowe v11 (kandydaci na deterministyczna sciezke).
