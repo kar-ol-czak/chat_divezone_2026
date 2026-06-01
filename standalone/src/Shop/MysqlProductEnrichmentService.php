@@ -1,0 +1,193 @@
+<?php
+
+declare(strict_types=1);
+
+namespace DiveChat\Shop;
+
+use DiveChat\Database\MysqlConnection;
+
+/**
+ * Enrichment danych produktow z MySQL PrestaShop: cena brutto z VAT,
+ * dostepnosc (in_stock / available_to_order / unavailable wg PS out_of_stock 0/1/2),
+ * status active + visibility, aktywne promocje z pr_specific_price.
+ *
+ * Wydzielone z ProductSearch::enrichWithMySQLData w T-029 (ADR-065 MVP) jako
+ * wspolne zrodlo dla ProductSearch i CuratedRecommendations. Logika identyczna
+ * do tej z ProductSearch przed refaktorem — szanuje 3 stany PS out_of_stock
+ * (0=deny, 1=allow, 2=use PS_ORDER_OUT_OF_STOCK global) i hierarchie priorytetow
+ * specific_price (id_shop > 0 wygrywa, id_group > 0 wygrywa).
+ *
+ * Falla MySQL (timeout / odmowa polaczenia) -> error_log + zwroc pusta tablice.
+ * Wywolujacy decyduje co zrobic z brakiem danych (ProductSearch: fallback na
+ * dane pgvector; CuratedRecommendations: pomijaj rekomendacje bez enrichment).
+ */
+final class MysqlProductEnrichmentService
+{
+    /**
+     * @param list<int> $productIds
+     * @return array<int, array{
+     *     price: float,
+     *     in_stock: bool,
+     *     availability: string,
+     *     quantity: int,
+     *     active: bool,
+     *     visible: bool,
+     *     price_before_discount?: float
+     * }>
+     */
+    public function enrich(array $productIds): array
+    {
+        if (empty($productIds)) {
+            return [];
+        }
+
+        try {
+            $mysql = MysqlConnection::getInstance();
+        } catch (\Throwable $e) {
+            error_log("[DiveChat] MySQL enrichment failed: {$e->getMessage()}");
+            return [];
+        }
+
+        // Globalna konfiguracja: czy sklep pozwala zamawiac niedostepne produkty (PS_ORDER_OUT_OF_STOCK).
+        // Uzywana gdy produkt ma out_of_stock=2 (use default behavior — PrestaShop konwencja).
+        // Wartosc pobierana per request — moze sie zmieniac w PS admin bez restartu.
+        $globalAllowOos = (int) (
+            $mysql->fetchOne(
+                "SELECT value FROM pr_configuration WHERE name = 'PS_ORDER_OUT_OF_STOCK' LIMIT 1"
+            )['value'] ?? 0
+        );
+
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+
+        // Glowne dane produktow (cena bazowa netto, stan, visibility).
+        // CASE availability respektuje 3 stany PrestaShop out_of_stock (0=deny, 1=allow, 2=use default).
+        $rows = $mysql->fetchAll(
+            "SELECT
+                p.id_product,
+                ps.price AS price_netto,
+                COALESCE(t.rate, 23) AS tax_rate,
+                COALESCE(sa.total_qty, 0) AS quantity,
+                CASE
+                    WHEN COALESCE(sa.total_qty, 0) > 0 THEN 'in_stock'
+                    WHEN sa.allow_oos = 1 THEN 'available_to_order'
+                    WHEN sa.allow_oos = 0 THEN 'unavailable'
+                    WHEN (sa.allow_oos IS NULL OR sa.allow_oos = 2) AND ? = 1 THEN 'available_to_order'
+                    ELSE 'unavailable'
+                END AS availability,
+                ps.active,
+                ps.visibility
+            FROM pr_product p
+            JOIN pr_product_shop ps ON p.id_product = ps.id_product AND ps.id_shop = 1
+            LEFT JOIN (
+                SELECT id_product,
+                       MAX(quantity) as total_qty,
+                       MAX(out_of_stock) as allow_oos
+                FROM pr_stock_available
+                GROUP BY id_product
+            ) sa ON p.id_product = sa.id_product
+            LEFT JOIN pr_tax_rule tr ON p.id_tax_rules_group = tr.id_tax_rules_group
+                AND tr.id_country = 14
+            LEFT JOIN pr_tax t ON tr.id_tax = t.id_tax
+            WHERE p.id_product IN ({$placeholders})",
+            array_merge([$globalAllowOos], $productIds),
+        );
+
+        $specificPrices = $this->fetchSpecificPrices($mysql, $productIds);
+
+        $dataById = [];
+        foreach ($rows as $row) {
+            $productId = (int) $row['id_product'];
+            $priceNetto = (float) $row['price_netto'];
+            $taxRate = (float) $row['tax_rate'];
+            $availability = $row['availability'] ?? 'unavailable';
+
+            $finalNetto = $priceNetto;
+            $hasPromo = false;
+
+            if (isset($specificPrices[$productId])) {
+                $sp = $specificPrices[$productId];
+                $hasPromo = true;
+
+                $base = ($sp['sp_price'] > 0) ? $sp['sp_price'] : $priceNetto;
+
+                if ($sp['reduction'] > 0) {
+                    $finalNetto = match ($sp['reduction_type']) {
+                        'percentage' => $base * (1 - $sp['reduction']),
+                        'amount' => $base - $sp['reduction'],
+                        default => $base,
+                    };
+                } else {
+                    $finalNetto = $base;
+                }
+            }
+
+            $priceBrutto = round($finalNetto * (1 + $taxRate / 100), 2);
+            $baseBrutto = round($priceNetto * (1 + $taxRate / 100), 2);
+
+            $entry = [
+                'price' => $priceBrutto,
+                'in_stock' => $availability !== 'unavailable',
+                'availability' => $availability,
+                'quantity' => (int) $row['quantity'],
+                'active' => (bool) $row['active'],
+                'visible' => $row['visibility'] !== 'none',
+            ];
+
+            if ($hasPromo && $baseBrutto > $priceBrutto) {
+                $entry['price_before_discount'] = $baseBrutto;
+            }
+
+            $dataById[$productId] = $entry;
+        }
+
+        return $dataById;
+    }
+
+    /**
+     * Pobiera najlepsza aktywna specific_price per produkt.
+     * Priorytet PS: id_shop > 0 wygrywa z id_shop = 0, id_group > 0 wygrywa z id_group = 0.
+     *
+     * @param list<int> $productIds
+     * @return array<int, array{sp_price: float, reduction: float, reduction_type: string}>
+     */
+    private function fetchSpecificPrices(MysqlConnection $mysql, array $productIds): array
+    {
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+
+        $rows = $mysql->fetchAll(
+            "SELECT
+                sp.id_product,
+                sp.price AS sp_price,
+                sp.reduction,
+                sp.reduction_type,
+                sp.id_shop,
+                sp.id_group
+            FROM pr_specific_price sp
+            WHERE sp.id_product IN ({$placeholders})
+              AND sp.id_shop IN (0, 1)
+              AND sp.id_customer = 0
+              AND sp.id_group IN (0, 1)
+              AND sp.from_quantity <= 1
+              AND sp.id_product_attribute = 0
+              AND (sp.`from` = '0000-00-00 00:00:00' OR sp.`from` <= NOW())
+              AND (sp.`to` = '0000-00-00 00:00:00' OR sp.`to` >= NOW())
+            ORDER BY sp.id_shop DESC, sp.id_group DESC",
+            $productIds,
+        );
+
+        $bestByProduct = [];
+        foreach ($rows as $row) {
+            $productId = (int) $row['id_product'];
+            if (isset($bestByProduct[$productId])) {
+                continue;
+            }
+            $bestByProduct[$productId] = [
+                'sp_price' => (float) $row['sp_price'],
+                'reduction' => (float) $row['reduction'],
+                'reduction_type' => $row['reduction_type'],
+            ];
+        }
+
+        return $bestByProduct;
+    }
+}

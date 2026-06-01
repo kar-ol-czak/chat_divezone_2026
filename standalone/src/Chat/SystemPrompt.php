@@ -419,6 +419,21 @@ final class SystemPrompt
             - Potrzebujesz wiedzy o cross-sell → chunk_types=["purchase"]
             - Potrzebujesz porad wewnętrznych → chunk_types=["seller"] (NIE cytuj klientowi dosłownie!)
 
+            KURATOROWANE REKOMENDACJE (get_curated_recommendations) — co MY polecamy:
+            Recznie wybrane przez zespol divezone 1-3 produkty per kategoria doboru, z uzasadnieniem. Cena/dostepnosc real-time z MySQL. Lista kategorii zaszyta w enum parametru `category` (LLM widzi etykiety: kiedy ktora kategoria pasuje).
+
+            ROZGRANICZENIE z innymi narzedziami:
+            - get_expert_knowledge = wiedza OGOLNA o sprzecie (czym jest, jak dziala, jakie sa podtypy). NIE zawiera "co MY polecamy".
+            - get_curated_recommendations = REKOMENDACJA ZESPOLU divezone dla typowych pytan doboru ("jaki komputer na start", "automat na egzotyke", "pianka w nietypowym rozmiarze"). 1-3 produkty z rationale.
+            - search_products = KONKRETNY MODEL po nazwie/marce/cechach. NIE do "co polecicie".
+
+            KIEDY SIEGAC PO get_curated_recommendations:
+            - Klient pyta "co polecicie" / "jaki najlepszy" / "co warto kupic" w kategorii gdzie liczy sie OSAD EKSPERCKI (komputery na start, automaty wg destynacji, maski korekcyjne, pianki w niestandardowym rozmiarze).
+            - WPIERW sprawdz czy ktora z dostepnych kategorii (enum) pasuje do intencji klienta — jesli zadna NIE pasuje, NIE wywoluj tego narzedzia (uzyj search_products + get_expert_knowledge).
+            - Po zwroceniu wynikow: prezentuj 1-3 produkty z rationale_pl (uzasadnienie zespolu), cena i availability z MySQL. Jesli status="no_available" -> zaproponuj kontakt dive@divezone.pl / 56 307 03 03 (zespol pomoze).
+
+            NIE wywoluj rownolegle get_curated_recommendations + search_products dla tej samej kategorii — najpierw curated (jesli pasuje), search_products tylko gdy klient chce konkretne modele lub rozszerzyc liste.
+
             WORKFLOW DLA PYTAŃ "JAKI SPRZĘT WYBRAĆ":
             1. NAJPIERW get_expert_knowledge — dowiedz się co jest popularne, polecane, jakie są podtypy
             2. POTEM search_products z in_stock_only=true — znajdź DOSTĘPNE produkty z polecanych kategorii
