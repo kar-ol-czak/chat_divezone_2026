@@ -26,11 +26,17 @@ if (!defined('_PS_VERSION_')) {
 
 class DivezoneChat extends Module
 {
-    const KEY_BACKEND_URL   = 'DIVEZONE_CHAT_BACKEND_URL';
-    const KEY_SERVER_SECRET = 'DIVEZONE_CHAT_SERVER_SECRET';
-    const TAB_CLASS         = 'AdminDivezoneChat';
-    const TAB_PARENT        = 'AdminTools';
-    const DEFAULT_BACKEND   = 'https://chat.divezone.pl';
+    const KEY_BACKEND_URL    = 'DIVEZONE_CHAT_BACKEND_URL';
+    const KEY_SERVER_SECRET  = 'DIVEZONE_CHAT_SERVER_SECRET';
+    const TAB_CLASS          = 'AdminDivezoneChat';
+    // T-033 fix: w PS 1.7+ kontener menu Zaawansowane to AdminAdvancedParameters.
+    // AdminTools (z PS 1.4-1.5) jest fallbackiem na wypadek starszych instalek;
+    // jesli zaden nie istnieje, installTab zwraca false z error_log zamiast cichego
+    // id_parent=0 (poprzednio wiszacy AJAX instalatora przy probie zapisu tab z parent=0).
+    const TAB_PARENT_PRIMARY  = 'AdminAdvancedParameters';
+    const TAB_PARENT_FALLBACK = 'AdminTools';
+    const DEFAULT_BACKEND     = 'https://chat.divezone.pl';
+    const LOG_PREFIX          = '[divezone_chat]';
 
     public function __construct()
     {
@@ -51,32 +57,91 @@ class DivezoneChat extends Module
 
     public function install()
     {
-        return parent::install()
-            && Configuration::updateValue(self::KEY_BACKEND_URL, self::DEFAULT_BACKEND)
-            && Configuration::updateValue(self::KEY_SERVER_SECRET, '')
-            && $this->installTab();
+        error_log(self::LOG_PREFIX . ' install: start');
+
+        if (!parent::install()) {
+            error_log(self::LOG_PREFIX . ' install: parent::install() failed');
+            return false;
+        }
+        if (!Configuration::updateValue(self::KEY_BACKEND_URL, self::DEFAULT_BACKEND)) {
+            error_log(self::LOG_PREFIX . ' install: Configuration::updateValue BACKEND_URL failed');
+            return false;
+        }
+        if (!Configuration::updateValue(self::KEY_SERVER_SECRET, '')) {
+            error_log(self::LOG_PREFIX . ' install: Configuration::updateValue SERVER_SECRET failed');
+            return false;
+        }
+        if (!$this->installTab()) {
+            error_log(self::LOG_PREFIX . ' install: installTab() failed');
+            return false;
+        }
+
+        error_log(self::LOG_PREFIX . ' install: OK');
+        return true;
     }
 
     public function uninstall()
     {
-        return $this->uninstallTab()
-            && Configuration::deleteByName(self::KEY_BACKEND_URL)
-            && Configuration::deleteByName(self::KEY_SERVER_SECRET)
-            && parent::uninstall();
+        error_log(self::LOG_PREFIX . ' uninstall: start');
+
+        if (!$this->uninstallTab()) {
+            error_log(self::LOG_PREFIX . ' uninstall: uninstallTab() failed');
+            return false;
+        }
+        Configuration::deleteByName(self::KEY_BACKEND_URL);
+        Configuration::deleteByName(self::KEY_SERVER_SECRET);
+
+        if (!parent::uninstall()) {
+            error_log(self::LOG_PREFIX . ' uninstall: parent::uninstall() failed');
+            return false;
+        }
+
+        error_log(self::LOG_PREFIX . ' uninstall: OK');
+        return true;
     }
 
+    /**
+     * Idempotentne dodanie zakladki menu administracyjnego.
+     * - Jesli tab class_name juz istnieje (np. z poprzedniej proby): return true.
+     * - Rodzic z fallback chain (AdminAdvancedParameters primary, AdminTools legacy).
+     * - Gdy zaden parent kandydatu nie istnieje: error_log + return false (eksplicytna
+     *   awaria zamiast cichego id_parent=0 ktore wiesza AJAX instalatora w PS 1.7).
+     */
     private function installTab()
     {
-        $tab               = new Tab();
-        $tab->class_name   = self::TAB_CLASS;
-        $tab->id_parent    = (int)Tab::getIdFromClassName(self::TAB_PARENT);
-        $tab->module       = $this->name;
-        $tab->active       = 1;
-        $tab->name         = array();
+        $existingId = (int)Tab::getIdFromClassName(self::TAB_CLASS);
+        if ($existingId > 0) {
+            error_log(self::LOG_PREFIX . ' installTab: tab ' . self::TAB_CLASS . ' juz istnieje (id_tab=' . $existingId . ') — skip');
+            return true;
+        }
+
+        $parentId = (int)Tab::getIdFromClassName(self::TAB_PARENT_PRIMARY);
+        if ($parentId <= 0) {
+            error_log(self::LOG_PREFIX . ' installTab: brak parent ' . self::TAB_PARENT_PRIMARY . ', proba fallback ' . self::TAB_PARENT_FALLBACK);
+            $parentId = (int)Tab::getIdFromClassName(self::TAB_PARENT_FALLBACK);
+        }
+        if ($parentId <= 0) {
+            error_log(self::LOG_PREFIX . ' installTab: nie znalazlem zadnego rodzica menu (AdminAdvancedParameters ani AdminTools) — instalacja przerwana');
+            return false;
+        }
+
+        $tab             = new Tab();
+        $tab->class_name = self::TAB_CLASS;
+        $tab->id_parent  = $parentId;
+        $tab->module     = $this->name;
+        $tab->active     = 1;
+        $tab->name       = array();
         foreach (Language::getLanguages(true) as $lang) {
             $tab->name[$lang['id_lang']] = $this->l('DiveZone Chat');
         }
-        return (bool)$tab->add();
+
+        if (!$tab->add()) {
+            error_log(self::LOG_PREFIX . ' installTab: Tab::add() failed');
+            return false;
+        }
+
+        error_log(self::LOG_PREFIX . ' installTab: OK (id_parent=' . $parentId . ', id_tab=' . (int)$tab->id . ')');
+        return true;
     }
 
     private function uninstallTab()
