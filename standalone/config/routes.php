@@ -10,6 +10,8 @@ use DiveChat\Admin\CostAnalytics;
 use DiveChat\Auth\ServerHmacVerifier;
 use DiveChat\Config;
 use DiveChat\Chat\ChatService;
+use DiveChat\Controller\AdminRecommendationsController;
+use DiveChat\Shop\MysqlProductEnrichmentService;
 use DiveChat\Chat\ConversationStore;
 use DiveChat\Chat\SettingsStore;
 use DiveChat\Controller\AdminController;
@@ -102,4 +104,15 @@ return static function (
     $serverVerifier = new ServerHmacVerifier($serverSecret);
     $whoamiController = new AdminWhoamiController($serverVerifier, $db);
     $router->get('/api/admin/whoami', $whoamiController->handle(...));
+
+    // T-035 CZESC B: sekcja read-only kuratorowanych rekomendacji w panelu PS.
+    // Drugi endpoint kanalu serwerowego — pierwszy REALNY odczyt danych (po
+    // echo /api/admin/whoami z T-032). Decyzje 35a/36a/37a/38b/41a.
+    $recommendationsEnrichment = new MysqlProductEnrichmentService();
+    $recommendationsController = new AdminRecommendationsController(
+        $serverVerifier,
+        $db,
+        $recommendationsEnrichment,
+    );
+    $router->get('/api/admin/recommendations', $recommendationsController->handle(...));
 };
