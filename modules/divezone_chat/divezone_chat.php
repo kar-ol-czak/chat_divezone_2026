@@ -29,14 +29,15 @@ class Divezone_Chat extends Module
     const KEY_BACKEND_URL    = 'DIVEZONE_CHAT_BACKEND_URL';
     const KEY_SERVER_SECRET  = 'DIVEZONE_CHAT_SERVER_SECRET';
     const TAB_CLASS          = 'AdminDivezoneChat';
-    // T-034: zlecenie Karola — tab pod menu "Moduly" zamiast "Zaawansowane".
-    // PS 1.7+ kontener "Moduly" to AdminModulesSf (potwierdzone na prod sklepu:
-    // id_tab=44, active=1; siblings AdminModulesManage/AdminModulesCatalog).
-    // Fallback AdminAdvancedParameters zachowany z T-033 jako sensowny zapas
-    // gdyby kontener "Moduly" byl nieobecny (np. starsza/zmodyfikowana instalka).
-    // Wzorzec T-033: jesli zaden parent nie istnieje, installTab zwraca false +
-    // error_log[divezone_chat], nie cichy id_parent=0 (wiesil AJAX instalatora).
-    const TAB_PARENT_PRIMARY  = 'AdminModulesSf';
+    // T-034: zlecenie Karola — tab w sidebar Ulepsz, pomiedzy "Moduly" a "Wyglad".
+    // Wybor T-034 (AdminModulesSf, id=44) byl bledny — to kontener Module Manager UI,
+    // ktorego dzieci pojawiaja sie jako TABKI tabowe w widoku /improve/modules/manage
+    // (obok "Moduly/Powiadomienia/Aktualizacje"), NIE jako sidebar entry.
+    // Wzorzec dzialajacy (potwierdzony na prod, modul divezonegpt): id_parent=42
+    // (IMPROVE), klasa rodzica jako 'IMPROVE'. Daje sidebar entry: Ulepsz -> DiveZone Chat.
+    // Fallback AdminAdvancedParameters zachowany z T-033 jako sensowny zapas gdyby
+    // IMPROVE byl nieobecny (np. starsza/zmodyfikowana instalka PS).
+    const TAB_PARENT_PRIMARY  = 'IMPROVE';
     const TAB_PARENT_FALLBACK = 'AdminAdvancedParameters';
     const DEFAULT_BACKEND     = 'https://chat.divezone.pl';
     const LOG_PREFIX          = '[divezone_chat]';
