@@ -1901,7 +1901,7 @@ Po uruchomieniu czatu z prawdziwymi klientami przeprowadzic KALIBRACJE RUCHU: ze
 - **b) Najtanszy model (Haiku / GPT-5-mini) jako pierwsza linia:** szybka tania odpowiedz na proste, eskalacja do pelnego modelu (is_escalation juz istnieje) dla zlozonych. Elastyczniejszy niz a, nadal duzo tanszy niz pelny model.
 - **c) Hybryda:** deterministyczny router dla NAJCZESTSZYCH twardych przypadkow (status zamowienia, godziny, zwroty), tani model dla reszty prostych, pelny model dla zlozonych/doradczych.
 
-**Rekomendacja architekta (wstepna, do walidacji danymi):** c) hybryda. Deterministyka tam gdzie pytanie jest jednoznaczne i czeste (FAQ procesowe z ADR-134/v11 — zwroty, wysylka, godziny), tani model dla prostych wariantowych, pelny model dla doradztwa (dobor sprzetu, kuratorowane rekomendacje ADR-065). Ale DECYZJA WYMAGA DANYCH — bez realnego ruchu nie wiadomo, co sie faktycznie powtarza.
+**Rekomendacja architekta (wstepna, do walidacji danymi):** c) hybryda. Deterministyka tam gdzie pytanie jest jednoznaczne i czeste (FAQ procesowe z decyzji 134 (T-028)/v11 — zwroty, wysylka, godziny), tani model dla prostych wariantowych, pelny model dla doradztwa (dobor sprzetu, kuratorowane rekomendacje ADR-065). Ale DECYZJA WYMAGA DANYCH — bez realnego ruchu nie wiadomo, co sie faktycznie powtarza.
 
 **Warunek wejscia:** min. kilka tygodni ruchu produkcyjnego + analiza klastrow pytan. Przedwczesna optymalizacja bez danych = ryzyko zbudowania routera dla pytan, ktore klienci nie zadaja.
 
@@ -1983,3 +1983,70 @@ Zaczynamy od podstawowych kategorii (np. komputery rekreacyjne, komputery techni
 Skoro panel = w PrestaShop + czesc wiekszego panelu admina z rolami, to jest to osobny duzy strumien (modul PrestaShop, nie aplikacja czatu PHP 8.4). Backend czatu (tabela + narzedzie + bot) JUZ gotowy z T-029 i moze dzialac niezaleznie — pracownicy moga seedowac nawet recznym INSERT do czasu panelu. Panel PrestaShop to warstwa wygody/delegowalnosci na backendzie ktory juz istnieje.
 
 **Status:** zapisane. Wymaga: (1) zaplanowanie calego panelu admin PrestaShop z rolami (osobny ADR), (2) skrypt sprzedazy jako zrodlo podgladu top-sprzedazy w panelu, (3) pole uzasadnienia per produkt (jest w schemacie jako rationale_pl — panel wystawia je do edycji).
+
+---
+
+## ADR-067: Kregoslup panelu administracyjnego w PrestaShop (stanowisko pracy obslugi)
+
+**Status:** Zaakceptowany kierunek + fundament (decyzje 152c, 156c, 157a, 159a/163a, 164a, 165a, 166b, 167b). Implementacja warstwami.
+**Data:** 2026-06-01
+
+### Wizja docelowa (decyzja 166b): PrestaShop = jedno stanowisko pracy obslugi
+Pracownicy obslugi pracuja w jednym miejscu (panel PrestaShop), gdzie zbiega sie WSZYSTKO zwiazane z czatem:
+- CRUD operacyjny: maczowanie kuratorowanych rekomendacji (ADR-065), przeglad editorial picks (ADR-054), sugerowane produkty.
+- Powiadomienia: nowe czaty, produkty do przejrzenia.
+- Live chat operatora: gdy klient chce rozmawiac z czlowiekiem, rozmowa uruchamia sie po stronie panelu (handoff bot -> czlowiek).
+Powod: pracownik nie moze skakac miedzy systemami gdy klient czeka. To NIE jest panel ustawien — to stanowisko pracy.
+
+### Stan faktyczny (rozpoznanie 2026-06-01)
+- Backend czatu ma DOJRZALY wzorzec admina: AdminAuthMiddleware (HTTP Basic Auth p-ko .htpasswd), wzorzec REST /api/admin/* (przyklad: editorial-picks GET/POST/PUT/DELETE), AdminEditorialPicksController + EditorialPicksService (ADR-054). UI w standalone/public/admin (index.html + admin-*.js: tables, charts, conversation, editorial).
+- Obecny /admin (chat.divezone.pl/admin): koszty, modele, historia konwersacji, editorial picks. Auth jednopoziomowy (jest haslo / nie ma), BEZ rol.
+- Modul PrestaShop `divezone_chat`: PUSTY SZKIELET (same katalogi classes/controllers/views, zero kodu). Do zbudowania od zera.
+- Eskalacja "do czlowieka" / live chat operatora: NIE ISTNIEJE. (Uwaga: "escalation" w kodzie = eskalacja MODELU AI tani->drogi, NIE handoff do czlowieka.)
+
+### Kregoslup — 4 warstwy (fundament wspolny dla wszystkich sekcji)
+1. **Tozsamosc:** pracownik zalogowany natywnie w PrestaShop (pr_employee). Modul zna kto to. Zero drugiego logowania.
+2. **Uprawnienia czatu (decyzja 164a — 2 role na start):** cienka warstwa wlasnych rol mapowana na pracownika PrestaShop:
+   - `operator` — maczuje rekomendacje, wpisuje uzasadnienia, przeglada picks/sugerowane, (docelowo) obsluguje live chat.
+   - `admin` — to co operator + koszty, modele, ustawienia, historia.
+   Hybryda (156c): logowanie z PrestaShop, uprawnienia specyficzne dla czatu. Macierz granularna = przyszlosc gdy bedzie realna potrzeba, NIE teraz.
+3. **Kanal serwerowy (decyzja 157a):** modul PrestaShop (zaufany serwer) wola API backendu osobnym sekretem SERWEROWYM (NIE kliencki HMAC z widgetu, NIE bezposredni dostep do PG). Backend weryfikuje: zadanie od modulu + ktory pracownik + jakie uprawnienie. Kanal musi uniesc DWA typy komunikacji: request-response (CRUD) ORAZ real-time (live chat, powiadomienia — przyszla warstwa).
+4. **Wlasciciel danych:** backend czatu pozostaje JEDYNYM piszacym do PostgreSQL. Modul PrestaShop = klient API, nigdy nie pisze do PG bezposrednio. Jedno zrodlo prawdy.
+
+### Wzorzec renderowania (decyzja 163a): UI w PrestaShop, logika i dane w backendzie
+Modul `divezone_chat` rysuje UI w panelu sklepu (formularze maczowania, listy). Kazda operacja = wywolanie API backendu kanalem serwerowym. Backend = wlasciciel logiki i PG. Pracownik widzi natywny panel w sklepie, nie wie ze dane ida do osobnego systemu.
+Odrzucone: b) logika w PrestaShop PHP 7.2 (za daleko od danych, starszy runtime); c) iframe/osadzenie backendowego /admin (kruche cross-origin, obcy panel).
+
+### Editorial Picks vs Curated Recommendations (decyzja 165a): wspolny kregoslup, osobne byty
+TWARDA LINIA wg momentu rozmowy z klientem:
+- **Editorial Picks** (ADR-054): podbija produkt w wynikach search_products (boost rankingu). Dziala gdy klient JUZ WIE czego szuka ("szukam automatu Apeks"). Dla bota niewidzialny — to modyfikator rankingu wewnatrz search_products, nie osobne narzedzie.
+- **Curated Recommendations** (ADR-065): poleca produkty gdy klient PYTA O RADE ("co polecacie / jaki na start"). Osobne narzedzie get_curated_recommendations.
+Roznica = gdzie produkt pojawia sie w rozmowie. Oba dziedzicza ten sam kregoslup (auth, role, wzorzec /api/admin/*, konsumpcja przez modul), ale to osobne tabele/kontrolery. Potwierdza slusznosc osobnego CuratedRecommendations (T-029).
+
+### Migracja paneli (decyzja 166b): wszystko docelowo w PrestaShop
+Editorial picks, koszty, modele, historia — dzis w backendowym /admin — docelowo migruja do panelu PrestaShop (pracownicy potrzebuja wszystkiego w jednym miejscu). Backendowy /admin moze zostac jako techniczne narzedzie awaryjne, ale stanowisko pracy = PrestaShop. Migracja ETAPAMI, nie naraz.
+
+### Strategia implementacji (decyzja 167b): kregoslup rozszerzalny, budowa warstwami
+166b to PROGRAM z 3 strumieni o roznej dojrzalosci/trudnosci:
+| Strumien | Stan | Trudnosc |
+| CRUD operacyjny (rekomendacje, picks, sugerowane) | backend API gotowy/czesciowo | srednia |
+| Powiadomienia (nowe czaty, produkty do przejrzenia) | nie istnieje | srednia-wysoka (push/polling) |
+| Live chat operatora (handoff bot->czlowiek, real-time 2-kier) | NIE ISTNIEJE | WYSOKA (osobny duzy projekt) |
+
+Kregoslup projektujemy tak by uniosl wszystkie trzy (swiadoma rezerwa na real-time w warstwie 3 kanalu), ale IMPLEMENTUJEMY warstwami:
+1. **Faza 1 (najblizsza, backend gotowy):** fundament (4 warstwy) + sekcja kuratorowanych rekomendacji w PrestaShop. Pierwsza walidacja kregoslupa.
+2. **Faza 2:** powiadomienia + migracja editorial picks/sugerowanych do PrestaShop.
+3. **Faza 3 (osobny duzy ADR):** live chat operatora — handoff, real-time dwukierunkowy, kolejka czatow, dostepnosc operatorow. Decyzje real-time (SSE 2-kier / WebSocket) podejmiemy PRZY tej fazie, nie teraz (unikamy przeinzynierowania pod ruch ktorego jeszcze nie ma).
+
+### Konsekwencje
+- Faza 1 nie wymaga rozstrzygania najtrudniejszych decyzji real-time — dowozimy rekomendacje (backend gotowy z T-029), reszta czeka.
+- Kregoslup (tozsamosc/role/kanal/wlasciciel) jest wspolny — kazda kolejna sekcja wpina sie w gotowy wzorzec.
+- AdminAuthMiddleware (dzis Basic Auth binarny) zostanie rozszerzony o warstwe rol; kanal serwerowy to nowy tryb auth obok istniejacego.
+
+### Otwarte do rozstrzygniecia w fazie implementacji (NIE teraz)
+- Dokladny mechanizm kanalu serwerowego (sekret wspoldzielony? mTLS? podpisany token z employee_id?).
+- Jak modul PrestaShop renderuje UI (natywny kontroler admina PS + AdminController tab? Helper/template PS?).
+- Mapowanie rol czatu na pr_profile PrestaShop (dziedziczenie z profilu pracownika czy osobna tabela mapujaca?).
+- Real-time (faza 3): SSE dwukierunkowe vs WebSocket vs polling dla live chat.
+
+**Powiazane:** ADR-054 (editorial picks), ADR-065 (kuratorowane rekomendacje + uzup. 1-3), ADR-052 (analityka/koszty w obecnym /admin), T-029 (backend rekomendacji gotowy), modul `divezone_chat` (pusty szkielet do zbudowania). Nastepny krok: ADR fazy 1 (szczegoly implementacji panelu rekomendacji) gdy ruszymy implementacje — w NOWEJ konwersacji (decyzja 154a: planowanie tu, implementacja osobno).
