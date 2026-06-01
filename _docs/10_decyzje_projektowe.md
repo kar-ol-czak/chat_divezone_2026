@@ -1906,3 +1906,80 @@ Po uruchomieniu czatu z prawdziwymi klientami przeprowadzic KALIBRACJE RUCHU: ze
 **Warunek wejscia:** min. kilka tygodni ruchu produkcyjnego + analiza klastrow pytan. Przedwczesna optymalizacja bez danych = ryzyko zbudowania routera dla pytan, ktore klienci nie zadaja.
 
 **Powiazane:** `divechat_message_usage` (zrodlo danych o ruchu + kosztach), is_escalation (mechanizm eskalacji modelu juz istnieje), ADR-065 (kuratorowane rekomendacje = przypadki dla pelnego modelu), FAQ procesowe v11 (kandydaci na deterministyczna sciezke).
+
+---
+
+## ADR-065 UZUPELNIENIE (po researchu seedu T-029, decyzje 148a/149c + uwagi Karola)
+
+**Kontekst:** Pierwszy research seedu (CC) dobral produkty PARAMETRAMI (kolorowy wyswietlacz, marka wg destynacji). Karol wskazal blad: rekomendacja musi opierac sie o DANE SPRZEDAZOWE (co sie u nas faktycznie sprzedaje), nie tylko parametry. Plus dwie korekty kategorii.
+
+### Dane sprzedazowe jako fundament (decyzja 148a)
+- Metryka: LICZBA ZAMOWIEN produktu z ostatnich 12 miesiecy (popularnosc = ilu klientow wybralo, nie przychod, nie sztuki). 12 mies wygladza sezonowosc.
+- Zrodlo: agregacja z MySQL PrestaShop (pr_orders + pr_order_detail), top N per kategoria.
+
+### KLUCZOWE: dane sprzedazy INFORMUJA osad, NIE zastepuja go
+Statystyka ma skaze — promuje produkty dlugo w sprzedazy (zdazyly nabic liczby), slepa na swieze hity. Przyklad: Suunto Nautic (nowy, kolorowy, swietna cena, bedzie bestsellerem) jeszcze nie ma statystyk. Gdyby bot opieral sie tylko na sprzedazy, polecalby przeszlosc. DLATEGO warstwa MUSI byc kuratorowana recznie: dane sprzedazy to JEDEN z inputow do decyzji zespolu, nie wyrocznia. To wzmacnia model 3-warstwowy (regula doboru / kuratorowana rekomendacja / zywy stan) — srodkowa warstwa jest z definicji ludzka.
+Zjawisko silniejsze przy elektronice (komputery — szybki cykl nowosci) niz przy sprzecie statycznym (maski, pianki, automaty — dlugi cykl).
+
+### Kategorie wokol PYTAN KLIENTA, nie parametrow (decyzja 149c)
+Pierwotne kategorie ("automat global/europe") byly od strony parametrow. Przebudowa: kategorie maja odzwierciedlac jak KLIENT pyta. Plus: ~99% klientow to destynacja Polska/Europa — kategoria "global" (egzotyka) to nisza, NIE zaczynac od niej w MVP. Kategorie oparte o realne pytania + wypelnione bestsellerami (z korekta ekspercka o swieze hity).
+
+### Doprecyzowanie mechanizmow staleness (pelna wersja, wymagania Karola)
+- **Miekki (przypomnienie maczowania):** cyklicznie per kategoria (konfigurowalne: 1/2/3 mies), komunikat do obslugi sklepu "minelo X, zrob ponowne maczowanie kategorii Y". Interwal per kategoria w ustawieniach.
+- **Twardy (alert dostepnosci):** gdy skuratorowany produkt staje sie NIEMOZLIWY DO ZAMOWIENIA (nie tylko nieaktywny — rowniez out_of_stock bez moliwosci zamowienia), komunikat do obslugi "wymien produkt w kategorii Y". Bot w miedzyczasie pomija go (juz w MVP execute).
+
+### Zakres MVP vs pelna wersja (rewizja)
+- **MVP (teraz):** skrypt analityczny sprzedazy (top N per kategoria) → re-seed kategorii (149c) wybrany RECZNIE przez Karola na bazie danych sprzedazy + swieze hity → narzedzie + bot. Twardy staleness juz dziala w execute (pomija niedostepne).
+- **Pelna wersja (pozniej):** panel admina z maczowaniem (autocomplete + podglad top sprzedazy obok), cykliczne przypomnienia per kategoria, alerty dostepnosci do obslugi. Skrypt sprzedazy staje sie cyklicznym zrodlem dla panelu.
+
+### Zrodlo danych sprzedazowych: SQL bezposredni, NIE API PrestaShop
+Decyzja: agregacja przez SQL na serwerze (CC, uzywa MysqlConnection). API PrestaShop webservice jest do CRUD produktow, NIE do analityki sprzedazy — liczenie top N wymagaloby pobrania wszystkich order_detail i agregacji po stronie klienta (wolne, kruche). SQL GROUP BY = jedno zapytanie. (Do potwierdzenia decyzja 150.)
+
+**Powiazane:** skrypt analityczny sprzedazy (nowy, fundament re-seedu), T-029 (kod gotowy, seed wstrzymany do czasu danych sprzedazowych).
+
+---
+
+## ADR-065 UZUPELNIENIE 2 (decyzja 151b pelna wersja + koncept "produkty sprawdzone")
+
+### Decyzja 151b: budujemy PELNA wersje, nie MVP
+Powod (logika Karola): czas wlasciciela to najdrozszy zasob. MVP wymagajacy recznego seedu/pielegnacji przez Karola przerzuca prace na najdrozsza osobe. Pelna wersja (panel admina + przypomnienia + alerty) sprawia, ze obsluge przejmuja PRACOWNICY, a Karol robi to, co tylko on moze (dobry czat). To optymalizacja delegowalnosci, nie zakresu. Korekta wczesniejszej decyzji 129 (MVP) — odrzucona na rzecz pelnej wersji.
+Zakres pelnej wersji: tabela (jest) + narzedzie (jest) + PANEL ADMINA (autocomplete wyboru produktow per kategoria, podglad top sprzedazy obok) + przypomnienia per kategoria (konfigurowalny interwal, komunikat do obslugi) + alerty dostepnosci (produkt niemozliwy do zamowienia → komunikat "wymien").
+
+### NOWY koncept do zaadresowania (NIE teraz, ale zapisane): kategoria "PRODUKTY SPRAWDZONE"
+Obserwacja Karola: w nurkowaniu istnieja produkty o BARDZO dlugim cyklu zycia — konstrukcje tak dobre, ze produkowane i sprzedawane 10-40 lat, ciagle popularne. Przyklady:
+- Suunto Zoop / Zoop Novo (komputer)
+- Apeks ATX40 / DS4 (automat, ~20 lat)
+- Mares Quattro / Tre (pletwy, ~30 lat, ta sama konstrukcja, rozne dopiski w nazwie)
+- Pletwy typu jet/jetfin (rozne firmy, kilkanascie-kilkadziesiat lat)
+- Maska Look (dawniej Technisub, po przejeciu Aqualung, ~40 lat produkcji)
+Tych przykladow bedzie wiecej.
+
+**Dlaczego wazne:** wylania sie z tego NOWY wymiar rekomendacji — "stopien sprawdzenia" produktu. Czat moglby roznicowac jezyk rekomendacji:
+- Produkt dlugo w ofercie + wysoka sprzedaz historyczna → "sprzedalismy ich setki, znany i sprawdzony model" (mocny social proof).
+- Produkt NOWY (np. Suunto Nautic) → "nowoczesny, zaawansowany komputer; Suunto to bardzo sprawdzony producent" (proof na producencie, NIE na modelu — bo brak danych sprzedazowych modelu).
+
+**Konsekwencja architektoniczna (do przyszlego przemyslenia):** kuratorowana rekomendacja moze miec atrybut/flage typu `proof_type` (np. proven_model = sprzedaz historyczna pozwala na "sprzedalismy setki" / new_model = social proof tylko na marce / niche). Bot dobiera FORMULE rekomendacji wg tego atrybutu — nie obiecuje "sprawdzony setki razy" przy nowosci (to bylaby nieprawda), ale tez nie pomija nowosci (bo zespol wie, ze jest dobra). To laczy dane sprzedazowe (proof modelu) z osadem zespolu (proof marki/jakosci) — spojne z filozofia "dane informuja, nie zastepuja".
+
+**Status:** koncept zapisany, do zaadresowania PO uruchomieniu podstawowej wersji rekomendacji. Wymaga: pola proof_type w tabeli + reguly w SystemPrompt jak rozniczkowac jezyk. Nie blokuje biezacych prac.
+
+---
+
+## ADR-065 UZUPELNIENIE 3 (decyzja 152c panel w PrestaShop + pole uzasadnienia per produkt)
+
+### Decyzja 152c: panel w PrestaShop, czas planowac CALY panel administracyjny z rolami
+Panel kuratorowanych rekomendacji = modul/sekcja w PrestaShop (tam gdzie pracownicy juz pracuja na co dzien — produkty, zamowienia; naturalny dostep do autocomplete produktow PrestaShop). Szerzej: Karol decyduje, ze czas zaplanowac CALY panel administracyjny czatu w sklepie, z ZAKRESAMI UPRAWNIEN I ROLAMI (nie tylko rekomendacje — docelowo tez analityka ADR-052, logi, koszty, ustawienia). To osobny duzy strumien architektoniczny do zaplanowania (przyszly ADR panelu admin + role).
+
+### Pole uzasadnienia per produkt (rozszerza rationale_pl — KLUCZOWE dla jakosci)
+Pomysl Karola: przy KAZDYM maczowanym produkcie pracownik wpisuje krotkie (1-2 zdania) uzasadnienie "dlaczego MY polecamy wlasnie ten produkt". Powod: bot NIE MA SKAD wiedziec, czemu zespol poleca dany model — ta wiedza zyje w glowach pracownikow. Pole tekstowe przenosi ja wprost do odpowiedzi bota.
+- To konkretyzuje istniejace pole rationale_pl w tabeli: wypelniane RECZNIE przez pracownika przy maczowaniu, NIE generowane przez bota z parametrow.
+- Wartosc: rekomendacja zyskuje autentyczne uzasadnienie sprzedawcy ("sprzedalismy setki, serwis 15 min, klienci wracaja") zamiast marketingowego frazesu z parametrow. Klient czuje roznice.
+- Koszt: praca reczna, ale rzadka (zmienia sie ~raz na kwartal) — ROI wysoki (duzo lepsze odpowiedzi).
+- Laczy sie z koncept "proof_type" (uzup. 2): pracownik moze w uzasadnieniu zawrzec typ dowodu (sprawdzony setki razy vs nowosc od dobrego producenta).
+
+### Kategorie: start od podstawowych, potem rozbudowa
+Zaczynamy od podstawowych kategorii (np. komputery rekreacyjne, komputery techniczne), potem rozbudowa na kolejne. Po 3 produkty per kategoria (zgodnie z priority 1-3 w tabeli).
+
+### Konsekwencja dla kolejnosci prac
+Skoro panel = w PrestaShop + czesc wiekszego panelu admina z rolami, to jest to osobny duzy strumien (modul PrestaShop, nie aplikacja czatu PHP 8.4). Backend czatu (tabela + narzedzie + bot) JUZ gotowy z T-029 i moze dzialac niezaleznie — pracownicy moga seedowac nawet recznym INSERT do czasu panelu. Panel PrestaShop to warstwa wygody/delegowalnosci na backendzie ktory juz istnieje.
+
+**Status:** zapisane. Wymaga: (1) zaplanowanie calego panelu admin PrestaShop z rolami (osobny ADR), (2) skrypt sprzedazy jako zrodlo podgladu top-sprzedazy w panelu, (3) pole uzasadnienia per produkt (jest w schemacie jako rationale_pl — panel wystawia je do edycji).
