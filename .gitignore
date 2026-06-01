@@ -123,3 +123,6 @@ _redteam/reports/*_summaries.json
 _redteam/golden_REVIEW_filled*.md
 # Material zrodlowy: realne pytania/odpowiedzi ze sklepu (robocze, wewnetrzne)
 _redteam/pytania_ze_sklepu_*.txt
+
+# T-030: raporty sprzedazy (regenerowalne, moga sie rozrastac) — skrypt commitowalny, output nie
+/reports/
