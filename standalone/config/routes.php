@@ -21,12 +21,14 @@ use DiveChat\Controller\AdminWhoamiController;
 use DiveChat\Controller\ChatController;
 use DiveChat\Controller\ConversationsController;
 use DiveChat\Controller\HealthController;
+use DiveChat\Controller\OrderStatusController;
 use DiveChat\Controller\SettingsController;
 use DiveChat\Controller\TestTokenController;
 use DiveChat\Database\PostgresConnection;
 use DiveChat\Editorial\EditorialPicksService;
 use DiveChat\Http\AdminAuthMiddleware;
 use DiveChat\Router;
+use DiveChat\Tools\OrderStatus;
 
 /**
  * Definicje endpointów API.
@@ -48,6 +50,10 @@ return static function (
     $chatController = new ChatController($chatService);
     $router->post('/api/chat', $chatController->handle(...));
     $router->post('/api/chat/stream', $chatController->stream(...));
+
+    // Order status (modal "Status zamówienia", CHAT-T-042 / ADR-063 — bez LLM, lookup MySQL).
+    $orderStatusController = new OrderStatusController(new OrderStatus());
+    $router->post('/api/order/status', $orderStatusController->handle(...));
 
     // Admin: Conversations (po session_id - legacy widget testowy)
     $convController = new ConversationsController(new ConversationStore(), $usageLogger);
