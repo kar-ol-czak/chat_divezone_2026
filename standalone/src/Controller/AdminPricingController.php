@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace DiveChat\Controller;
 
 use DiveChat\AI\PricingService;
+use DiveChat\Auth\ServerHmacVerifier;
+use DiveChat\Database\PostgresConnection;
 use DiveChat\Http\Request;
 use DiveChat\Http\Response;
 
@@ -13,15 +15,23 @@ use DiveChat\Http\Response;
  *
  * GET /api/admin/pricing — lista wszystkich modeli (włącznie z is_active=false).
  * POST /api/admin/pricing — update jednego modelu.
+ *
+ * Auth (CHAT-T-044, ADR-068): kanał serwerowy panelu PS (ServerHmacVerifier),
+ * wymagana rola 'admin' (zmiana cennika wpływa na rozliczanie kosztów AI —
+ * stricter niż recommendations).
  */
 final class AdminPricingController
 {
     public function __construct(
         private readonly PricingService $pricingService,
+        private readonly ServerHmacVerifier $serverVerifier,
+        private readonly PostgresConnection $pg,
     ) {}
 
     public function list(Request $request): void
     {
+        $this->requireAdmin();
+
         $items = [];
         foreach ($this->pricingService->getAllActive() as $price) {
             $items[] = [
@@ -45,6 +55,8 @@ final class AdminPricingController
 
     public function update(Request $request): void
     {
+        $this->requireAdmin();
+
         $body = $request->getJsonBody();
         $modelId = trim((string) ($body['model_id'] ?? ''));
 
@@ -100,5 +112,45 @@ final class AdminPricingController
             'model_id' => $modelId,
             'updated' => array_keys($fields),
         ]);
+    }
+
+    /**
+     * Weryfikacja kanału serwerowego + wymagana rola 'admin' (CHAT-T-044).
+     * Identyczny wzorzec jak SettingsController::requireAdmin — duplikacja
+     * świadoma, zgodna ze stylem AdminWhoamiController/AdminRecommendationsController.
+     * Refaktor do middleware/traita: osobny task gdy ≥3 kontrolery powtórzą blok.
+     */
+    private function requireAdmin(): void
+    {
+        $token = (string) ($_SERVER['HTTP_X_DIVECHAT_SERVER_TOKEN'] ?? '');
+        $employeeRaw = $_SERVER['HTTP_X_DIVECHAT_SERVER_EMPLOYEE'] ?? '';
+        $timeRaw = $_SERVER['HTTP_X_DIVECHAT_SERVER_TIME'] ?? '';
+
+        if ($token === '' || $employeeRaw === '' || $timeRaw === '') {
+            Response::json(['error' => 'Unauthorized'], 401);
+        }
+
+        $employeeId = filter_var($employeeRaw, FILTER_VALIDATE_INT);
+        $timestamp = filter_var($timeRaw, FILTER_VALIDATE_INT);
+        if ($employeeId === false || $timestamp === false || $employeeId <= 0) {
+            Response::json(['error' => 'Unauthorized'], 401);
+        }
+
+        if (!$this->serverVerifier->verify($token, $employeeId, $timestamp)) {
+            Response::json(['error' => 'Unauthorized'], 401);
+        }
+
+        $row = $this->pg->fetchOne(
+            'SELECT role FROM divechat_admin_roles WHERE employee_id = ?',
+            [$employeeId],
+        );
+
+        if ($row === null) {
+            Response::json(['error' => 'Forbidden', 'reason' => 'no_role'], 403);
+        }
+
+        if ((string) $row['role'] !== 'admin') {
+            Response::json(['error' => 'Forbidden', 'reason' => 'admin_only'], 403);
+        }
     }
 }

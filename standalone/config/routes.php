@@ -61,24 +61,32 @@ return static function (
     $router->get('/api/conversations/{session_id}', $convController->detail(...));
     $router->post('/api/conversations/{session_id}/status', $convController->updateStatus(...));
 
-    // Admin: Settings
+    // CHAT-T-044: kanal serwerowy panelu PS (ADR-068, sekret DIVECHAT_SERVER_SECRET).
+    // Tworzony tu zeby Settings + Pricing mogly go uzyc; whoami+recommendations
+    // odbieraja tego samego ponizej.
+    $db = PostgresConnection::getInstance();
+    $serverSecret = Config::get('DIVECHAT_SERVER_SECRET', '');
+    $serverVerifier = new ServerHmacVerifier($serverSecret);
+
+    // Admin: Settings (CHAT-T-044 — kanal serwerowy, rola admin-only)
     $settingsController = new SettingsController(
         new SettingsStore(),
         $pricingService,
         $exchangeRateService,
+        $serverVerifier,
+        $db,
     );
     $router->get('/api/settings', $settingsController->get(...));
     $router->post('/api/settings', $settingsController->post(...));
 
-    // Admin: Pricing
-    $pricingController = new AdminPricingController($pricingService);
+    // Admin: Pricing (CHAT-T-044 — kanal serwerowy, rola admin-only)
+    $pricingController = new AdminPricingController($pricingService, $serverVerifier, $db);
     $router->get('/api/admin/pricing', $pricingController->list(...));
     $router->post('/api/admin/pricing', $pricingController->update(...));
 
     // Admin: Dashboard (TASK-055) – chronione przez AdminAuthMiddleware (basic auth + .htpasswd)
     $htpasswdPath = dirname(__DIR__) . '/admin/.htpasswd';
     $adminAuth = new AdminAuthMiddleware($htpasswdPath);
-    $db = PostgresConnection::getInstance();
     $costAnalytics = new CostAnalytics($db, $pricingService, $exchangeRateService);
     $conversationViewer = new ConversationViewer($db, $exchangeRateService);
     $adminController = new AdminController($adminAuth, $costAnalytics, $conversationViewer);
@@ -106,8 +114,7 @@ return static function (
     // Echo endpoint: weryfikacja podpisu modulu PS (DIVECHAT_SERVER_SECRET) +
     // lookup roli w divechat_admin_roles. NIE chroniony przez AdminAuthMiddleware
     // (basic auth) — wlasny kanal serwerowy z innym sekretem niz kliencki HMAC.
-    $serverSecret = Config::get('DIVECHAT_SERVER_SECRET', '');
-    $serverVerifier = new ServerHmacVerifier($serverSecret);
+    // $serverVerifier juz utworzony wyzej (CHAT-T-044 — wspoldzielony z Settings/Pricing).
     $whoamiController = new AdminWhoamiController($serverVerifier, $db);
     $router->get('/api/admin/whoami', $whoamiController->handle(...));
 
