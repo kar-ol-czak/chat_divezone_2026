@@ -120,6 +120,12 @@ final class ChatService
             }
         }
 
+        // CHAT-T-041: max_tokens z divechat_settings (override fallbacka z .env).
+        // Wcześniej DB-wa wartość była orphaned; teraz providery preferują settings.
+        if (!empty($settings['max_tokens'])) {
+            $aiOptions['max_tokens'] = (int) $settings['max_tokens'];
+        }
+
         for ($i = 0; $i < self::MAX_TOOL_ITERATIONS; $i++) {
             // Status przed wywołaniem AI
             if ($i > 0) {
@@ -205,6 +211,12 @@ final class ChatService
                 $result = $this->executeTool($toolCall->name, $toolCall->arguments);
                 $toolElapsed = (microtime(true) - $toolStart) * 1000;
                 $timings['tool_ms'] += $toolElapsed;
+
+                // CHAT-T-041: wyciągnij embedding_ms z search_debug (jeśli tool je raportuje).
+                // Nie odejmujemy od tool_ms — embedding jest podzbiorem (informacyjny rozkład).
+                if (!empty($result['search_debug']['embedding_ms'])) {
+                    $timings['embedding_ms'] += (float) $result['search_debug']['embedding_ms'];
+                }
 
                 // Zbieraj produkty z wyników search_products
                 if ($toolCall->name === 'search_products' && !empty($result['products'])) {
@@ -364,6 +376,7 @@ final class ChatService
                 ?? (is_string($dbSettings['escalation_effort'] ?? null)
                     ? $dbSettings['escalation_effort']
                     : 'medium'),
+            'max_tokens' => isset($dbSettings['max_tokens']) ? (int) $dbSettings['max_tokens'] : null,
         ];
     }
 

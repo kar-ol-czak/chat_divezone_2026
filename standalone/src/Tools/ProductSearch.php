@@ -120,8 +120,10 @@ final class ProductSearch implements ToolInterface
         // Wspólne filtry SQL
         $filters = $this->buildFilters($normalized);
 
-        // Embedding
+        // Embedding (CHAT-T-041: zmierz czas — diagnostyka RAG w search_debug.embedding_ms).
+        $embeddingStart = microtime(true);
         $embedding = $this->embeddingService->getEmbedding($query);
+        $embeddingMs = (microtime(true) - $embeddingStart) * 1000;
         $vectorStr = '[' . implode(',', $embedding) . ']';
 
         // Ekspansja synonimów dla FTS
@@ -195,6 +197,9 @@ final class ProductSearch implements ToolInterface
         foreach ($usedFilters['meta'] ?? [] as $key => $value) {
             $merged['search_debug'][$key] = $value;
         }
+
+        // CHAT-T-041: rozkład czasu RAG (ChatService wycina embedding_ms z tool_ms do osobnego licznika).
+        $merged['search_debug']['embedding_ms'] = round($embeddingMs, 1);
 
         if (empty($merged['products'])) {
             return [

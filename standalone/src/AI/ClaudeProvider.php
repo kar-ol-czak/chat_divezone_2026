@@ -62,9 +62,16 @@ final class ClaudeProvider implements AIProviderInterface
         $model = $options['model_override'] ?? $this->model;
         $aiModel = AIModel::tryFrom($model);
 
+        // CHAT-T-041: max_tokens preferuje override z divechat_settings (przez $options),
+        // fallback na konstruktorową wartość z .env. Dla modeli z thinking finalne
+        // max_tokens jest jeszcze podbijane poniżej, by zmieścić budget_tokens.
+        $effectiveMax = isset($options['max_tokens']) && (int) $options['max_tokens'] > 0
+            ? (int) $options['max_tokens']
+            : $this->maxTokens;
+
         $body = [
             'model' => $model,
-            'max_tokens' => $this->maxTokens,
+            'max_tokens' => $effectiveMax,
             'messages' => $claudeMessages,
         ];
 
@@ -89,7 +96,7 @@ final class ClaudeProvider implements AIProviderInterface
                 'budget_tokens' => $budgetTokens,
             ];
             // Extended thinking wymaga max_tokens > budget_tokens.
-            $body['max_tokens'] = max($this->maxTokens, $budgetTokens + 4096);
+            $body['max_tokens'] = max($effectiveMax, $budgetTokens + 4096);
             // Z thinking nie wysyłamy temperature.
         } elseif ($aiModel !== null && $aiModel->supportsTemperature() && isset($options['temperature'])) {
             $body['temperature'] = (float) $options['temperature'];

@@ -73,10 +73,16 @@ final class OpenAIProvider implements AIProviderInterface
         $model = $options['model_override'] ?? $this->model;
         $aiModel = AIModel::tryFrom($model);
 
+        // CHAT-T-041: max_tokens preferuje override z divechat_settings (przez $options),
+        // fallback na konstruktorową wartość z .env (AI_MAX_TOKENS / 4096).
+        $maxCompletion = isset($options['max_tokens']) && (int) $options['max_tokens'] > 0
+            ? (int) $options['max_tokens']
+            : $this->maxTokens;
+
         $body = [
             'model' => $model,
             'messages' => $openaiMessages,
-            'max_completion_tokens' => $this->maxTokens,
+            'max_completion_tokens' => $maxCompletion,
         ];
 
         // Temperature tylko dla modeli które ją obsługują (GPT-4.1).
