@@ -2120,3 +2120,35 @@ Trzy decyzje skladaja sie w jeden lancuch: modul PS podpisuje request (174a, emp
 ADR-068 dotyczy kregoslupa + sekcji kuratorowanych rekomendacji (read + maczowanie). NIE obejmuje: powiadomien (faza 2), live chat / real-time (faza 3, osobny duzy ADR — decyzje SSE/WebSocket dopiero tam). AdminAuthMiddleware (Basic Auth) ZOSTAJE dla dzisiejszego backendowego /admin; kanal serwerowy 174a to NOWY tryb auth obok istniejacego, nie zamiennik.
 
 **Powiazane:** ADR-067 (kregoslup panelu — kwestie tu domkniete), ADR-054 (AdminEditorialPicksController = wzorzec CRUD do nasladowania), ADR-065 + uzup.4 (rekomendacje + dane Subiekta obok produktu w panelu), T-029 (backend rekomendacji gotowy), T-031 (mapowanie SKU rozwiazane), modul divezone_chat (pusty szkielet — budowa od zera). Nastepny krok: task(i) CC fazy 1 — instancja backend prowadzi (decyzja: UI w PS, logika+dane w backendzie, 163a).
+
+
+---
+
+## ADR-069 (auth widgetu na etap 1: istniejacy HMAC zamiast JWT z ADR-062)
+
+**Data:** 2026-06-02 | **Status:** PRZYJETA | **Powiazane:** ADR-062 (docelowy model JWT/sesja), ADR-060 (shim PHP 7.2 podpisuje token), handoff 23, decyzja 58a.
+
+### Kontekst
+Rozpoznanie backendu (2026-06-02) pod budowe widgetu pokazalo: ADR-062 (JWT Bearer + /api/session + /api/session/upgrade + merge anon->auth + Turnstile) to PROJEKT, nie wdrozenie. Backend NIE ma issuera sesji ani weryfikacji JWT. Czat dziala dzis na HMAC w naglowkach (X-DiveChat-Token/-Customer/-Time, HmacVerifier, sekret DIVECHAT_SECRET, anti-replay 5 min); token testowy przez GET /api/test-token. `/api/chat` i `/api/chat/stream` istnieja i dzialaja na tym HMAC.
+
+Cel najblizszego etapu (etap 1): dzialajacy widget czatu na zywym sklepie, widoczny TYLKO po IP Karola (nie dla klientow). Pelny model ADR-062 (JWT+sesja+Turnstile) to kilka taskow backendowych PRZED pierwsza linijka widgetu — most, ktorego na etapie 1 nikt nie przejdzie (widget widzi tylko jedno IP).
+
+### Decyzja (58a)
+Etap 1 widgetu uzywa ISTNIEJACEGO klienckiego HMAC, nie JWT. Token generuje shim PHP 7.2 w module PrestaShop (hash_hmac na DIVECHAT_SECRET — rola modulu juz przewidziana w ADR-060). Dla goscia anonimowego customerId=0 (payload "0:timestamp"). Widget woła /api/chat/stream tak, jak dzis woła czat testowy. ZERO nowego backendu na etap 1.
+
+ADR-062 (JWT, sesja, merge anon->auth) NIE jest porzucony — wdrazany jako WARSTWA PRZED publicznym pokazaniem klientom (etap 2/3), nie jako warunek pierwszego testu po IP.
+
+### Odrzucone
+- Droga docelowa (zbuduj ADR-062 najpierw): opoznia pierwszy dzialajacy widget o tydzien+ backendu, ktorego etap 1 nie potrzebuje. Sprzeczne z "nie buduj infrastruktury, ktorej jeszcze nie potrzebujesz".
+- Hybryda (uproszczony JWT bez Turnstile/merge teraz): i tak wymaga dobudowania JWT-issuera teraz, traci przewage szybkosci.
+
+### Warunek (mitygacja kosztu przerobki)
+Widget pisany z AUTH/TRANSPORT jako WYMIENIALNA WARSTWA (jeden modul transport/auth; reszta widgetu — UI, render, stan — go nie dotyka). Zamiana HMAC->JWT (etap 2/3) = wymiana jednego klocka, NIE przepisywanie czatu. To jedyny "dlug" tej decyzji i jest swiadomie ograniczony architektura.
+
+### Konsekwencje
+- Etap 1 odblokowany bez pracy backendowej.
+- Dlug techniczny: warstwa auth do wymiany przy przejsciu na ADR-062. Ograniczony przez wymienialna warstwe.
+- Sekret DIVECHAT_SECRET (kliencki HMAC) wspoldzielony shim modulu <-> backend. UWAGA: to INNY sekret niz DIVECHAT_SERVER_SECRET (kanal serwerowy panelu, ADR-068). Dwa rozne sekrety, nie mylic (precedens: Karol pomylil je przy konfiguracji modulu, T-032).
+- Etap 1 z definicji bez Turnstile/rate-limit ADR-064 — akceptowalne, bo widoczny tylko po IP Karola. Rate-limit/Turnstile to warunek etapu publicznego, nie testu po IP.
+
+**Powiazane:** ADR-062 (model docelowy — wraca na etap 2/3), ADR-060 (osadzenie, shim podpisuje token), ADR-061 (Shadow DOM/mobile — bez zmian), ADR-063 (RODO pasywna nota — bez zmian, decyzja Karola: bez bramki zgody), ADR-064 (Turnstile/rate-limit — etap publiczny). Nastepny krok: CHAT-T-037 (widget etap 1 po IP, instancja frontend).
