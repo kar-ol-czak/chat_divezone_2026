@@ -55,18 +55,25 @@ return static function (
     $orderStatusController = new OrderStatusController(new OrderStatus());
     $router->post('/api/order/status', $orderStatusController->handle(...));
 
-    // Admin: Conversations (po session_id - legacy widget testowy)
-    $convController = new ConversationsController(new ConversationStore(), $usageLogger);
-    $router->get('/api/conversations', $convController->list(...));
-    $router->get('/api/conversations/{session_id}', $convController->detail(...));
-    $router->post('/api/conversations/{session_id}/status', $convController->updateStatus(...));
-
-    // CHAT-T-044: kanal serwerowy panelu PS (ADR-068, sekret DIVECHAT_SERVER_SECRET).
-    // Tworzony tu zeby Settings + Pricing mogly go uzyc; whoami+recommendations
-    // odbieraja tego samego ponizej.
+    // CHAT-T-044/046: kanal serwerowy panelu PS (ADR-068, sekret DIVECHAT_SERVER_SECRET).
+    // Tworzony wczesnie zeby wszyscy admini ponizej (Conversations/Settings/Pricing/
+    // Whoami/Recommendations) korzystali z tej samej instancji.
     $db = PostgresConnection::getInstance();
     $serverSecret = Config::get('DIVECHAT_SERVER_SECRET', '');
     $serverVerifier = new ServerHmacVerifier($serverSecret);
+
+    // Admin: Conversations (CHAT-T-046 — kanal serwerowy, any-role: operator+admin).
+    // UWAGA: stary standalone/public/js/history.js przestanie dzialac do migracji
+    // widoku do zakladki "Rozmowy" w panelu PS (decyzja 95b, oczekiwane).
+    $convController = new ConversationsController(
+        new ConversationStore(),
+        $usageLogger,
+        $serverVerifier,
+        $db,
+    );
+    $router->get('/api/conversations', $convController->list(...));
+    $router->get('/api/conversations/{session_id}', $convController->detail(...));
+    $router->post('/api/conversations/{session_id}/status', $convController->updateStatus(...));
 
     // Admin: Settings (CHAT-T-044 — kanal serwerowy, rola admin-only)
     $settingsController = new SettingsController(
