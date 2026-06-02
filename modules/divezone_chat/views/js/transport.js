@@ -134,8 +134,79 @@
     return controller;
   }
 
+  /**
+   * Sprawdzenie statusu zamowienia (CHAT-T-043).
+   * POST /api/order/status — zwykly fetch JSON (NIE SSE), HMAC identyczny
+   * jak czat. Strukturalny input z pominieciem LLM (ADR-063).
+   *
+   * @param {string} reference   numer / referencja zamowienia
+   * @param {string} email       email klienta uzyty przy zakupie
+   * @param {object} callbacks   { onSuccess(order), onError(message, httpStatus) }
+   * @returns {AbortController}  do przerwania requestu
+   *
+   * RODO: nie loguje reference/email do konsoli. Body idzie tylko do
+   * skonfigurowanego backendUrl, nigdzie indziej.
+   */
+  function checkOrderStatus(reference, email, callbacks) {
+    callbacks = callbacks || {};
+    var onSuccess = callbacks.onSuccess || function () {};
+    var onError   = callbacks.onError   || function () {};
+
+    var controller = new AbortController();
+    var url = BOOT.backendUrl + '/api/order/status';
+
+    fetch(url, {
+      method: 'POST',
+      mode: 'cors',
+      credentials: 'omit',
+      cache: 'no-cache',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-DiveChat-Token': BOOT.token,
+        'X-DiveChat-Customer': BOOT.customerId,
+        'X-DiveChat-Time': BOOT.time
+      },
+      body: JSON.stringify({
+        order_reference: reference,
+        email: email
+      })
+    }).then(function (response) {
+      var status = response.status;
+      return response.json().catch(function () { return null; }).then(function (payload) {
+        if (status === 200 && payload && payload.success && payload.order) {
+          onSuccess(payload.order);
+          return;
+        }
+        // Mapowanie kodow na przyjazne komunikaty (PII-free).
+        var msg;
+        if (status === 400) {
+          msg = (payload && payload.error) || 'Uzupelnij oba pola.';
+        } else if (status === 401) {
+          // Token HMAC zyje 5 min od zaladowania strony (BOOT). Etap 1 nie
+          // refreshuje — instrukcja dla klienta.
+          msg = 'Sesja wygasla. Odswiez strone i sprobuj ponownie.';
+        } else if (status === 404) {
+          msg = (payload && payload.error) || 'Nie znaleziono zamowienia. Sprawdz dane.';
+        } else if (status >= 500) {
+          msg = 'Wystapil blad serwera. Sprobuj za chwile.';
+        } else {
+          msg = (payload && payload.error) || ('Blad ' + status + '.');
+        }
+        onError(msg, status);
+      });
+    }).catch(function (err) {
+      if (err && err.name === 'AbortError') return;
+      onError('Brak polaczenia. Sprawdz internet i sprobuj ponownie.', 0);
+    });
+
+    return controller;
+  }
+
   window.DivezoneChatTransport = {
     sendMessage: sendMessage,
+    checkOrderStatus: checkOrderStatus,
     /* getBootSnapshot: tylko do diagnostyki (NIE zwraca tokenu). */
     getBootSnapshot: function () {
       return {

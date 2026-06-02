@@ -34,10 +34,18 @@
     'Serwis sprzętu'
   ];
   var CHIPS_MOBILE_LIMIT = 4;
+  var ORDER_CHIP_LABEL = 'Status zamówienia';
 
   var PRIVACY_NOTE_HTML =
     'Rozmawiasz z asystentem AI — nie podawaj danych wrażliwych. ' +
     '<a href="https://divezone.pl/content/3-polityka-prywatnosci" target="_blank" rel="noopener noreferrer">Polityka prywatności.</a>';
+
+  var ORDER_MODAL_TITLE = 'Sprawdź status zamówienia';
+  var ORDER_MODAL_INTRO = 'Podaj numer zamówienia i adres e-mail użyty przy zakupie — sprawdzimy status od razu.';
+  var ORDER_MODAL_NOTE  = 'Dane służą wyłącznie do weryfikacji statusu Twojego zamówienia.';
+  // Walidacja email — celowo prosta (typo-friendly, nie RFC-pełna):
+  // znaki@znaki.kropka (PHP po stronie i tak waliduje autorytatywnie).
+  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   /* ───────────────────────── Mount state ───────────────────────── */
 
@@ -58,7 +66,18 @@
     sessionId: null,
     isStreaming: false,
     abortCtl: null,
-    lastFocus: null
+    lastFocus: null,
+    // CHAT-T-043 modal statusu zamowienia
+    orderModalEl: null,
+    orderModalOpen: false,
+    orderRefEl: null,
+    orderEmailEl: null,
+    orderSubmitEl: null,
+    orderFormEl: null,
+    orderResultEl: null,
+    orderErrorEl: null,
+    orderAbortCtl: null,
+    orderLastFocus: null
   };
 
   /* ───────────────────────── SVG icons (z design handoff) ───────────────────────── */
@@ -204,7 +223,12 @@
       (function (label) {
         var btn = createEl('button', { class: 'dz-chip', type: 'button' }, label);
         btn.addEventListener('click', function () {
-          sendUserMessage(label);
+          if (label === ORDER_CHIP_LABEL) {
+            // CHAT-T-043: status zamowienia idzie poza LLM — modal + /api/order/status.
+            openOrderModal();
+          } else {
+            sendUserMessage(label);
+          }
         });
         chips.appendChild(btn);
       })(labels[i]);
@@ -392,6 +416,348 @@
     });
   }
 
+  /* ───────────────────────── Modal: status zamowienia (CHAT-T-043) ───────────────────────── */
+
+  /**
+   * Formatowanie ISO date / datetime -> PL czytelnie.
+   * Tolerancyjne na rozne formaty z backendu: ISO ('2026-05-15'),
+   * datetime ISO ('2026-05-15T10:23:00Z'), albo gotowy string PL.
+   */
+  function formatOrderDate(s) {
+    if (!s) return '';
+    try {
+      var d = new Date(s);
+      if (isNaN(d.getTime())) return String(s);
+      return new Intl.DateTimeFormat('pl-PL', {
+        day: 'numeric', month: 'long', year: 'numeric'
+      }).format(d);
+    } catch (_) {
+      return String(s);
+    }
+  }
+
+  function formatOrderTotal(t) {
+    if (t == null || t === '') return '';
+    var n = typeof t === 'number' ? t : parseFloat(String(t).replace(',', '.'));
+    if (isNaN(n)) return String(t);
+    try {
+      return new Intl.NumberFormat('pl-PL', {
+        style: 'currency', currency: 'PLN', minimumFractionDigits: 2
+      }).format(n);
+    } catch (_) {
+      return n.toFixed(2) + ' zł';
+    }
+  }
+
+  function buildOrderModal() {
+    if (state.orderModalEl) return state.orderModalEl;
+
+    var overlay = createEl('div', {
+      class: 'dz-order-overlay',
+      'data-open': 'false'
+    });
+
+    var dialog = createEl('div', {
+      class: 'dz-order-dialog',
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-labelledby': 'dz-order-title',
+      'aria-describedby': 'dz-order-intro'
+    });
+
+    // Header
+    var header = createEl('div', { class: 'dz-order-header' });
+    header.appendChild(createEl('h2', { class: 'dz-order-title', id: 'dz-order-title' }, ORDER_MODAL_TITLE));
+    var closeBtn = createEl('button', {
+      class: 'dz-order-close',
+      type: 'button',
+      'aria-label': 'Zamknij okno statusu zamówienia'
+    }, '✕');
+    closeBtn.addEventListener('click', closeOrderModal);
+    header.appendChild(closeBtn);
+    dialog.appendChild(header);
+
+    // Intro
+    dialog.appendChild(createEl('p', {
+      class: 'dz-order-intro',
+      id: 'dz-order-intro'
+    }, ORDER_MODAL_INTRO));
+
+    // Form
+    var form = createEl('form', { class: 'dz-order-form', novalidate: 'novalidate' });
+
+    var refField = createEl('div', { class: 'dz-field' });
+    var refLabel = createEl('label', { class: 'dz-field__label', for: 'dz-order-ref' }, 'Numer / referencja zamówienia');
+    var refInput = createEl('input', {
+      class: 'dz-field__input',
+      type: 'text',
+      id: 'dz-order-ref',
+      name: 'order_reference',
+      placeholder: 'np. GBUQNGUCR',
+      autocomplete: 'off',
+      autocapitalize: 'characters',
+      inputmode: 'text',
+      maxlength: '40',
+      required: 'required',
+      'aria-required': 'true'
+    });
+    refField.appendChild(refLabel);
+    refField.appendChild(refInput);
+    form.appendChild(refField);
+
+    var emailField = createEl('div', { class: 'dz-field' });
+    var emailLabel = createEl('label', { class: 'dz-field__label', for: 'dz-order-email' }, 'Adres e-mail');
+    var emailInput = createEl('input', {
+      class: 'dz-field__input',
+      type: 'email',
+      id: 'dz-order-email',
+      name: 'email',
+      placeholder: 'twoj@email.pl',
+      autocomplete: 'email',
+      inputmode: 'email',
+      maxlength: '120',
+      required: 'required',
+      'aria-required': 'true'
+    });
+    emailField.appendChild(emailLabel);
+    emailField.appendChild(emailInput);
+    form.appendChild(emailField);
+
+    // Nota RODO przy formularzu (ADR-063 nota kontekstowa)
+    form.appendChild(createEl('p', { class: 'dz-order-note' }, ORDER_MODAL_NOTE));
+
+    // Komunikat błędu (aria-live)
+    var errorEl = createEl('div', {
+      class: 'dz-order-error',
+      role: 'alert',
+      'aria-live': 'assertive',
+      hidden: 'hidden'
+    });
+    form.appendChild(errorEl);
+
+    // Przycisk submit
+    var submitBtn = createEl('button', {
+      class: 'dz-order-submit',
+      type: 'submit'
+    }, 'Sprawdź status');
+    form.appendChild(submitBtn);
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      submitOrderForm();
+    });
+
+    dialog.appendChild(form);
+
+    // Wynik (panel pojawia się po sukcesie)
+    var resultEl = createEl('div', {
+      class: 'dz-order-result',
+      'aria-live': 'polite',
+      hidden: 'hidden'
+    });
+    dialog.appendChild(resultEl);
+
+    overlay.appendChild(dialog);
+
+    // Klik w backdrop poza dialogiem zamyka (UX standard).
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closeOrderModal();
+    });
+
+    state.orderModalEl  = overlay;
+    state.orderFormEl   = form;
+    state.orderRefEl    = refInput;
+    state.orderEmailEl  = emailInput;
+    state.orderSubmitEl = submitBtn;
+    state.orderResultEl = resultEl;
+    state.orderErrorEl  = errorEl;
+
+    return overlay;
+  }
+
+  function showOrderError(message) {
+    if (!state.orderErrorEl) return;
+    state.orderErrorEl.textContent = message;
+    state.orderErrorEl.removeAttribute('hidden');
+  }
+
+  function clearOrderError() {
+    if (!state.orderErrorEl) return;
+    state.orderErrorEl.textContent = '';
+    state.orderErrorEl.setAttribute('hidden', 'hidden');
+  }
+
+  function showOrderResult(order) {
+    if (!state.orderResultEl) return;
+    var statusLabel = (order && order.status) ? String(order.status) : 'Status nieznany';
+    var dateText    = formatOrderDate(order && order.date);
+    var totalText   = formatOrderTotal(order && order.total);
+    var reference   = (order && order.reference) ? String(order.reference) : '';
+    var history     = (order && order.history) || [];
+    var tracking    = order && order.tracking;
+
+    // Czyscimy result
+    while (state.orderResultEl.firstChild) {
+      state.orderResultEl.removeChild(state.orderResultEl.firstChild);
+    }
+
+    var statusRow = createEl('div', { class: 'dz-order-status-row' });
+    statusRow.appendChild(createEl('span', { class: 'dz-order-status-label' }, 'Status'));
+    statusRow.appendChild(createEl('span', { class: 'dz-order-status-badge' }, statusLabel));
+    state.orderResultEl.appendChild(statusRow);
+
+    if (reference || dateText || totalText) {
+      var meta = createEl('dl', { class: 'dz-order-meta' });
+      if (reference) {
+        meta.appendChild(createEl('dt', null, 'Numer'));
+        meta.appendChild(createEl('dd', null, reference));
+      }
+      if (dateText) {
+        meta.appendChild(createEl('dt', null, 'Data'));
+        meta.appendChild(createEl('dd', null, dateText));
+      }
+      if (totalText) {
+        meta.appendChild(createEl('dt', null, 'Kwota'));
+        meta.appendChild(createEl('dd', null, totalText));
+      }
+      state.orderResultEl.appendChild(meta);
+    }
+
+    if (history && history.length) {
+      state.orderResultEl.appendChild(createEl('h3', { class: 'dz-order-section' }, 'Historia statusów'));
+      var ul = createEl('ul', { class: 'dz-order-history' });
+      for (var i = 0; i < history.length; i++) {
+        var h = history[i] || {};
+        var li = createEl('li', { class: 'dz-order-history__item' });
+        li.appendChild(createEl('span', { class: 'dz-order-history__status' }, String(h.status || '')));
+        if (h.date) {
+          li.appendChild(createEl('span', { class: 'dz-order-history__date' }, formatOrderDate(h.date)));
+        }
+        ul.appendChild(li);
+      }
+      state.orderResultEl.appendChild(ul);
+    }
+
+    if (tracking && tracking.url) {
+      var trackP = createEl('p', { class: 'dz-order-tracking' });
+      var carrier = tracking.carrier ? (String(tracking.carrier) + ' · ') : '';
+      var num = tracking.number ? String(tracking.number) : 'Śledź przesyłkę';
+      var link = createEl('a', {
+        class: 'dz-order-tracking__link',
+        href: String(tracking.url),
+        target: '_blank',
+        rel: 'noopener noreferrer'
+      }, 'Śledź przesyłkę' + (tracking.number ? ' (' + num + ')' : ''));
+      trackP.appendChild(document.createTextNode(carrier));
+      trackP.appendChild(link);
+      state.orderResultEl.appendChild(trackP);
+    }
+
+    state.orderResultEl.removeAttribute('hidden');
+    // Po sukcesie chowamy formularz (czysciejsza prezentacja wyniku).
+    if (state.orderFormEl) state.orderFormEl.setAttribute('hidden', 'hidden');
+  }
+
+  function clearOrderResult() {
+    if (!state.orderResultEl) return;
+    state.orderResultEl.setAttribute('hidden', 'hidden');
+    while (state.orderResultEl.firstChild) {
+      state.orderResultEl.removeChild(state.orderResultEl.firstChild);
+    }
+    if (state.orderFormEl) state.orderFormEl.removeAttribute('hidden');
+  }
+
+  function submitOrderForm() {
+    var transport = window.DivezoneChatTransport;
+    if (!transport || typeof transport.checkOrderStatus !== 'function') {
+      showOrderError('Transport niedostępny. Odśwież stronę.');
+      return;
+    }
+    // RODO: zmienne LOKALNE, nigdy do console/analytics.
+    var reference = (state.orderRefEl.value || '').trim();
+    var email     = (state.orderEmailEl.value || '').trim();
+
+    // Walidacja klienta — niepuste oba + sensowny email pattern.
+    if (!reference && !email) {
+      showOrderError('Uzupełnij oba pola: numer zamówienia i e-mail.');
+      state.orderRefEl.focus();
+      return;
+    }
+    if (!reference) {
+      showOrderError('Podaj numer zamówienia.');
+      state.orderRefEl.focus();
+      return;
+    }
+    if (!email || !EMAIL_RE.test(email)) {
+      showOrderError('Podaj poprawny adres e-mail.');
+      state.orderEmailEl.focus();
+      return;
+    }
+
+    clearOrderError();
+    state.orderSubmitEl.disabled = true;
+    state.orderSubmitEl.textContent = 'Sprawdzam…';
+
+    state.orderAbortCtl = transport.checkOrderStatus(reference, email, {
+      onSuccess: function (order) {
+        state.orderSubmitEl.disabled = false;
+        state.orderSubmitEl.textContent = 'Sprawdź status';
+        state.orderAbortCtl = null;
+        showOrderResult(order);
+      },
+      onError: function (msg, httpStatus) {
+        state.orderSubmitEl.disabled = false;
+        state.orderSubmitEl.textContent = 'Sprawdź status';
+        state.orderAbortCtl = null;
+        showOrderError(msg || 'Spróbuj ponownie.');
+        // 404 / 400 — zostaw fokus na polu, klient poprawia.
+        if (httpStatus === 404 || httpStatus === 400) {
+          state.orderRefEl.focus();
+        }
+      }
+    });
+  }
+
+  function openOrderModal() {
+    if (!state.mounted) return;
+    if (!state.orderModalEl) {
+      buildOrderModal();
+      state.root.appendChild(state.orderModalEl);
+    }
+    state.orderLastFocus = (state.root.activeElement) || document.activeElement;
+    clearOrderResult();
+    clearOrderError();
+    if (state.orderSubmitEl) {
+      state.orderSubmitEl.disabled = false;
+      state.orderSubmitEl.textContent = 'Sprawdź status';
+    }
+    state.orderModalEl.setAttribute('data-open', 'true');
+    state.orderModalOpen = true;
+    // Fokus na pierwszym polu po wyrenderowaniu.
+    setTimeout(function () {
+      if (state.orderRefEl) state.orderRefEl.focus();
+    }, 60);
+  }
+
+  function closeOrderModal() {
+    if (!state.orderModalOpen) return;
+    if (state.orderAbortCtl) {
+      try { state.orderAbortCtl.abort(); } catch (_) {}
+      state.orderAbortCtl = null;
+    }
+    state.orderModalEl.setAttribute('data-open', 'false');
+    state.orderModalOpen = false;
+    // Czyscimy pola, zeby przy ponownym otwarciu nie wisialy stare wartosci (RODO).
+    if (state.orderRefEl)   state.orderRefEl.value = '';
+    if (state.orderEmailEl) state.orderEmailEl.value = '';
+    clearOrderError();
+    clearOrderResult();
+    // Fokus z powrotem na element ktory otworzyl modal (chip lub launcher).
+    if (state.orderLastFocus && typeof state.orderLastFocus.focus === 'function') {
+      try { state.orderLastFocus.focus(); } catch (_) {}
+    }
+  }
+
   /* ───────────────────────── Open/Close ───────────────────────── */
 
   function openWindow() {
@@ -437,7 +803,11 @@
   /* ───────────────────────── Global keyboard ───────────────────────── */
 
   function onKeydown(e) {
-    if (e.key === 'Escape' && state.open) {
+    if (e.key !== 'Escape') return;
+    if (state.orderModalOpen) {
+      e.preventDefault();
+      closeOrderModal();
+    } else if (state.open) {
       e.preventDefault();
       closeWindow();
     }

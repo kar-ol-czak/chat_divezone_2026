@@ -340,3 +340,289 @@
   .dz-bubble--bot { max-width: 82%; }
   .dz-chips { padding-left: 0; }
 }
+
+/* ───────────────────────── Modal: status zamowienia (CHAT-T-043) ───────────────────────── */
+
+.dz-order-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 32, 32, 0.48);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1;
+  font-family: var(--dz-font);
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity .15s ease-out;
+}
+.dz-order-overlay[data-open="true"] {
+  opacity: 1;
+}
+.dz-order-overlay[data-open="false"] {
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.dz-order-dialog {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.28), 0 4px 12px rgba(0,0,0,0.08);
+  width: 100%;
+  max-width: 360px;
+  max-height: calc(100% - 48px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  transform: translateY(8px) scale(0.98);
+  transition: transform .18s ease-out;
+}
+.dz-order-overlay[data-open="true"] .dz-order-dialog {
+  transform: translateY(0) scale(1);
+}
+
+.dz-order-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 16px 18px 0;
+}
+.dz-order-title {
+  margin: 0;
+  font-family: var(--dz-font);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--dz-text-strong);
+  line-height: 1.3;
+}
+.dz-order-close {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background: rgba(30,99,99,0.08);
+  border: 1px solid rgba(30,99,99,0.18);
+  color: var(--dz-header-bg);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+  transition: opacity .15s;
+}
+.dz-order-close:hover { opacity: .82; }
+.dz-order-close:focus-visible {
+  outline: 2px solid var(--dz-focus-ring);
+  outline-offset: 2px;
+}
+
+.dz-order-intro {
+  margin: 8px 18px 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--dz-text-body);
+}
+
+.dz-order-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 18px 18px;
+}
+
+.dz-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.dz-field__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #555555;
+}
+.dz-field__input {
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid #cde4e4;
+  padding: 0 12px;
+  font-family: var(--dz-font);
+  font-size: 15px;
+  color: var(--dz-text-strong);
+  background: #ffffff;
+  outline: none;
+  transition: border-color .12s, box-shadow .12s;
+}
+.dz-field__input::placeholder { color: var(--dz-placeholder); }
+.dz-field__input:focus-visible {
+  border-color: var(--dz-focus-ring);
+  box-shadow: 0 0 0 2px rgba(30, 99, 99, 0.18);
+}
+
+.dz-order-note {
+  margin: 0;
+  background: #f5f5f5;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #888888;
+}
+
+.dz-order-error {
+  background: #fff4f4;
+  border: 1px solid #f3c8c8;
+  color: #a02020;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.dz-order-error[hidden] { display: none !important; }
+
+.dz-order-submit {
+  min-height: 48px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--dz-send-bg);
+  color: #ffffff;
+  font-family: var(--dz-font);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 12px 18px;
+  transition: opacity .15s, transform .1s;
+  margin-top: 4px;
+}
+.dz-order-submit:hover { opacity: .92; }
+.dz-order-submit:active { transform: scale(0.98); }
+.dz-order-submit:disabled { opacity: .55; cursor: progress; transform: none; }
+.dz-order-submit:focus-visible {
+  outline: 2px solid var(--dz-focus-ring);
+  outline-offset: 3px;
+}
+
+/* Result panel */
+
+.dz-order-result {
+  padding: 0 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dz-order-result[hidden] { display: none !important; }
+
+.dz-order-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 4px;
+}
+.dz-order-status-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #888888;
+  font-weight: 600;
+}
+.dz-order-status-badge {
+  display: inline-block;
+  background: var(--dz-header-bg);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 5px 12px;
+  line-height: 1.2;
+}
+
+.dz-order-meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 14px;
+  row-gap: 4px;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+.dz-order-meta dt {
+  color: #888888;
+  font-weight: 600;
+}
+.dz-order-meta dd {
+  margin: 0;
+  color: var(--dz-text-strong);
+}
+
+.dz-order-section {
+  margin: 6px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dz-text-strong);
+}
+
+.dz-order-history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-left: 2px solid #d8eaea;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 12px;
+}
+.dz-order-history__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.dz-order-history__status {
+  color: var(--dz-text-body);
+}
+.dz-order-history__date {
+  color: #999999;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.dz-order-tracking {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--dz-text-body);
+}
+.dz-order-tracking__link {
+  color: var(--dz-callout);
+  text-decoration: underline;
+  font-weight: 600;
+}
+.dz-order-tracking__link:focus-visible {
+  outline: 2px solid var(--dz-focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Mobile — modal full-bleed bottom sheet style */
+@media (max-width: 599.98px) {
+  .dz-order-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .dz-order-dialog {
+    max-width: 100%;
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+    max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top, 0px) - 24px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    transform: translateY(16px);
+  }
+  .dz-order-overlay[data-open="true"] .dz-order-dialog {
+    transform: translateY(0);
+  }
+  .dz-field__input {
+    height: 48px;
+    /* font 16px = blokada auto-zoom iOS */
+    font-size: 16px;
+  }
+}
