@@ -2152,3 +2152,91 @@ Widget pisany z AUTH/TRANSPORT jako WYMIENIALNA WARSTWA (jeden modul transport/a
 - Etap 1 z definicji bez Turnstile/rate-limit ADR-064 — akceptowalne, bo widoczny tylko po IP Karola. Rate-limit/Turnstile to warunek etapu publicznego, nie testu po IP.
 
 **Powiazane:** ADR-062 (model docelowy — wraca na etap 2/3), ADR-060 (osadzenie, shim podpisuje token), ADR-061 (Shadow DOM/mobile — bez zmian), ADR-063 (RODO pasywna nota — bez zmian, decyzja Karola: bez bramki zgody), ADR-064 (Turnstile/rate-limit — etap publiczny). Nastepny krok: CHAT-T-037 (widget etap 1 po IP, instancja frontend).
+
+---
+
+## ADR-070: Panel PrestaShop jako jedyny front administracyjny (wygaszenie standalone /admin)
+
+**Data:** 2026-06-02 | **Status:** PRZYJETA | **Powiazane:** ADR-067 (kregoslup panelu PS), ADR-068 (kanal serwerowy), ADR-052 (analityka w standalone /admin — zastepowana), decyzje 90a/91a/92a/95b.
+
+### Kontekst
+Standalone backend ma dzis wlasny panel /admin (Basic Auth + .htpasswd): analityka kosztow (ADR-052), historia rozmow (history.js -> /api/conversations/*), wykresy. Rownolegle modul PS ma wlasny panel (kanal serwerowy HMAC z employee_id, ADR-068): whoami, rekomendacje, konfiguracja (sekrety/IP/URL). Dwa fronty administracyjne, dwa modele auth, dwa miejsca. W trakcie sesji 2026-06-02 Karol trzykrotnie wskazal kierunek: konfiguracja -> Presta, modele AI -> Presta, rozmowy -> Presta, "calosc z /admin przenosimy do Presty zeby bylo wszystko w 1 miejscu".
+
+### Decyzja
+Panel administracyjny w module PrestaShop staje sie JEDYNYM frontem administracyjnym (stanowisko pracy obslugi, ADR-067). Standalone /admin (Basic Auth) jest stopniowo WYGASZANY — jego funkcje migruja do panelu PS jako ZAKLADKI, kazda wolajaca backend przez kanal serwerowy (ServerHmacVerifier, ADR-068).
+
+Struktura panelu PS = zakladki (decyzja 92a, start od 2 zakladek przy UI modeli):
+- "Ustawienia" — sekrety (2 rozne!), IP, Backend URL (obecny getContent()).
+- "Modele" — konfiguracja AI (model_primary/escalation, reasoning, max_tokens) — CHAT-T-045.
+- "Rekomendacje" — kuratorowane wpisy (juz istnieje, ADR-065).
+- "Rozmowy" — historia/podglad rozmow (migracja z history.js + /api/conversations/*) — przyszly task.
+- "Analityka" — koszty/wykresy (migracja z /admin ADR-052) — przyszly task.
+
+### Konsekwencje
+- Endpointy backendu uzywane przez panel PS MUSZA byc za kanalem serwerowym (ServerHmacVerifier). Audyt CHAT-T-044 domknal /api/settings + /api/admin/pricing (admin-only); CHAT-T-046 domyka /api/conversations/* (any-role). To NIE jest dodatkowa robota — to warunek migracji do PS.
+- Model rol per zakladka: konfiguracja silnika (Ustawienia, Modele, ceny) = ADMIN-only; dane operacyjne (Rekomendacje, Rozmowy) = ANY ROLE (operator+admin). Backend wymusza role per endpoint.
+- Standalone /admin (Basic Auth, .htpasswd) docelowo do wylaczenia po migracji wszystkich funkcji. Endpointy /api/admin/cost/* i /api/admin/conversations/* (dzis za AdminAuthMiddleware) docelowo przelaczyc na kanal serwerowy gdy analityka trafi do zakladki PS. NIE ruszac ich teraz (dzialaja).
+- history.js (stary widok historii) przestanie dzialac po CHAT-T-046 (nie wysyla naglowkow serwerowych) — akceptowalne, bo funkcja wraca jako zakladka "Rozmowy".
+- Refaktor getContent() na zakladki: start przy CHAT-T-045 (2 zakladki). Pelna struktura roznie — kolejne zakladki dochodza z migracjami.
+
+### Odrzucone
+- Standalone /admin jako docelowy panel: dwa fronty, dwa modele auth, rozproszona obsluga. Sprzeczne z "stanowisko pracy obslugi w jednym miejscu" (ADR-067).
+- UI modeli w /admin (rozwazane w pytaniu 91): bylaby praca wbrew kierunkowi migracji — za chwile przenosilibysmy do PS.
+
+### Otwarte / kolejnosc migracji
+1. CHAT-T-045: zakladki Ustawienia+Modele (start struktury).
+2. Przyszle: zakladka Rozmowy (migracja history.js + /api/conversations/*).
+3. Przyszle: zakladka Analityka (migracja /admin ADR-052 + przelaczenie /api/admin/cost/* na kanal serwerowy).
+4. Po komplecie: wylaczenie standalone /admin + .htpasswd.
+
+---
+
+## ADR-071: Drzewo konwersacyjne chipow (warstwy odpowiedzi: deterministyczne -> kuratorowane -> AI)
+
+**Data:** 2026-06-02 | **Status:** PRZYJETA (baza; osie podzialu Level 2/3 do doprecyzowania po sesji zespolu) | **Powiazane:** ADR-070 (panel PS), decyzje 74b/75/76a/77a/78a/79a, pamiec drzewa+modele, artefakt _drafts/divezone_drzewo_chipow.pptx.
+
+### Kontekst / problem
+Chipy otwierajace (np. "Dostepnosc i wysylka") szly przez pelny pipeline AI (LLM+RAG+function calling), czas ~9-45s, mimo ze odpowiedz jest z gory znana (stala tresc) albo to proste zawezenie tematu. Marnotrawstwo czasu i tokenow. Klient czeka na to, co nie wymaga modelu.
+
+### Decyzja — zasada warstw
+Kazda interakcja czatu rozwiazywana jest na NAJTANSZEJ wystarczajacej warstwie. Kolejnosc (od najtanszej):
+1. **Deterministyczna nawigacja (drzewo chipow):** wezel = tekst bota + przyciski; przycisk -> inny wezel albo akcja koncowa. Bez warstwy AI. Renderowane natychmiast.
+2. **Kuratorowane rekomendacje:** lisc woła get_curated_recommendations (gotowe dane z CHAT-T-031/036), bez LLM.
+3. **Stala tresc / modal:** szablon (wysylka, serwis) albo modal PHP (status zamowienia, ADR-063) — bez LLM.
+4. **AI z kontekstem:** dopiero gdy potrzebny dialog. Lisc moze niesc ZAWEZONY prompt (patrz nizej).
+
+AI przestaje byc domyslna odpowiedzia na wszystko — staje sie ostatnia warstwa dla rozmow, ktore jej faktycznie wymagaja.
+
+### Model wezla (decyzja 77a — prosty, bez warunkow/zmiennych)
+Wezel = { tekst bota, lista przyciskow }. Przycisk = { etykieta, cel }, gdzie cel to:
+- inny wezel (zejscie glebiej), albo
+- akcja koncowa: `curated:<kategoria>` | `static:<klucz_tresci>` | `modal:<typ>` | `ai`.
+Bez warunkow, bez zmiennych, bez petli. Plaska mapa wezlow polaczonych przyciskami. Powod: prostota = pracownik ogarnia edycje w 5 min; bogatszy model = edytor ktorego nikt nie uzywa (dodamy gdy realny przypadek tego zazada, nie wczesniej).
+
+### context_hint / prompt_override na lisciu (pamiec projektu)
+Lisc typu `ai` moze niesc WLASNY zawezony kontekst/prompt zamiast pelnego ogolnego SystemPromptu. Gdy klient zszedl "Automat -> Rekreacja -> cieple wody", wiadomo w jakim jestesmy kontekscie. Zysk podwojny: krotszy prompt (mniej tokenow, szybciej/taniej) + lepsza skupiona odpowiedz (model nie rozprasza sie instrukcjami o zamowieniach/serwisie). Struktura wezla ma to UMOZLIWIAC OD POCZATKU (pole context_hint/prompt_override na lisciu), nawet jesli na starcie puste. NIE budujemy logiki teraz — schemat ma byc gotowy.
+
+### Glebokosc za danymi (decyzja 76a, korekta 75)
+Drzewo schodzi glebiej (2-3 poziomy) TYLKO tam, gdzie lisc ma gotowa odpowiedz (kuratorowane rekomendacje: automaty rekreacyjne, komputery budzet/polska woda). Tam gdzie gotowych danych nie ma (maska, pletwy, pianka, BCD) — 1-2 poziomy zawezenia, potem lisc -> AI z kontekstem. NIE budowac pustych glebokich galezi prowadzacych i tak do AI (to tylko opoznia AI o klikniecia). Drzewo ROSNIE gdy dochodza kolejne kuratorowane kategorie (kandydaci wg bestsellerow: maski, pletwy, BCD/skrzydla).
+UWAGA: na potrzeby SESJI PROJEKTOWEJ zespolu artefakt (pptx) pokazuje pelna strukture Level 2/3 dla wszystkich chipow z polami [UZUP] — to material do projektowania, nie ksztalt produkcyjny. Produkcyjnie obowiazuje glebokosc-za-danymi.
+
+### Przechowywanie i serwowanie (decyzje 78a/79a)
+- Drzewo zyje w PostgreSQL (backend wlascicielem danych), NIE hardkod w widgecie.
+- Widget pobiera drzewo przez endpoint na starcie (male, cache'owalne), renderuje lokalnie/natychmiast.
+- Poziom 1 OD RAZU czytany z backendu (nie hardkod tymczasowy) — eliminuje przepisywanie przy panelu.
+- Edycja przez pracownikow: panel PS (zakladka, ADR-070) — backend wlascicielem, panel edytuje, widget konsumuje. Ten sam wzorzec co rekomendacje.
+
+### Model AI per lisc (powiazanie z 3 poziomami modeli — pamiec)
+Docelowo lisc moze wskazywac POZIOM modelu (basic/primary/escalation). Pierwsze tury drzewa / proste zawezenia -> basic (najszybszy/najtanszy). Realny dobor -> primary. To wymaga routingu w ChatService (3. poziom modeli — osobny task, NIE teraz). Schemat wezla ma docelowo przyjac wskazanie poziomu modelu (jak context_hint).
+
+### Konsekwencje / kolejnosc budowy
+1. Sesja zespolu nad artefaktem (pptx): osie podzialu Level 2/3 dla kategorii bez rekomendacji, tresc "Serwis sprzetu", granice chip<->AI. — PO STRONIE KAROLA.
+2. Schemat PG drzewa (tabela wezlow: id, tekst, przyciski[], typ_akcji, context_hint, model_poziom) + endpoint GET dla widgetu + seed poziomu 1.
+3. Silnik drzewa w widgecie (renderowanie wezlow, obsluga akcji curated/static/modal/ai).
+4. Panel edycji drzewa dla pracownikow (zakladka PS).
+Etapy 2-4 = osobne taski po sesji. Ten ADR utrwala zasady, nie implementacje.
+
+### Odrzucone
+- Bogaty model wezla (warunki/zmienne/petle): edytor ktorego nikt nie uzyje. Plaski model wystarcza.
+- 2 poziomy dla wszystkich kategorii od razu (rozwazane w 75/76): puste galezie do AI, tygodnie tresci dla galezi ktore i tak koncza w AI. Glebokosc-za-danymi zamiast tego.
+- Hardkod drzewa w widgecie: blokowalby edycje przez pracownikow (sprzeczne z panelem).
