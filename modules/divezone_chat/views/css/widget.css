@@ -1,0 +1,342 @@
+/*!
+ * DiveZone Chat — widget styles (Shadow DOM).
+ * CHAT-T-037 etap 1. Tokeny z _drafts/design_handoff_divezone_chat_widget/README.md
+ * (Wariant 1 Teal — JEDYNA zatwierdzona paleta P1).
+ */
+
+:host {
+  /* Reset stylow theme sklepu. ADR-061: caly widget w jednym shadow root. */
+  all: initial;
+  --dz-header-bg:        #1e6363;
+  --dz-accent:           #e8a800;
+  --dz-chat-bg:          #f3fafa;
+  --dz-bot-bubble-bg:    #ffffff;
+  --dz-bot-bubble-border:#cde4e4;
+  --dz-bot-avatar-bg:    #155050;
+  --dz-user-bubble-bg:   #1e6363;
+  --dz-user-bubble-text: #ffffff;
+  --dz-text-strong:      #1a1a1a;
+  --dz-text-body:        #4a4a4a;
+  --dz-callout:          #1e6363;
+  --dz-chip-border:      #1e6363;
+  --dz-chip-text:        #1e6363;
+  --dz-chip-bg:          transparent;
+  --dz-note-bg:          #f8fdfd;
+  --dz-note-border:      #d8eaea;
+  --dz-note-text:        #9a9a9a;
+  --dz-note-link:        #1e6363;
+  --dz-input-border:     #cde4e4;
+  --dz-placeholder:      #b8b8b8;
+  --dz-send-bg:          #1e6363;
+  --dz-send-icon:        #ffffff;
+  --dz-x-bg:             rgba(255,255,255,0.10);
+  --dz-x-border:         rgba(255,255,255,0.22);
+  --dz-x-color:          #ffffff;
+  --dz-logo-name:        #ffffff;
+  --dz-logo-tag:         rgba(255,255,255,0.62);
+  --dz-launcher-bg:      #1e6363;
+  --dz-focus-ring:       #1e6363;
+  --dz-font:             'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+
+  /* Visual Viewport (mobile, ADR-061 kwestia B) — fallback na 100dvh. */
+  --vvh: 100dvh;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* ───────────────────────── Okno ───────────────────────── */
+
+.dz-window {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 384px;
+  height: 680px;
+  max-height: calc(100vh - 40px);
+  background: #ffffff;
+  border: 1px solid rgba(0,0,0,0.07);
+  border-radius: 16px;
+  box-shadow: 0 16px 56px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--dz-font);
+  color: var(--dz-text-body);
+  pointer-events: auto;
+  transform-origin: 100% 100%;
+  transform: scale(0.96);
+  opacity: 0;
+  transition: transform .18s ease-out, opacity .18s ease-out;
+}
+.dz-window[data-open="true"] {
+  transform: scale(1);
+  opacity: 1;
+}
+.dz-window[data-open="false"] {
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* ───────────────────────── Header ───────────────────────── */
+
+.dz-header {
+  background: var(--dz-header-bg);
+  padding: 13px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.dz-brand { display: flex; align-items: center; gap: 10px; user-select: none; }
+.dz-brand__icon {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--dz-accent);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.dz-brand__label {
+  font-family: var(--dz-font);
+  line-height: 1;
+  white-space: nowrap;
+}
+.dz-brand__name {
+  font-size: 14px; font-weight: 700; letter-spacing: 0.06em;
+  color: var(--dz-logo-name);
+}
+.dz-brand__tag {
+  font-size: 13px; font-weight: 400;
+  color: var(--dz-logo-tag);
+  margin-left: 6px;
+}
+.dz-x {
+  width: 30px; height: 30px; border-radius: 7px;
+  background: var(--dz-x-bg);
+  border: 1px solid var(--dz-x-border);
+  color: var(--dz-x-color);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; line-height: 1;
+  font-family: var(--dz-font);
+  transition: opacity .15s;
+  padding: 0;
+}
+.dz-x:hover { opacity: .82; }
+.dz-x:focus-visible {
+  outline: 2px solid var(--dz-focus-ring);
+  outline-offset: 2px;
+}
+
+/* ───────────────────────── Wiadomosci ───────────────────────── */
+
+.dz-messages {
+  flex: 1 1 auto;
+  background: var(--dz-chat-bg);
+  padding: 16px 13px;
+  display: flex; flex-direction: column; gap: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dz-bot-row { display: flex; gap: 9px; align-items: flex-start; }
+.dz-avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--dz-bot-avatar-bg);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.dz-bubble--bot {
+  background: var(--dz-bot-bubble-bg);
+  border: 1px solid var(--dz-bot-bubble-border);
+  border-radius: 3px 16px 16px 16px;
+  padding: 11px 14px;
+  max-width: 86%;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  font-size: 14px; line-height: 1.55;
+  color: var(--dz-text-body);
+  font-family: var(--dz-font);
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+.dz-bubble--bot strong { font-weight: 600; color: var(--dz-text-strong); }
+.dz-bubble--bot a { color: var(--dz-callout); text-decoration: underline; }
+.dz-bubble--bot ul { margin: 6px 0 0; padding-left: 18px; }
+.dz-bubble--bot li { margin: 2px 0; }
+.dz-bubble--bot p { margin: 0 0 6px; }
+.dz-bubble--bot p:last-child { margin-bottom: 0; }
+.dz-bubble--bot .dz-callout { color: var(--dz-callout); font-weight: 600; }
+
+.dz-user-row { display: flex; justify-content: flex-end; }
+.dz-bubble--user {
+  background: var(--dz-user-bubble-bg);
+  color: var(--dz-user-bubble-text);
+  border-radius: 16px 4px 16px 16px;
+  padding: 10px 14px;
+  max-width: 82%;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.11);
+  font-size: 14.5px; line-height: 1.6;
+  font-family: var(--dz-font);
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* "Asystent pisze..." */
+.dz-typing {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 13px; color: var(--dz-text-body);
+  font-style: italic;
+}
+.dz-typing__dots { display: inline-flex; gap: 3px; }
+.dz-typing__dots span {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--dz-text-body); opacity: .4;
+  animation: dz-blink 1.2s infinite ease-in-out;
+}
+.dz-typing__dots span:nth-child(2) { animation-delay: .15s; }
+.dz-typing__dots span:nth-child(3) { animation-delay: .3s; }
+@keyframes dz-blink {
+  0%, 80%, 100% { opacity: .2; }
+  40% { opacity: .9; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dz-typing__dots span { animation: none; opacity: .6; }
+  .dz-window { transition: none; }
+}
+
+/* ───────────────────────── Chipy ───────────────────────── */
+
+.dz-chips {
+  padding-left: 39px;
+  display: flex; flex-wrap: wrap; gap: 7px;
+}
+.dz-chip {
+  font-family: var(--dz-font);
+  font-size: 13px; font-weight: 500;
+  color: var(--dz-chip-text);
+  background: var(--dz-chip-bg);
+  border: 1px solid var(--dz-chip-border);
+  border-radius: 20px;
+  padding: 7px 13px;
+  cursor: pointer;
+  line-height: 1.2;
+  transition: opacity .15s, transform .1s;
+  white-space: nowrap;
+}
+.dz-chip:hover { opacity: .78; }
+.dz-chip:active { transform: scale(0.97); }
+.dz-chip:focus-visible {
+  outline: 2px solid var(--dz-focus-ring);
+  outline-offset: 2px;
+}
+
+/* ───────────────────────── Nota RODO ───────────────────────── */
+
+.dz-note {
+  padding: 5px 14px 6px;
+  background: var(--dz-note-bg);
+  border-top: 1px solid var(--dz-note-border);
+  flex-shrink: 0;
+  font-family: var(--dz-font);
+  font-size: 11px; line-height: 1.4;
+  color: var(--dz-note-text);
+}
+.dz-note a {
+  color: var(--dz-note-link);
+  text-decoration: underline;
+}
+
+/* ───────────────────────── Pasek wpisu ───────────────────────── */
+
+.dz-inputbar {
+  background: #ffffff;
+  border-top: 1px solid var(--dz-input-border);
+  padding: 10px 12px;
+  display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0;
+}
+.dz-input {
+  flex: 1 1 auto;
+  height: 42px;
+  border: 1px solid var(--dz-input-border);
+  border-radius: 21px;
+  padding: 0 14px;
+  font-family: var(--dz-font);
+  font-size: 15px;
+  color: var(--dz-text-strong);
+  background: #ffffff;
+  outline: none;
+}
+.dz-input::placeholder { color: var(--dz-placeholder); }
+.dz-input:focus-visible {
+  border-color: var(--dz-focus-ring);
+  box-shadow: 0 0 0 2px rgba(30, 99, 99, 0.18);
+}
+.dz-send {
+  width: 42px; height: 42px; border-radius: 50%;
+  background: var(--dz-send-bg);
+  color: var(--dz-send-icon);
+  border: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.14);
+  flex-shrink: 0;
+  transition: opacity .15s, transform .1s;
+  padding: 0;
+}
+.dz-send:hover { opacity: .88; }
+.dz-send:active { transform: scale(0.95); }
+.dz-send:disabled { opacity: .45; cursor: not-allowed; }
+.dz-send:focus-visible {
+  outline: 2px solid var(--dz-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Region sr-only dla a11y (streaming -> czytnik) */
+.dz-sr-only {
+  position: absolute !important;
+  width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important;
+  overflow: hidden !important; clip: rect(0,0,0,0) !important;
+  white-space: nowrap !important; border: 0 !important;
+}
+
+/* ───────────────────────── Mobile fullscreen ───────────────────────── */
+
+@media (max-width: 599.98px) {
+  .dz-window {
+    right: 0; bottom: 0;
+    width: 100vw;
+    height: var(--vvh, 100dvh);
+    max-height: var(--vvh, 100dvh);
+    border-radius: 0;
+    border: 0;
+    box-shadow: none;
+    transform: translateY(8px);
+    transform-origin: center bottom;
+  }
+  .dz-window[data-open="true"] {
+    transform: translateY(0);
+  }
+  .dz-header {
+    padding-top: calc(13px + env(safe-area-inset-top, 0px));
+  }
+  .dz-inputbar {
+    padding: 10px 14px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+  .dz-input {
+    height: 46px;
+    border-radius: 23px;
+    /* font 16px = bloka auto-zoom iOS (ADR-061 kwestia B) */
+    font-size: 16px;
+  }
+  .dz-send {
+    width: 46px; height: 46px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.14);
+  }
+  .dz-bubble--bot { border-radius: 4px 16px 16px 16px; }
+  .dz-bubble--user { border-radius: 16px 4px 16px 16px; }
+  .dz-bot-row .dz-avatar { display: none; }
+  .dz-bot-row { gap: 0; }
+  .dz-bubble--bot { max-width: 82%; }
+  .dz-chips { padding-left: 0; }
+}

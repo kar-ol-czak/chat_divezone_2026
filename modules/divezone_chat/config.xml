@@ -2,7 +2,7 @@
 <module>
     <name>divezone_chat</name>
     <displayName><![CDATA[DiveZone Chat — panel obsługi]]></displayName>
-    <version><![CDATA[1.0.0]]></version>
+    <version><![CDATA[1.0.1]]></version>
     <description><![CDATA[Panel obsługi czatu AI: rekomendacje, koszty, ustawienia. Faza 1 = echo kręgosłupa kanału serwerowego (T-032, ADR-068).]]></description>
     <author><![CDATA[DiveZone (Karol Susicki)]]></author>
     <tab><![CDATA[administration]]></tab>
