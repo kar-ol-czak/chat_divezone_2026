@@ -2257,3 +2257,22 @@ Etapy 2-4 = osobne taski po sesji. Ten ADR utrwala zasady, nie implementacje.
 **Konsekwencje:** Wzorzec „ciężkiej zakładki z danymi" (lista + szczegóły + akcja POST, dwa tryby wg `?session_id`, render server-side bez JS) staje się szablonem dla Analityki i Editorial. Etap 2 (Analityka) wymaga NAJPIERW przełączenia `/api/admin/cost/*` + `/api/admin/conversations/*` z Basic Auth na kanał serwerowy.
 
 **Odrzucone:** 104a (sam odczyt — sztuczny podział pełnej pętli na 2 wgrania modułu); 106b (default zmieniany osobno — niepotrzebny drugi cykl deploy).
+
+
+---
+
+### ADR-073: Redesign zakładki „Rozmowy" — master-detail + formatowanie (CHAT-T-051)
+**Data:** 2026-06-03 | **Status:** PRZYJĘTA | **Powiązane:** ADR-072, CHAT-T-048
+
+**Kontekst:** Pilotaż (CHAT-T-048) działał, ale na żywym panelu ujawnił 3 problemy UX: (A) lista i szczegóły to osobne ekrany — ciągłe wchodzenie/wychodzenie (stary /admin miał wygodny master-detail), (B) treść czatu renderowana surowo (`**` zamiast bold, gołe URL zamiast linków) — mocno utrudnia czytanie, (C) etykieta statusu wyświetla się jako „Wyświetlany" (z tłumaczenia PS na serwerze, nie z kodu).
+
+**Decyzje:**
+- **111a — redesign przed Analityką.** Wygoda przeglądania rozmów to codzienne narzędzie obsługi; warte priorytetu nad Analityką (zarządczą, rzadziej używaną).
+- **112a — `first_message` do `ConversationStore::list`.** Lista potrzebuje pierwszej wiadomości użytkownika; wzorzec SQL już sprawdzony w `CostAnalytics::topConversations` (napędza „Pierwsza wiadomość" w starym /admin → /koszty). Przeniesienie skorelowanego podzapytania do `list()`, any-role bez zmian. Odrzucone 112b (dociąganie per wiersz = N+1).
+- **113a — master-detail server-side, bez JS.** Jeden ekran renderuje obie kolumny (wąska lista lewa + szeroka rozmowa prawa, własne scrolle); klik = pełen reload z `?session_id`, aktywna pozycja podświetlona. Spójne z „zero JS" z CHAT-T-048. Odrzucone 113b (AJAX bez reloadu): wymagałoby albo wystawienia sekretu HMAC do przeglądarki (niedopuszczalne), albo proxy-endpointu w module (duża robota + nowy wektor audytu). Płynny AJAX przez proxy PHP = ewentualny przyszły temat, sekret zostaje na serwerze.
+- **Formatowanie czatu (B):** lekki, bezpieczny rendering — `htmlspecialchars` PIERWSZE, potem `**bold**`→`<strong>` i URL→`<a target=_blank rel=noopener>`, na końcu `nl2br`. Bez markdown-parsera, bez HTML z treści.
+- **Etykieta (C):** „Wyświetlany" pochodzi z tłumaczenia modułu na serwerze (nie z kodu — kod ma `$this->l('Status')`). Poprawka ręczna przez Karola (Międzynarodowy → Tłumaczenia → moduł divezone_chat → PL). NIE tworzyć `translations/pl.php` w repo (nieznana pełna zawartość produkcyjna).
+
+**Pola listy (decyzja Karola):** TYLKO pierwsza wiadomość + data rozpoczęcia + „Klient | Status(badge)". Model/koszt/liczba wiadomości wyłącznie w prawej kolumnie.
+
+**Konsekwencje:** Task dotyka 2 obszarów — standalone backend (`ConversationStore.php`, CC wdraża sam) + moduł PS (kontroler, Karol wgrywa ręcznie wg 116b). Sekwencja: backend najpierw (deploy CC), potem moduł.
