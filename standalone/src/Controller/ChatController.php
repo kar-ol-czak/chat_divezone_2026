@@ -168,10 +168,16 @@ final class ChatController
     }
 
     /**
-     * GET /api/chat/history?session_id={id}
+     * GET /api/chat/history?sid={id}
      *
      * Odczyt historii aktywnej rozmowy do odtworzenia widgetu po nawigacji
      * miedzy stronami sklepu (CHAT-T-059). Auth HMAC identyczny jak handle().
+     *
+     * UWAGA — nazwa parametru `sid` (NIE `session_id`): LiteSpeed/ModSecurity
+     * na hostingu blokuje query stringi z `session_id=` (regula PHPSESSID-like,
+     * 403 zanim PHP zobaczy request). Krotsze `sid` przechodzi przez WAF i
+     * jednoznacznie identyfikuje sesje rozmowy. Body POST /api/chat dalej uzywa
+     * `session_id` (POST body nie podlega tej regule).
      *
      * Weryfikacja wlasciciela (decyzja 145a, kryterium bezpieczenstwa #7):
      * rozmowa nalezy do zadajacego tylko jesli ps_customer_id rozmowy ==
@@ -204,9 +210,9 @@ final class ChatController
             Response::error('Nieprawidłowy token', 401);
         }
 
-        $sessionId = trim((string) ($request->getQueryParam('session_id') ?? ''));
+        $sessionId = trim((string) ($request->getQueryParam('sid') ?? ''));
         if ($sessionId === '') {
-            Response::error('Parametr session_id jest wymagany', 400);
+            Response::error('Parametr sid jest wymagany', 400);
         }
 
         $conversation = $this->conversationStore->findActiveBySessionId($sessionId);
