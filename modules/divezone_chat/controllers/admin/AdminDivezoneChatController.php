@@ -173,9 +173,17 @@ class AdminDivezoneChatController extends ModuleAdminController
         $css .= '.dz-conv-layout{display:flex;gap:14px;align-items:flex-start;}';
         $css .= '.dz-conv-list-col{width:340px;flex-shrink:0;max-height:75vh;overflow-y:auto;}';
         $css .= '.dz-conv-detail-col{flex:1;min-width:0;max-height:75vh;overflow-y:auto;}';
-        $css .= '.dz-conv-list-col .dz-conv-filters{flex-direction:column;align-items:stretch;gap:8px;}';
-        $css .= '.dz-conv-list-col .dz-conv-filters > div{width:100%;}';
-        $css .= '.dz-conv-list-col .dz-conv-filters input[type=text],.dz-conv-list-col .dz-conv-filters select{width:100%;box-sizing:border-box;}';
+        // CHAT-T-052 (poprawka 3): filtry w jednej linii — row z wrap fallback dla
+        // bardzo waskiej kolumny. Search elastyczny (flex-grow), pozostale auto.
+        $css .= '.dz-conv-list-col .dz-conv-filters{flex-direction:row;align-items:center;gap:6px;flex-wrap:wrap;padding:8px;}';
+        $css .= '.dz-conv-list-col .dz-conv-filters > div{width:auto;margin:0;}';
+        $css .= '.dz-conv-list-col .dz-conv-filters input[type=text]{flex:1 1 110px;min-width:100px;width:auto;box-sizing:border-box;padding:6px 8px;}';
+        $css .= '.dz-conv-list-col .dz-conv-filters select{flex:0 0 auto;width:auto;box-sizing:border-box;padding:6px 8px;}';
+        $css .= '.dz-conv-list-col .dz-conv-filters .check-row{font-size:12px;padding:0;}';
+        $css .= '.dz-conv-list-col .dz-conv-filters button{padding:6px 12px;font-size:12px;}';
+        // CHAT-T-052 (poprawka 4): meta + koszty obok siebie (2 kolumny, wrap na waskim).
+        $css .= '.dz-conv-meta-row{display:flex;gap:14px;align-items:stretch;flex-wrap:wrap;margin-bottom:14px;}';
+        $css .= '.dz-conv-meta-row > .dz-conv-meta,.dz-conv-meta-row > .dz-conv-cost{flex:1 1 280px;min-width:280px;margin-bottom:0;}';
         $css .= '.dz-conv-items{list-style:none;padding:0;margin:8px 0;}';
         $css .= '.dz-conv-items li{margin:0;padding:0;}';
         $css .= '.dz-conv-item{display:block;padding:10px 12px;border-bottom:1px solid #eee;color:#333;text-decoration:none;}';
@@ -717,20 +725,22 @@ class AdminDivezoneChatController extends ModuleAdminController
 
         $html  = '<div class="panel" style="border-top-left-radius:0;">';
         $html .= '<div class="panel-heading"><i class="icon-comments"></i> ' . $this->l('Rozmowy klientow') . '</div>';
-        $html .= '<div style="padding:18px;">';
+        // CHAT-T-052 (poprawka 2): wrapper padding=0 — lista styka sie z krawedziami panelu.
+        // Flash/filtry/error/pager dostaja wlasne ramki paddingu, bo by nie wygladaly
+        // dobrze przy edge-to-edge. Pozycje .dz-conv-item maja juz wlasny padding (10px 12px).
+        $html .= '<div style="padding:0;">';
 
-        // Flash po zapisie statusu (handleConvStatusSave wraca i ekran ostatecznie
-        // renderuje sie tu — jesli session_id puste w query, lista; przy reloadzie
-        // szczegolow flash zobaczymy w renderConversationDetail).
         if ($this->convFlash !== '') {
+            $html .= '<div style="padding:14px 14px 0 14px;">';
             $html .= '<div class="dz-flash ' . htmlspecialchars($this->convFlashType, ENT_QUOTES) . '">'
                   . htmlspecialchars($this->convFlash, ENT_QUOTES) . '</div>';
+            $html .= '</div>';
         }
 
         $html .= $this->renderConvFilters($search, $adminStatus, $knowledgeGap);
 
         if (isset($resp['error'])) {
-            $html .= '<p style="color:#a94442;background:#f2dede;padding:10px;border:1px solid #ebccd1;border-radius:3px;">';
+            $html .= '<p style="color:#a94442;background:#f2dede;padding:10px;margin:14px;border:1px solid #ebccd1;border-radius:3px;">';
             $html .= '<strong>' . $this->l('Blad pobrania listy:') . '</strong> ' . htmlspecialchars((string) $resp['error'], ENT_QUOTES);
             $html .= '</p>';
             $html .= '</div></div>';
@@ -741,7 +751,7 @@ class AdminDivezoneChatController extends ModuleAdminController
         $total = isset($resp['total']) ? (int) $resp['total'] : 0;
 
         if (empty($convs)) {
-            $html .= '<p>' . $this->l('Brak rozmow.') . '</p>';
+            $html .= '<p style="padding:14px;">' . $this->l('Brak rozmow.') . '</p>';
             $html .= '</div></div>';
             return $html;
         }
@@ -754,7 +764,7 @@ class AdminDivezoneChatController extends ModuleAdminController
         }
         $html .= '</ul>';
 
-        $html .= $this->renderConvPager($page, $perPage, $total, $filters);
+        $html .= '<div style="padding:0 14px 14px 14px;">' . $this->renderConvPager($page, $perPage, $total, $filters) . '</div>';
 
         $html .= '</div></div>';
         return $html;
@@ -766,24 +776,25 @@ class AdminDivezoneChatController extends ModuleAdminController
         // sa potrzebne zeby PS routowal prawidlowo (GET form strippuje query string z action).
         $token = Tools::getAdminTokenLite('AdminDivezoneChat');
 
+        // CHAT-T-052 (poprawka 3): jedna linia bez labeli, placeholder w inpucie,
+        // pierwsza opcja "— Wyświetlane wszystkie —". CSS w renderTabsStyles nadpisuje
+        // domyslny flex-direction:column dla .dz-conv-list-col .dz-conv-filters.
         $html  = '<form method="get" class="dz-conv-filters" action="">';
         $html .= '<input type="hidden" name="controller" value="AdminDivezoneChat">';
         $html .= '<input type="hidden" name="token" value="' . htmlspecialchars($token, ENT_QUOTES) . '">';
         $html .= '<input type="hidden" name="tab" value="' . self::TAB_CONVERSATIONS . '">';
 
-        $html .= '<div><label for="dz-conv-search">' . $this->l('Szukaj') . '</label>';
-        $html .= '<input type="text" id="dz-conv-search" name="search" value="' . htmlspecialchars($search, ENT_QUOTES) . '" placeholder="' . $this->l('tresc wiadomosci') . '" size="28"></div>';
+        $html .= '<div><input type="text" id="dz-conv-search" name="search" value="' . htmlspecialchars($search, ENT_QUOTES) . '" placeholder="' . $this->l('Szukaj konwersacji') . '"></div>';
 
-        $html .= '<div><label for="dz-conv-status">' . $this->l('Status') . '</label>';
-        $html .= '<select id="dz-conv-status" name="admin_status">';
-        $html .= '<option value="">' . $this->l('— wszystkie —') . '</option>';
+        $html .= '<div><select id="dz-conv-status" name="admin_status">';
+        $html .= '<option value="">' . $this->l('— Wyswietlane wszystkie —') . '</option>';
         foreach ($this->convStatusOptions() as $k => $label) {
             $sel = $adminStatus === $k ? ' selected' : '';
             $html .= '<option value="' . htmlspecialchars($k, ENT_QUOTES) . '"' . $sel . '>' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
         }
         $html .= '</select></div>';
 
-        $html .= '<div class="check-row"><label><input type="checkbox" name="knowledge_gap" value="1"' . ($knowledgeGap ? ' checked' : '') . '> ' . $this->l('Tylko luki wiedzy') . '</label></div>';
+        $html .= '<div class="check-row"><label><input type="checkbox" name="knowledge_gap" value="1"' . ($knowledgeGap ? ' checked' : '') . '> ' . $this->l('Luki wiedzy') . '</label></div>';
 
         $html .= '<div><button type="submit" class="btn btn-primary">' . $this->l('Filtruj') . '</button></div>';
 
@@ -824,15 +835,19 @@ class AdminDivezoneChatController extends ModuleAdminController
         $activeClass = ($sessionId !== '' && $sessionId === $activeSessionId) ? ' is-active' : '';
         $msgPreview  = $this->truncateFirstMessage($firstMessage);
 
+        // CHAT-T-052 (poprawka 1): JEDEN div meta — data lewo, klient|status|⚠ prawo
+        // (klasa .dz-conv-item-meta ma justify-content:space-between).
         $html  = '<li><a href="' . htmlspecialchars($url, ENT_QUOTES) . '" class="dz-conv-item' . $activeClass . '">';
         $html .= '<div class="dz-conv-item-msg">' . htmlspecialchars($msgPreview, ENT_QUOTES) . '</div>';
-        $html .= '<div class="dz-conv-item-meta"><span>' . htmlspecialchars($this->formatConvDate($startedAt), ENT_QUOTES) . '</span></div>';
-        $html .= '<div class="dz-conv-item-meta"><span>';
+        $html .= '<div class="dz-conv-item-meta">';
+        $html .= '<span>' . htmlspecialchars($this->formatConvDate($startedAt), ENT_QUOTES) . '</span>';
+        $html .= '<span>';
         $html .= ($customerId > 0 ? '#' . $customerId : '<em>' . $this->l('gosc') . '</em>') . ' | ' . $this->renderStatusBadge($adminStatus);
         if ($knowledgeGap) {
             $html .= ' <span title="' . $this->l('luka wiedzy') . '" style="color:#d9534f;font-weight:bold;">&#9888;</span>';
         }
-        $html .= '</span></div>';
+        $html .= '</span>';
+        $html .= '</div>';
         $html .= '</a></li>';
         return $html;
     }
@@ -938,7 +953,8 @@ class AdminDivezoneChatController extends ModuleAdminController
             : 'new';
         $adminNotes   = isset($resp['admin_notes']) && $resp['admin_notes'] !== null ? (string) $resp['admin_notes'] : '';
 
-        // Meta
+        // CHAT-T-052 (poprawka 4): meta i koszty obok siebie — 2 kolumny w jednym wierszu.
+        $html .= '<div class="dz-conv-meta-row">';
         $html .= '<div class="dz-conv-meta"><dl>';
         $html .= '<dt>' . $this->l('Session ID') . '</dt><dd><code>' . htmlspecialchars($sessionId, ENT_QUOTES) . '</code></dd>';
         $html .= '<dt>' . $this->l('Klient') . '</dt><dd>' . ($customerId > 0 ? '#' . $customerId : '<em>' . $this->l('gosc') . '</em>') . '</dd>';
@@ -953,6 +969,7 @@ class AdminDivezoneChatController extends ModuleAdminController
         $html .= '</dl></div>';
 
         $html .= $this->renderConvCosts($resp);
+        $html .= '</div>';
 
         $html .= $this->renderConvStatusForm($sessionId, $adminStatus, $adminNotes);
 
@@ -972,9 +989,11 @@ class AdminDivezoneChatController extends ModuleAdminController
         $tokensOut   = isset($resp['tokens_output']) ? (int) $resp['tokens_output'] : 0;
         $cacheRead   = isset($resp['cache_read_tokens']) ? (int) $resp['cache_read_tokens'] : 0;
         $cacheCreate = isset($resp['cache_creation_tokens']) ? (int) $resp['cache_creation_tokens'] : 0;
-        $estCost     = isset($resp['estimated_cost']) ? (float) $resp['estimated_cost'] : 0.0;
         $convCost    = isset($resp['conversation_cost']) && is_array($resp['conversation_cost']) ? $resp['conversation_cost'] : null;
 
+        // CHAT-T-052 (poprawka 6): usunieto " · estimated_cost: $X USD" — backend
+        // getConversationCost() czyta dokladnie kolumne estimated_cost i dokleja PLN,
+        // wiec ta sama wartosc co conversation_cost.total_usd. Linia byla nadmiarowa.
         $html  = '<div class="dz-conv-cost">';
         $html .= '<strong>' . $this->l('Koszty i tokeny') . ':</strong> ';
         $html .= $this->l('input') . ' ' . number_format($tokensIn) . ', ';
@@ -983,7 +1002,6 @@ class AdminDivezoneChatController extends ModuleAdminController
             $html .= ', ' . $this->l('cache read') . ' ' . number_format($cacheRead);
             $html .= ', ' . $this->l('cache create') . ' ' . number_format($cacheCreate);
         }
-        $html .= ' &middot; <strong>estimated_cost: $' . number_format($estCost, 4, '.', '') . ' USD</strong>';
 
         if ($convCost !== null) {
             $totalUsd = isset($convCost['total_usd']) ? (float) $convCost['total_usd'] : 0.0;
@@ -1006,26 +1024,33 @@ class AdminDivezoneChatController extends ModuleAdminController
             . '&tab=' . self::TAB_CONVERSATIONS
             . '&session_id=' . rawurlencode($sessionId);
 
+        // CHAT-T-052 (poprawka 5): 2 KOLUMNY obok siebie.
+        //  LEWA: Status (select) + przycisk "Zapisz status" pod selectem.
+        //  PRAWA: Notatki (textarea, rows=2 — nizej, dzieki przyciskowi w lewej kolumnie).
         $html  = '<form method="post" action="' . htmlspecialchars($action, ENT_QUOTES) . '" style="margin:14px 0;padding:14px;background:#f7f9fa;border:1px solid #e2e6e8;border-radius:4px;">';
         $html .= '<input type="hidden" name="session_id" value="' . htmlspecialchars($sessionId, ENT_QUOTES) . '">';
 
-        $html .= '<div style="display:grid;grid-template-columns:160px 1fr;gap:12px;align-items:start;">';
+        $html .= '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;">';
 
-        $html .= '<label style="font-weight:600;padding-top:6px;">' . $this->l('Status') . '</label>';
-        $html .= '<div><select name="status" style="padding:7px 10px;border:1px solid #ccc;border-radius:3px;background:#fff;font-size:13px;max-width:260px;">';
+        // LEWA kolumna: Status + przycisk
+        $html .= '<div>';
+        $html .= '<label style="font-weight:600;display:block;margin-bottom:4px;font-size:13px;">' . $this->l('Status') . '</label>';
+        $html .= '<select name="status" style="width:100%;padding:7px 10px;border:1px solid #ccc;border-radius:3px;background:#fff;font-size:13px;">';
         foreach ($this->convStatusOptions() as $k => $label) {
             $sel = $k === $currentStatus ? ' selected' : '';
             $html .= '<option value="' . htmlspecialchars($k, ENT_QUOTES) . '"' . $sel . '>' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
         }
-        $html .= '</select></div>';
+        $html .= '</select>';
+        $html .= '<div style="margin-top:10px;"><button type="submit" name="submitDivezoneChatConvStatus" class="btn btn-primary" style="padding:9px 22px;background:#1a5e5a;color:#fff;border:0;border-radius:4px;font-weight:600;cursor:pointer;font-size:13px;">' . $this->l('Zapisz status') . '</button></div>';
+        $html .= '</div>';
 
-        $html .= '<label style="font-weight:600;padding-top:6px;">' . $this->l('Notatki') . '</label>';
-        $html .= '<div><textarea name="notes" rows="3" style="width:100%;max-width:540px;padding:7px 10px;border:1px solid #ccc;border-radius:3px;background:#fff;font-size:13px;">';
+        // PRAWA kolumna: Notatki (nizsze pole, rows=2)
+        $html .= '<div>';
+        $html .= '<label style="font-weight:600;display:block;margin-bottom:4px;font-size:13px;">' . $this->l('Notatki') . '</label>';
+        $html .= '<textarea name="notes" rows="2" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #ccc;border-radius:3px;background:#fff;font-size:13px;">';
         $html .= htmlspecialchars($currentNotes, ENT_QUOTES);
-        $html .= '</textarea></div>';
-
-        $html .= '<div></div>';
-        $html .= '<div><button type="submit" name="submitDivezoneChatConvStatus" class="btn btn-primary" style="padding:9px 22px;background:#1a5e5a;color:#fff;border:0;border-radius:4px;font-weight:600;cursor:pointer;font-size:13px;">' . $this->l('Zapisz status') . '</button></div>';
+        $html .= '</textarea>';
+        $html .= '</div>';
 
         $html .= '</div></form>';
         return $html;
