@@ -47,6 +47,13 @@
   // znaki@znaki.kropka (PHP po stronie i tak waliduje autorytatywnie).
   var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+  // CHAT-T-059: klucze localStorage / sessionStorage. Treningowo zero-treskove —
+  // localStorage trzyma TYLKO {sessionId, ts}, NIE zawartosc rozmowy (ta zywie
+  // na backendzie i pobiera sie przy mount przez fetchHistory).
+  var PERSIST_KEY = 'dz_chat_session';   // {sessionId, ts} z TTL (BOOT.persist.ttl_days)
+  var OPEN_KEY    = 'dz_chat_open';      // sessionStorage "1" jesli czat byl otwarty (per tab)
+  var DEFAULT_PERSIST_TTL_DAYS = 30;
+
   /* ───────────────────────── Mount state ───────────────────────── */
 
   var state = {
@@ -79,6 +86,159 @@
     orderAbortCtl: null,
     orderLastFocus: null
   };
+
+  /* ───────────────────────── Persystencja sesji (CHAT-T-059) ───────────────────────── */
+
+  /**
+   * Bezpieczne API localStorage — w trybach prywatnych / wylaczonych localStorage
+   * (Safari ITP, Firefox prywatne) zwraca null/no-op zamiast rzucac wyjatkiem.
+   */
+  function lsGet(key) {
+    try { return window.localStorage ? window.localStorage.getItem(key) : null; }
+    catch (_) { return null; }
+  }
+  function lsSet(key, value) {
+    try { if (window.localStorage) window.localStorage.setItem(key, value); }
+    catch (_) {}
+  }
+  function lsRemove(key) {
+    try { if (window.localStorage) window.localStorage.removeItem(key); }
+    catch (_) {}
+  }
+  function ssGet(key) {
+    try { return window.sessionStorage ? window.sessionStorage.getItem(key) : null; }
+    catch (_) { return null; }
+  }
+  function ssSet(key, value) {
+    try { if (window.sessionStorage) window.sessionStorage.setItem(key, value); }
+    catch (_) {}
+  }
+  function ssRemove(key) {
+    try { if (window.sessionStorage) window.sessionStorage.removeItem(key); }
+    catch (_) {}
+  }
+
+  function persistTtlMs() {
+    var days = (state.boot && state.boot.persist && state.boot.persist.ttl_days) || DEFAULT_PERSIST_TTL_DAYS;
+    if (typeof days !== 'number' || days < 1 || days > 365) days = DEFAULT_PERSIST_TTL_DAYS;
+    return days * 86400000;
+  }
+
+  function persistSession(sessionId) {
+    if (!sessionId) return;
+    var payload = JSON.stringify({ sessionId: sessionId, ts: Date.now() });
+    lsSet(PERSIST_KEY, payload);
+  }
+
+  /**
+   * Odczyt zapamietanego sessionId. Zwraca string lub null gdy brak / wygasl /
+   * skorumpowany JSON. Wygasly wpis czysci od razu (samosprzatanie).
+   */
+  function loadPersistedSessionId() {
+    var raw = lsGet(PERSIST_KEY);
+    if (!raw) return null;
+    var data;
+    try { data = JSON.parse(raw); } catch (_) { lsRemove(PERSIST_KEY); return null; }
+    if (!data || typeof data.sessionId !== 'string' || !data.sessionId || typeof data.ts !== 'number') {
+      lsRemove(PERSIST_KEY);
+      return null;
+    }
+    if (Date.now() - data.ts > persistTtlMs()) {
+      lsRemove(PERSIST_KEY);
+      return null;
+    }
+    return data.sessionId;
+  }
+
+  /**
+   * Odtworzenie historii rozmowy w widoku z payloadu z backendu.
+   * Format messages z backendu zgodny ze startOrResume — role: user/assistant/tool.
+   * tool_result/system pomijamy (analogicznie do admin history.js).
+   * Chipy ukrywamy bo rozmowa juz trwa.
+   */
+  function renderHistoryMessages(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) return false;
+    var rendered = 0;
+    for (var i = 0; i < messages.length; i++) {
+      var m = messages[i];
+      if (!m || typeof m.role !== 'string') continue;
+      var content = (typeof m.content === 'string') ? m.content : '';
+      if (m.role === 'user' && content) {
+        appendUserMessage(content);
+        rendered++;
+      } else if (m.role === 'assistant' && content) {
+        appendBotMessage(content);
+        rendered++;
+      }
+      // tool / tool_result / system / inne — pomijamy (jak w admin history.js).
+    }
+    if (rendered > 0 && state.chipsEl) {
+      state.chipsEl.style.display = 'none';
+    }
+    return rendered > 0;
+  }
+
+  function clearMessagesView() {
+    if (!state.messagesEl) return;
+    // Usuwamy wszystkie bable user/bot, zostawiamy welcome + chipy + sr-only.
+    var rows = state.messagesEl.querySelectorAll('.dz-user-row, .dz-bot-row');
+    // welcome-row jest pierwszym .dz-bot-row (welcome bubble). Zachowujemy go.
+    var first = true;
+    for (var i = 0; i < rows.length; i++) {
+      if (first && rows[i].classList.contains('dz-bot-row')) { first = false; continue; }
+      if (rows[i].parentNode) rows[i].parentNode.removeChild(rows[i]);
+    }
+    if (state.chipsEl) state.chipsEl.style.display = '';
+  }
+
+  /**
+   * Akcja "Nowa rozmowa" (CHAT-T-059 C3): czysci sessionId + localStorage +
+   * widok wiadomosci, pokazuje welcome + chipy. Rozmowa w backendzie zostaje
+   * (closed_at = null), tylko front startuje swiezo.
+   */
+  function startNewConversation() {
+    if (state.isStreaming && state.abortCtl) {
+      try { state.abortCtl.abort(); } catch (_) {}
+      state.abortCtl = null;
+      state.isStreaming = false;
+      hideTyping();
+      if (state.sendBtnEl) state.sendBtnEl.disabled = state.inputEl && state.inputEl.value.trim() === '';
+    }
+    state.sessionId = null;
+    lsRemove(PERSIST_KEY);
+    clearMessagesView();
+    if (state.srLiveEl) state.srLiveEl.textContent = '';
+    if (state.inputEl) { state.inputEl.value = ''; state.inputEl.focus(); }
+    scrollToBottom();
+  }
+
+  /**
+   * Po mount (raz): jesli localStorage ma niewygasly sessionId, pobierz historie
+   * z backendu i odtworz bable. Padl/cudza/wygasla -> swiezy czat (graceful).
+   */
+  function tryRestoreSession() {
+    var sid = loadPersistedSessionId();
+    if (!sid) return;
+    var transport = window.DivezoneChatTransport;
+    if (!transport || typeof transport.fetchHistory !== 'function') return;
+
+    transport.fetchHistory(sid, {
+      onResult: function (data) {
+        if (data && data.exists && data.messages && data.messages.length) {
+          state.sessionId = data.sessionId || sid;
+          renderHistoryMessages(data.messages);
+        } else {
+          // {exists:false} = backend nie zna sesji (cudza / zamknieta / nieistniejaca).
+          // Czyscimy localStorage — od teraz swieza rozmowa.
+          lsRemove(PERSIST_KEY);
+        }
+      },
+      onError: function () {
+        // Padl fetch (siec / 401 / 5xx) — NIE bloku UI, gracefully zostawiamy
+        // swiezy czat. localStorage zachowany; nastepny mount sprobuje znow.
+      }
+    });
+  }
 
   /* ───────────────────────── SVG icons (z design handoff) ───────────────────────── */
 
@@ -192,6 +352,18 @@
     label.appendChild(createEl('span', { class: 'dz-brand__tag' }, 'Chat doradca'));
     brand.appendChild(label);
     header.appendChild(brand);
+
+    // CHAT-T-059: przycisk "Nowa rozmowa" w header — czysci sessionId +
+    // localStorage + widok wiadomosci, pokazuje welcome + chipy. Backend
+    // rozmowy nie zamyka — to tylko front start swiezej sesji.
+    var newConv = createEl('button', {
+      class: 'dz-newconv',
+      type: 'button',
+      title: 'Rozpocznij nową rozmowę',
+      'aria-label': 'Rozpocznij nową rozmowę'
+    }, 'Nowa');
+    newConv.addEventListener('click', startNewConversation);
+    header.appendChild(newConv);
 
     var x = createEl('button', {
       class: 'dz-x',
@@ -398,6 +570,9 @@
         hideTyping();
         if (payload && payload.session_id) {
           state.sessionId = payload.session_id;
+          // CHAT-T-059: zapamietaj sessionId + timestamp w localStorage.
+          // Po nawigacji miedzy stronami sklepu front pobierze historie z backendu.
+          persistSession(state.sessionId);
         }
         var responseText = (payload && payload.response) || '(brak odpowiedzi)';
         appendBotMessage(responseText);
@@ -766,6 +941,9 @@
     state.win.setAttribute('data-open', 'true');
     state.launcher.style.display = 'none';
     state.open = true;
+    // CHAT-T-059 (C4): zapamietaj stan otwarcia per-tab — po reload PS panel
+    // wraca otwarty (ciaglosc UX kiedy ktos klika kategorie majac czat otwarty).
+    ssSet(OPEN_KEY, '1');
     // Mobile: blokada scrolla tla
     var isMobile = window.matchMedia && window.matchMedia('(max-width: 599.98px)').matches;
     if (isMobile) {
@@ -789,6 +967,8 @@
     state.open = false;
     document.documentElement.style.overflow = '';
     document.body.style.overflow = '';
+    // CHAT-T-059 (C4): user zamknal panel — usun flage otwarcia per-tab.
+    ssRemove(OPEN_KEY);
     // Przerwij ewentualny streaming
     if (state.abortCtl) {
       try { state.abortCtl.abort(); } catch (_) {}
@@ -833,6 +1013,17 @@
     document.addEventListener('keydown', onKeydown, true);
 
     state.mounted = true;
+
+    // CHAT-T-059: po mount sprobuj odtworzyc rozmowe z localStorage (TTL).
+    // Async fetch — UI dziala od razu z welcome+chipy; przyjdzie historia ->
+    // chipy znikna, bable sie wyrenderuja. Pad gracefully (zero error UI).
+    tryRestoreSession();
+
+    // CHAT-T-059 (C4): jesli czat byl otwarty przed reload PS — auto-otworz.
+    // Per-tab (sessionStorage), nie psuje pierwszego wejscia na sklep.
+    if (ssGet(OPEN_KEY) === '1') {
+      openWindow();
+    }
   };
 
   window.DivezoneChatOpen = function () { openWindow(); };

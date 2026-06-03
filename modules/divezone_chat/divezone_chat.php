@@ -48,6 +48,12 @@ class Divezone_Chat extends Module
     const KEY_NUDGE_TEXT      = 'DIVEZONE_CHAT_NUDGE_TEXT';
     const DEFAULT_NUDGE_DELAY = 20;
     const DEFAULT_NUDGE_TEXT  = 'Hej! 🤿 Nie wiesz, jaki sprzęt wybrać? Zapytaj naszych specjalistów.';
+    // CHAT-T-059: persystencja sesji czatu miedzy stronami sklepu (lazy init).
+    // TTL = przez ile dni front zapamietuje sessionId w localStorage. Po TTL
+    // (lub kliku "Nowa rozmowa") startujemy swieza sesje. Backend trzyma
+    // rozmowy bezterminowo (closed_at IS NULL); TTL to UX limit po stronie klienta.
+    const KEY_PERSIST_TTL_DAYS    = 'DIVEZONE_CHAT_PERSIST_TTL_DAYS';
+    const DEFAULT_PERSIST_TTL_DAYS = 30;
     const TAB_CLASS          = 'AdminDivezoneChat';
     // T-034: zlecenie Karola — tab w sidebar Ulepsz, pomiedzy "Moduly" a "Wyglad".
     // Wybor T-034 (AdminModulesSf, id=44) byl bledny — to kontener Module Manager UI,
@@ -231,6 +237,12 @@ class Divezone_Chat extends Module
             $nudgeText = self::DEFAULT_NUDGE_TEXT;
         }
 
+        // CHAT-T-059: persystencja sesji — TTL w dniach (lazy init, default 30).
+        $persistTtl = (int)Configuration::get(self::KEY_PERSIST_TTL_DAYS);
+        if ($persistTtl < 1 || $persistTtl > 365) {
+            $persistTtl = self::DEFAULT_PERSIST_TTL_DAYS;
+        }
+
         if ($useSubmittedRiskValues) {
             // Po validation fail: pokaz uzytkownikowi to, co probowal zapisac.
             $showPoland = (int)Tools::getValue('show_poland', 0) === 1;
@@ -346,6 +358,15 @@ class Divezone_Chat extends Module
         $output .= '<small style="color:#666">' . $this->l('Krotki, przyjazny tekst zachecajacy do rozmowy. Emoji OK. HTML NIE — tresc renderowana jako tekst (anty-XSS). Puste = domyslna tresc.') . '</small>';
         $output .= '</p>';
 
+        // === SEKCJA 6: Persystencja sesji czatu — CHAT-T-059 ===
+        $output .= '<hr><h3 style="margin-bottom:4px">' . $this->l('Persystencja sesji czatu') . '</h3>';
+        $output .= '<p style="margin-top:0;color:#666"><em>' . $this->l('Czas pamietania trwajacej rozmowy w przegladarce uzytkownika (localStorage). W tym okresie odwiedzajacy widzi wczesniejsze wiadomosci po nawigacji miedzy stronami sklepu lub powrocie. Po TTL (lub kliku "Nowa rozmowa") rozmowa startuje na swiezo.') . '</em></p>';
+        $output .= '<p style="margin:6px 0">';
+        $output .= '<label>' . $this->l('Czas pamietania rozmowy (dni, 1-365)') . ':<br>';
+        $output .= '<input type="number" name="persist_ttl_days" value="' . (int)$persistTtl . '" min="1" max="365" step="1" style="width:100px"></label><br>';
+        $output .= '<small style="color:#666">' . $this->l('Default 30 dni. Wartosci poza zakresem = default. W przegladarce trzymamy tylko sessionId + timestamp (zero tresci rozmowy — historia z backendu).') . '</small>';
+        $output .= '</p>';
+
         $output .= '<p style="margin-top:18px"><input type="submit" class="button" name="submitDivezoneChatConfig" value="' . $this->l('Zapisz') . '"></p>';
         $output .= '</fieldset></form>';
 
@@ -434,6 +455,13 @@ class Divezone_Chat extends Module
         }
         Configuration::updateValue(self::KEY_NUDGE_TEXT, $nudgeTextRaw);
 
+        // CHAT-T-059: persystencja sesji — TTL w dniach, walidacja 1-365 → default 30.
+        $persistTtlRaw = (int)Tools::getValue('persist_ttl_days', self::DEFAULT_PERSIST_TTL_DAYS);
+        if ($persistTtlRaw < 1 || $persistTtlRaw > 365) {
+            $persistTtlRaw = self::DEFAULT_PERSIST_TTL_DAYS;
+        }
+        Configuration::updateValue(self::KEY_PERSIST_TTL_DAYS, (string)$persistTtlRaw);
+
         // === Pola "risk" — wymagaja ack przy aktywacji PL/Wszyscy ===
         $wantsPoland = (int)Tools::getValue('show_poland', 0) === 1;
         $wantsAll    = (int)Tools::getValue('show_all', 0) === 1;
@@ -511,6 +539,12 @@ class Divezone_Chat extends Module
             $nudgeText = self::DEFAULT_NUDGE_TEXT;
         }
 
+        // CHAT-T-059: persystencja sesji — TTL z configu (lazy init, default 30).
+        $persistTtl = (int)Configuration::get(self::KEY_PERSIST_TTL_DAYS);
+        if ($persistTtl < 1 || $persistTtl > 365) {
+            $persistTtl = self::DEFAULT_PERSIST_TTL_DAYS;
+        }
+
         $boot = array(
             'token'        => $token,
             'customerId'   => (string)$customerId,
@@ -527,6 +561,13 @@ class Divezone_Chat extends Module
                 'enabled' => $nudgeEnabled,
                 'delay'   => $nudgeDelay,
                 'text'    => $nudgeText,
+            ),
+            // CHAT-T-059: persystencja sesji miedzy stronami — TTL + sciezka history.
+            // Query param `sid` (NIE `session_id`) — LiteSpeed WAF na hostingu
+            // blokuje query stringi z `session_id=` (regula PHPSESSID-like, 403).
+            'persist'      => array(
+                'ttl_days'    => $persistTtl,
+                'historyPath' => '/api/chat/history',
             ),
             'version'      => '1.0.1',
         );

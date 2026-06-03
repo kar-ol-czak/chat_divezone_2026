@@ -10,10 +10,11 @@
  *
  * Token + customerId + time + backendUrl czyta z window.DIVEZONE_CHAT_BOOT
  * (ustawione przez shim PHP w hookDisplayFooter). NOTA: token ma anti-replay
- * 5 min na backendzie (HmacVerifier::maxAgeSec=300). Etap 1 emituje JEDEN token
- * na stronie — jesli sesja przekroczy 5 min, kolejne /stream zwroci 401.
- * Akceptowalne dla etapu 1 (po IP Karola, smoke). Refresh tokenu przez reload
- * strony lub iteracja w etapie 2/3.
+ * 1 h na backendzie (HmacVerifier::maxAgeSec=3600, CHAT-T-057 — wczesniej 5 min).
+ * Etap 1 emituje JEDEN token na stronie — sesja > 1 h zwroci 401. Persystencja
+ * miedzy stronami (CHAT-T-059) odswieza token przy kazdym reload PS, wiec
+ * problem dotyczy tylko sesji bez nawigacji powyzej godziny.
+ * Pelne odswiezanie tokenu z transportu = ADR-064 (przyszle).
  */
 (function () {
   'use strict';
@@ -184,8 +185,8 @@
         if (status === 400) {
           msg = (payload && payload.error) || 'Uzupelnij oba pola.';
         } else if (status === 401) {
-          // Token HMAC zyje 5 min od zaladowania strony (BOOT). Etap 1 nie
-          // refreshuje — instrukcja dla klienta.
+          // Token HMAC zyje 1 h od zaladowania strony (BOOT, CHAT-T-057).
+          // Etap 1 nie refreshuje — instrukcja dla klienta.
           msg = 'Sesja wygasla. Odswiez strone i sprobuj ponownie.';
         } else if (status === 404) {
           msg = (payload && payload.error) || 'Nie znaleziono zamowienia. Sprawdz dane.';
@@ -204,8 +205,68 @@
     return controller;
   }
 
+  /**
+   * Pobranie historii aktywnej rozmowy (CHAT-T-059).
+   * GET /api/chat/history?sid={sessionId} — HMAC identyczny jak czat.
+   *
+   * Backend zwraca {exists:true, session_id, messages:[]} dla aktywnej rozmowy
+   * nalezacej do customera (weryfikacja ps_customer_id == HMAC customerId).
+   * Cudza/nieistniejaca/zamknieta -> {exists:false, messages:[]} (NIE blad —
+   * front gracefully startuje swiezy czat).
+   *
+   * UWAGA: query param `sid` (NIE `session_id`) — LiteSpeed/ModSecurity na
+   * hostingu blokuje query stringi z `session_id=` (regula PHPSESSID-like, 403).
+   *
+   * @param {string} sessionId   identyfikator sesji z localStorage
+   * @param {object} callbacks   { onResult({exists, messages}), onError(msg) }
+   * @returns {AbortController}
+   */
+  function fetchHistory(sessionId, callbacks) {
+    callbacks = callbacks || {};
+    var onResult = callbacks.onResult || function () {};
+    var onError  = callbacks.onError  || function () {};
+
+    var controller = new AbortController();
+    var path = (BOOT.persist && BOOT.persist.historyPath) || '/api/chat/history';
+    var url = BOOT.backendUrl + path + '?sid=' + encodeURIComponent(sessionId);
+
+    fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+      credentials: 'omit',
+      cache: 'no-cache',
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json',
+        'X-DiveChat-Token': BOOT.token,
+        'X-DiveChat-Customer': BOOT.customerId,
+        'X-DiveChat-Time': BOOT.time
+      }
+    }).then(function (response) {
+      var status = response.status;
+      return response.json().catch(function () { return null; }).then(function (payload) {
+        if (status === 200 && payload && typeof payload.exists === 'boolean') {
+          onResult({
+            exists: payload.exists,
+            sessionId: payload.session_id || sessionId,
+            messages: payload.messages || []
+          });
+          return;
+        }
+        // 401/500/etc — gracefully traktuj jako "brak historii", front startuje swiezo.
+        onError('HTTP ' + status);
+      });
+    }).catch(function (err) {
+      if (err && err.name === 'AbortError') return;
+      onError((err && err.message) || 'Blad sieci.');
+    });
+
+    return controller;
+  }
+
   window.DivezoneChatTransport = {
     sendMessage: sendMessage,
+    fetchHistory: fetchHistory,
     checkOrderStatus: checkOrderStatus,
     /* getBootSnapshot: tylko do diagnostyki (NIE zwraca tokenu). */
     getBootSnapshot: function () {

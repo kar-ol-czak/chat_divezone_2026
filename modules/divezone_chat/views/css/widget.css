@@ -125,6 +125,25 @@
   outline: 2px solid var(--dz-focus-ring);
   outline-offset: 2px;
 }
+/* CHAT-T-059: przycisk "Nowa rozmowa" w header — wepchniety w prawo (margin-left:auto),
+   styl spojny z dz-x ale szerszy (tekst), niskoprofilowy zeby brand pozostal glowny.  */
+.dz-newconv {
+  margin-left: auto;
+  margin-right: 8px;
+  height: 30px; padding: 0 10px; border-radius: 7px;
+  background: var(--dz-x-bg);
+  border: 1px solid var(--dz-x-border);
+  color: var(--dz-x-color);
+  cursor: pointer;
+  font-size: 12px; line-height: 1; font-weight: 500;
+  font-family: var(--dz-font);
+  transition: opacity .15s;
+}
+.dz-newconv:hover { opacity: .82; }
+.dz-newconv:focus-visible {
+  outline: 2px solid var(--dz-focus-ring);
+  outline-offset: 2px;
+}
 
 /* ───────────────────────── Wiadomosci ───────────────────────── */
 
