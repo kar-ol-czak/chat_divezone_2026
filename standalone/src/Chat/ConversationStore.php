@@ -226,6 +226,38 @@ final class ConversationStore
     }
 
     /**
+     * Lekki odczyt aktywnej rozmowy do weryfikacji wlasciciela + odtworzenia
+     * historii w widgecie (CHAT-T-059, GET /api/chat/history).
+     *
+     * Zwraca {id, ps_customer_id, messages} lub null gdy rozmowa nie istnieje
+     * albo zostala zamknieta (closed_at IS NOT NULL). NIE tworzy nowej sesji —
+     * dla zalozenia rozmowy uzywaj startOrResume() z petli /api/chat.
+     *
+     * Wzorzec query 1:1 z startOrResume (active session + ORDER BY started_at
+     * DESC LIMIT 1) plus pole ps_customer_id potrzebne do weryfikacji
+     * wlasciciela w ChatController::history.
+     */
+    public function findActiveBySessionId(string $sessionId): ?array
+    {
+        $row = $this->db->fetchOne(
+            'SELECT id, ps_customer_id, messages FROM divechat_conversations
+             WHERE session_id = ? AND closed_at IS NULL
+             ORDER BY started_at DESC LIMIT 1',
+            [$sessionId],
+        );
+
+        if (!$row) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $row['id'],
+            'ps_customer_id' => $row['ps_customer_id'] !== null ? (int) $row['ps_customer_id'] : 0,
+            'messages' => json_decode($row['messages'] ?? '[]', true) ?: [],
+        ];
+    }
+
+    /**
      * Pobiera historię wiadomości z sesji.
      */
     public function getHistory(string $sessionId): array

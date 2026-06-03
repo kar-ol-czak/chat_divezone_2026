@@ -6,6 +6,7 @@ namespace DiveChat\Controller;
 
 use DiveChat\Auth\HmacVerifier;
 use DiveChat\Chat\ChatService;
+use DiveChat\Chat\ConversationStore;
 use DiveChat\Config;
 use DiveChat\Http\Request;
 use DiveChat\Http\Response;
@@ -23,6 +24,7 @@ final class ChatController
 {
     public function __construct(
         private readonly ChatService $chatService,
+        private readonly ConversationStore $conversationStore,
     ) {}
 
     public function handle(Request $request): void
@@ -163,6 +165,65 @@ final class ChatController
             echo "event: error\ndata: " . json_encode(['error' => $errorMessage], JSON_UNESCAPED_UNICODE) . "\n\n";
             flush();
         }
+    }
+
+    /**
+     * GET /api/chat/history?session_id={id}
+     *
+     * Odczyt historii aktywnej rozmowy do odtworzenia widgetu po nawigacji
+     * miedzy stronami sklepu (CHAT-T-059). Auth HMAC identyczny jak handle().
+     *
+     * Weryfikacja wlasciciela (decyzja 145a, kryterium bezpieczenstwa #7):
+     * rozmowa nalezy do zadajacego tylko jesli ps_customer_id rozmowy ==
+     * customerId z weryfikowanego HMAC. Goscie (customerId=0) korzystaja z
+     * sessionId jako sekretu (generowany losowo server-side, nieprzewidywalny).
+     * Niedopasowanie -> {exists:false} (NIE zwracamy informacji "rozmowa
+     * istnieje ale to nie twoja" — to by ulatwialo enumeracje).
+     *
+     * Rozmowa nieaktywna (nieistniejaca, closed_at IS NOT NULL, cudza) ->
+     * {exists:false, messages:[]} 200. NIE blad — front gracefully startuje
+     * nowa rozmowe.
+     */
+    public function history(Request $request): void
+    {
+        $token = $request->getHeader('x-divechat-token');
+        $customerId = $request->getHeader('x-divechat-customer');
+        $timestamp = $request->getHeader('x-divechat-time');
+
+        if ($token === null || $customerId === null || $timestamp === null) {
+            Response::error('Brak wymaganych headerów autoryzacji', 401);
+        }
+
+        $secret = Config::get('DIVECHAT_SECRET', '');
+        if ($secret === '') {
+            Response::error('Brak konfiguracji DIVECHAT_SECRET', 500);
+        }
+
+        $verifier = new HmacVerifier($secret);
+        if (!$verifier->verify($token, (int) $customerId, (int) $timestamp)) {
+            Response::error('Nieprawidłowy token', 401);
+        }
+
+        $sessionId = trim((string) ($request->getQueryParam('session_id') ?? ''));
+        if ($sessionId === '') {
+            Response::error('Parametr session_id jest wymagany', 400);
+        }
+
+        $conversation = $this->conversationStore->findActiveBySessionId($sessionId);
+        $customerIdInt = (int) $customerId;
+
+        // Brak rozmowy lub niedopasowanie wlasciciela -> {exists:false}.
+        // Niedopasowanie traktujemy tak samo jak brak (NIE rozrozniamy w
+        // odpowiedzi, zeby nie ulatwiac enumeracji sessionId — decyzja 145a).
+        if ($conversation === null || $conversation['ps_customer_id'] !== $customerIdInt) {
+            Response::json(['exists' => false, 'messages' => []]);
+        }
+
+        Response::json([
+            'exists' => true,
+            'session_id' => $sessionId,
+            'messages' => $conversation['messages'],
+        ]);
     }
 
     private function generateSessionId(): string

@@ -48,9 +48,13 @@ return static function (
     $router->get('/api/test-token', TestTokenController::handle(...));
 
     // Chat
-    $chatController = new ChatController($chatService);
+    // CHAT-T-059: ConversationStore wstrzykniety dla GET /api/chat/history
+    // (odtworzenie rozmowy po nawigacji miedzy stronami; weryfikacja wlasciciela
+    // po HMAC customerId == ps_customer_id rozmowy).
+    $chatController = new ChatController($chatService, new ConversationStore());
     $router->post('/api/chat', $chatController->handle(...));
     $router->post('/api/chat/stream', $chatController->stream(...));
+    $router->get('/api/chat/history', $chatController->history(...));
 
     // Order status (modal "Status zamówienia", CHAT-T-042 / ADR-063 — bez LLM, lookup MySQL).
     $orderStatusController = new OrderStatusController(new OrderStatus());
