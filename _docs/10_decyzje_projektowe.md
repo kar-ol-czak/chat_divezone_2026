@@ -2229,6 +2229,9 @@ UWAGA: na potrzeby SESJI PROJEKTOWEJ zespolu artefakt (pptx) pokazuje pelna stru
 ### Model AI per lisc (powiazanie z 3 poziomami modeli — pamiec)
 Docelowo lisc moze wskazywac POZIOM modelu (basic/primary/escalation). Pierwsze tury drzewa / proste zawezenia -> basic (najszybszy/najtanszy). Realny dobor -> primary. To wymaga routingu w ChatService (3. poziom modeli — osobny task, NIE teraz). Schemat wezla ma docelowo przyjac wskazanie poziomu modelu (jak context_hint).
 
+### Pierwsza wiadomosc dla sciezki chipowej (decyzja 114a — wytyczna z sesji nad lista rozmow, CHAT-T-051)
+Gdy klient wchodzi przez chip (nie wpisuje tekstu), chip MA wstrzykiwac czytelny, ludzki tekst jako `content` wiadomosci `role=user` (np. "Dobor sprzetu: automaty do zimnej wody"), a `node_id`/`context_hint` zapisywac OSOBNO w metadanych wiadomosci. Powod: lista rozmow, analityka (topConversations), eksport i AI widza to samo zdanie — zero specjalnej logiki w UI listy (lista pokazuje `content` jak dla wpisanej wiadomosci). Odrzucone: wstrzykiwanie samego `node_id` z pustym `content` (wymuszaloby lookup node_id->etykieta przy kazdym renderze listy + sprzezenie listy z silnikiem drzewa). Metadane (node_id/context_hint) sluza routingowi modelu i statystykom drzewa, NIE prezentacji. Konsekwencja dla schematu: wiadomosc user potrzebuje pola na metadane zrodla (dzis ChatService zapisuje plaskie ['role'=>'user','content'=>...] bez metadanych — do rozszerzenia przy budowie drzewa). Bezpiecznik po stronie listy (pusta pierwsza wiadomosc -> "(brak tresci)") juz dodany w CHAT-T-051 (115a).
+
 ### Konsekwencje / kolejnosc budowy
 1. Sesja zespolu nad artefaktem (pptx): osie podzialu Level 2/3 dla kategorii bez rekomendacji, tresc "Serwis sprzetu", granice chip<->AI. — PO STRONIE KAROLA.
 2. Schemat PG drzewa (tabela wezlow: id, tekst, przyciski[], typ_akcji, context_hint, model_poziom) + endpoint GET dla widgetu + seed poziomu 1.

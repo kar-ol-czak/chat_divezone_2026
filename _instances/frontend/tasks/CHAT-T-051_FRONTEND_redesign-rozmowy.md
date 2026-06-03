@@ -91,3 +91,11 @@ Jeden ekran zakładki renderuje OBIE kolumny naraz (CSS flex/grid, każda kolumn
 
 ### Pola pozycji listy (przypomnienie — TYLKO te, decyzja Karola)
 Pierwsza wiadomość (z `first_message`, skrócona ~80 znaków + ellipsis jak stary /admin) · Data rozpoczęcia (`started_at`, `Y-m-d H:i`) · „Klient | Status(badge)". Model/koszt/liczba wiadomości NIE na liście.
+
+
+---
+
+## DODATEK (decyzja 115a) — fallback pustej pierwszej wiadomości
+W rendererze pozycji listy: jeśli `first_message` jest null/puste (string po trim == ''), pokaż neutralne `(brak tresci)` zamiast pustego pola. Jedna linijka, chroni layout listy przed pustym wierszem (istotne na przyszłość dla ścieżki chipowej z drzewa ADR-071). Skracanie ~80 znaków + ellipsis stosuj TYLKO gdy treść istnieje.
+
+(Kontekst 114a — poza zakresem tego taska, wytyczna do ADR-071: chip drzewa będzie wstrzykiwał czytelny tekst jako `content` wiadomości user + `node_id`/`context_hint` osobno w metadanych. Lista pokaże wtedy ten czytelny `content` bez zmian w UI. Dlatego w CHAT-T-051 wystarczy sam fallback 115a — żadnej logiki node_id w liście.)
