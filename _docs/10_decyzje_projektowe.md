@@ -2398,3 +2398,24 @@ Etapy 2-4 = osobne taski po sesji. Ten ADR utrwala zasady, nie implementacje.
 **Świadomie zaakceptowane (Karol):** trwałość = na współdzielonym komputerze następna osoba może zobaczyć poprzednią rozmowę. Dla sprzętu nurkowego niewrażliwe; przycisk „Nowa rozmowa" daje wyjście.
 
 **Deploy dwuczęściowy:** backend (endpoint history) CC wdraża sam; moduł PS (config TTL + boot + widget localStorage/odtwarzanie/przycisk) Karol wgrywa ręcznie (116b).
+
+
+---
+
+### ADR-081: Poprawki po ewaluacji czatu 03.06.2026 (CHAT-T-062 + T-063)
+**Data:** 2026-06-03 | **Status:** PRZYJĘTA | **Powiązane:** ADR-048 (live MySQL enrichment), SystemPrompt, ProductSearch/ProductDetails
+
+**Kontekst:** Ewaluacja jakości czatu (laik, 28 pytań). Baza edukacyjna/bezpieczeństwa mocna (większość 4-5, INT/yoke nieobecne, brak zachęcania do nurkowania bez kursu). Problemy skupione w cenach/dostępności + format + 2 sprawy (guardrail, budżet). Triaż oddzielił realne błędy od świadomych guardraili i fałszywych alarmów.
+
+**Ustalenie kluczowe:** enrichment cen/dostępności (ADR-048) JUŻ jest live MySQL single source of truth (cena, 3 stany out_of_stock, promocje specific_price). Problem NIE „brak źródła prawdy", lecz: (a) jak model używa danych, (b) DWIE ścieżki liczenia ceny pojedynczego produktu (ProductSearch+enrichment vs ProductDetails — osobne SQL), (c) prompt.
+
+**Decyzje:**
+- **E4 (150a, 154a) — sortowanie po cenie.** „Najtańszy" zawodzi, bo ProductSearch zwraca po RRF (wektor), nie po cenie; model zgaduje z top-N. Fix: parametr sort w ProductSearch + nauka modelu. NAJPIERW diagnoza przepływu enrichment↔limit (czy cena znana przed obcięciem do top-N) — implementacja zależna od wyniku; jeśli wymaga szerokiego zbioru cen = możliwy większy zakres, zgłosić. CHAT-T-062.
+- **E5 (151a+b) — spójność ceny.** Cena „tego samego" produktu różna między turami (2940→2600): prawdopodobnie dwie ścieżki liczenia (bazowa vs promocyjna). Fix danych: ujednolicić źródło ceny (ProductDetails używa logiki enrichment) — CHAT-T-062. Fix promptu: zakaz „cena na pewno aktualna" + disclaimer „potwierdź na karcie" — CHAT-T-063.
+- **Format (sekcja 5) — CHAT-T-063.** Wytyczna dla odpowiedzi produktowych: krótka odp → rekomendacja → 3-5 produktów (nazwa/cena/dostępność/link) → disclaimer ceny → CTA. Edukacyjne (ocenione 5) zostają swobodne.
+- **C5/D4 (budżet) — CHAT-T-063.** Reguła PORADY PREZENTOWE kazała ZAWSZE pytać o budżet → bot pytał mimo podanej kwoty. Fix: jeśli budżet/parametr już podany — użyj, nie pytaj ponownie.
+- **D1 (153 doprecyzowane) — guardrail konserwacji NIE rusza się.** Reguła „ZERO PROCEDUR KONSERWACJI" (linia 260) jest INTENCJONALNA (powstała po incydencie z praniem skafandra, golden DOMAIN-006/SCOPE-002). Ewaluacja oceniła D1=2 z perspektywy UX, ale to świadomy trade-off (ochrona przed odpowiedzialnością). Karol potwierdził: parująca maska i pranie skafandra to ta sama kategoria (procedura), której nie chcemy tykać. DOPRECYZOWANIE (granica produkt vs procedura, nie poluzowanie): gdy problem rozwiązuje PRODUKT z oferty (antifog na parowanie, płyn do pielęgnacji neoprenu na zapach) — model proponuje TEN PRODUKT (to dobór sprzętu). Procedury (jak myć/prać/dawkować/krok po kroku) NADAL zakazane. Granica: wskazanie produktu = OK; instrukcja użycia = blokada. CHAT-T-063.
+- **C3/C4/A3 — weryfikacja danych, nie kod.** Rozjazdy tekst vs widżet (cena fajki, dostępność HOLLIS) przy poprawnym enrichment — wymagają sprawdzenia konkretnych product_id na żywo (halucynacja modelu vs realna zmiana stanu między testem a kartą). Do weryfikacji ręcznej/CC, nie zakładać błędu kodu.
+- **Model — ŚWIADOMIE ODŁOŻONY.** Ewaluacja sama zaleca: nie zaczynać od zmiany modelu. Zgodnie z zasadą Karola (konsultacja modelu przed wyborem) i logiką: najpierw dane (T-062) + prompt (T-063), POTEM ewentualnie A/B modelu pod kątem jakości/kosztu/czasu. NIE zmieniać modelu w tych taskach.
+
+**Podział:** CHAT-T-062 (backend dane: E4 sortowanie + E5 spójność ceny), CHAT-T-063 (prompt: format + disclaimer + budżet + antifog). Niezależne, mogą iść równolegle. Fałszywe alarmy (A1/A2/A4/A5/B1-B6/C2/C6/C7/D2/D3/D5/E1/E2/E3 — oceny 4-5) NIE ruszane.
