@@ -2328,3 +2328,19 @@ Etapy 2-4 = osobne taski po sesji. Ten ADR utrwala zasady, nie implementacje.
 - **129a — Etap 3 = dwa taski.** Backend (CHAT-T-054, auth + aliasy POST) przed UI (CHAT-T-055). Ta sama zasada co Etapy 1-2: backend domknięty i przetestowany (role 200/401/403) przed UI. Editorial UI cięższe (CRUD + autocomplete produktów + pending reviews).
 
 **Konsekwencje:** Po wdrożeniu stary /admin (editorial) zacznie dostawać 401 — oczekiwane. Po CHAT-T-055 (UI) panel PS kompletny, /admin do wyłączenia (zostaje tylko conversations/{id} ginący razem z /admin). Następny: CHAT-T-055 (UI zakładka Editorial — CRUD, wyszukiwarka produktów z autocomplete, lista pending; technika autocomplete do decyzji przy składaniu).
+
+
+---
+
+### ADR-077: Zakładka Editorial Picks w PS — UI (CHAT-T-055)
+**Data:** 2026-06-03 | **Status:** PRZYJĘTA | **Powiązane:** ADR-076, CHAT-T-054
+
+**Kontekst:** Ostatnia zakładka programu „wszystko w PS". Backend (CHAT-T-054) wystawia 6 endpointów editorial za kanałem serwerowym any-role. UI: pełny CRUD picków + wyszukiwarka produktów + pending reviews.
+
+**Decyzje:**
+- **131a — pełny CRUD od razu.** Lista + dodawanie + edycja + usuwanie + pending w jednym tasku. To standardowy CRUD na server-side formularzach (wzorzec przećwiczony), nie ryzykowny redesign. Edycja picka (boost/reason/TTL/active) to codzienna część kuratorowania, nie dodatek. Jedna kompletna zakładka, jedno wgranie.
+- **132a — wyszukiwarka produktów server-side (zero JS, zero proxy).** Pole + „Szukaj" → reload z ?q= → kontroler woła products/search przez callBackend → lista klikalnych wyników → „Wybierz" wypełnia formularz dodawania. Konsekwentnie z całą migracją: sekret HMAC zostaje na serwerze, zero live-fetch z przeglądarki. Rozważony i ODRZUCONY wariant autocomplete na żywo (132b): wymagałby proxy-endpointu w kontrolerze PS (JS fetch → PHP dokłada HMAC → backend). Bezpieczny, ale to nowy komponent/wektor audytu dla wygody, która przy dodawaniu picka (rzadka, świadoma czynność) nie jest krytyczna. Proxy do autocomplete pozostaje znaną opcją na przyszłość (np. dla drzewa chipów), jeśli płynność gdzieś okaże się kluczowa.
+- **Aliasy POST (z 128a):** UI używa POST /{id} (update) i POST /{id}/delete — NIE PUT/DELETE (callBackend wysyła body tylko dla POST).
+- **Any-role (127b):** link Editorial widoczny dla operatora i admina (inaczej niż Analityka, gdzie ukrywany dla nie-adminów).
+
+**Konsekwencje — DOMKNIĘCIE MIGRACJI PANELU:** Po wdrożeniu CHAT-T-055 panel PS jest kompletny — wszystkie funkcje (Rozmowy, Rekomendacje, Analityka, Editorial, Modele, Konfiguracja) w jednym pasku zakładek, jeden mechanizm auth (kanał serwerowy HMAC). Stary /admin nie ma już żadnej żywej zakładki UI; jedyny pozostały endpoint to /api/admin/conversations/{id} (Basic Auth, 109a), nieużywany przez nowy panel. /admin gotowy do wyłączenia (osobny, opcjonalny task: usunięcie katalogu /admin + trasy conversations/{id} + AdminAuthMiddleware/.htpasswd + AdminController, jeśli nic innego ich nie używa).
