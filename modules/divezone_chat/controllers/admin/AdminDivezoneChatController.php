@@ -44,6 +44,12 @@ class AdminDivezoneChatController extends ModuleAdminController
     const ENDPOINT_CONVERSATIONS_TOP = '/api/admin/conversations/top';
     // Chart.js z CDN — graceful degradation gdy CSP/siec blokuje (typeof Chart guard).
     const CHARTJS_CDN = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+    // CHAT-T-055: Editorial Picks (any-role, CHAT-T-054 backend, ADR-076).
+    // Aliasy POST (decyzja 128a): update na POST /editorial-picks/{id}, delete na
+    // POST /editorial-picks/{id}/delete (callBackend wysyla body tylko dla POST).
+    const ENDPOINT_EDITORIAL         = '/api/admin/editorial-picks';
+    const ENDPOINT_EDITORIAL_PENDING = '/api/admin/editorial-picks/pending-reviews';
+    const ENDPOINT_PRODUCTS_SEARCH   = '/api/admin/products/search';
 
     // Aktywna zakladka — CHAT-T-048 (106a): DEFAULT = Rozmowy.
     const TAB_CONVERSATIONS   = 'conversations';
@@ -55,6 +61,8 @@ class AdminDivezoneChatController extends ModuleAdminController
     const TAB_CONFIG          = 'config';
     // CHAT-T-050: analityka (admin-only).
     const TAB_ANALYTICS       = 'analytics';
+    // CHAT-T-055: editorial picks (any-role, 127b).
+    const TAB_EDITORIAL       = 'editorial';
 
     /** @var string komunikat flashowy do wyswietlenia na gorze ekranu Modele */
     private $modelsFlash = '';
@@ -64,6 +72,10 @@ class AdminDivezoneChatController extends ModuleAdminController
     private $convFlash = '';
     /** @var string typ komunikatu: success | error */
     private $convFlashType = 'success';
+    /** @var string komunikat flashowy do wyswietlenia na gorze widoku Editorial (CHAT-T-055) */
+    private $epFlash = '';
+    /** @var string typ komunikatu: success | error */
+    private $epFlashType = 'success';
 
     public function __construct()
     {
@@ -81,7 +93,7 @@ class AdminDivezoneChatController extends ModuleAdminController
 
         // 1. Aktywna zakladka — z querystring lub form submit, default Rozmowy (CHAT-T-048, 106a).
         $activeTab = (string) Tools::getValue('tab', self::TAB_CONVERSATIONS);
-        if (!in_array($activeTab, array(self::TAB_CONVERSATIONS, self::TAB_RECOMMENDATIONS, self::TAB_MODELS, self::TAB_CONFIG, self::TAB_ANALYTICS), true)) {
+        if (!in_array($activeTab, array(self::TAB_CONVERSATIONS, self::TAB_RECOMMENDATIONS, self::TAB_MODELS, self::TAB_CONFIG, self::TAB_ANALYTICS, self::TAB_EDITORIAL), true)) {
             $activeTab = self::TAB_CONVERSATIONS;
         }
 
@@ -102,6 +114,21 @@ class AdminDivezoneChatController extends ModuleAdminController
             $activeTab = self::TAB_CONVERSATIONS;
         }
 
+        // 2d. Submity Editorial Picks (CHAT-T-055) — add/update/delete -> POST kanalem
+        // serwerowym, zostan na zakladce Editorial po zapisie.
+        if (Tools::isSubmit('submitDivezoneChatEpAdd')) {
+            $this->handleEpAdd($employeeId);
+            $activeTab = self::TAB_EDITORIAL;
+        }
+        if (Tools::isSubmit('submitDivezoneChatEpUpdate')) {
+            $this->handleEpUpdate($employeeId);
+            $activeTab = self::TAB_EDITORIAL;
+        }
+        if (Tools::isSubmit('submitDivezoneChatEpDelete')) {
+            $this->handleEpDelete($employeeId);
+            $activeTab = self::TAB_EDITORIAL;
+        }
+
         // 3. Whoami zawsze (maly pasek u gory). CHAT-T-050: rola sluzy tez do ukrycia
         // linka "Analityka" w nav dla nie-adminow (Analityka jest admin-only).
         $whoami = $this->callBackend(self::ENDPOINT_WHOAMI, $employeeId);
@@ -118,6 +145,8 @@ class AdminDivezoneChatController extends ModuleAdminController
             $tabContent = $this->renderConfigSection();
         } elseif ($activeTab === self::TAB_ANALYTICS) {
             $tabContent = $this->renderAnalyticsSection($employeeId);
+        } elseif ($activeTab === self::TAB_EDITORIAL) {
+            $tabContent = $this->renderEditorialSection($employeeId);
         } else {
             $recommendations = $this->callBackend(self::ENDPOINT_RECOMMENDATIONS, $employeeId);
             $tabContent = $this->renderRecommendationsSection($recommendations);
@@ -222,6 +251,41 @@ class AdminDivezoneChatController extends ModuleAdminController
         $css .= '.dz-analytics-top-row a{color:#1a5e5a;text-decoration:none;display:block;}';
         $css .= '.dz-analytics-top-row a:hover{text-decoration:underline;}';
         $css .= '.dz-analytics-forbidden{padding:20px;background:#fcf8e3;border:1px solid #d6c87a;color:#8a6d3b;border-radius:4px;font-size:13px;}';
+        // CHAT-T-055: Editorial Picks — pending pasek, wyszukiwarka, formularz add, tabela, akcje wiersza.
+        $css .= '.dz-ep-pending{padding:10px 14px;background:#fffdf5;border:1px solid #e8d96a;color:#6b5a00;border-radius:4px;font-size:12px;margin-bottom:14px;}';
+        $css .= '.dz-ep-pending--empty{background:#f7f9fa;border-color:#e2e6e8;color:#888;}';
+        $css .= '.dz-ep-search{display:flex;gap:8px;align-items:center;margin-bottom:10px;}';
+        $css .= '.dz-ep-search input[type=text]{padding:7px 10px;border:1px solid #ccc;border-radius:3px;font-size:13px;}';
+        $css .= '.dz-ep-results{padding:10px;background:#f7f9fa;border:1px solid #e2e6e8;border-radius:4px;margin-bottom:14px;font-size:13px;}';
+        $css .= '.dz-ep-results--empty{font-style:italic;color:#888;}';
+        $css .= '.dz-ep-results ul{list-style:none;margin:8px 0 0;padding:0;}';
+        $css .= '.dz-ep-result-item{display:flex;gap:14px;align-items:center;padding:8px 10px;border-bottom:1px solid #eee;color:#333;text-decoration:none;}';
+        $css .= '.dz-ep-result-item:hover{background:#fff;color:#1a5e5a;text-decoration:none;}';
+        $css .= '.dz-ep-result-item .name{font-weight:600;flex:1 1 auto;}';
+        $css .= '.dz-ep-result-item .id{color:#999;font-size:11px;}';
+        $css .= '.dz-ep-result-item .price{color:#1a5e5a;font-weight:600;}';
+        $css .= '.dz-ep-result-item .stock.in{color:#5cb85c;font-size:11px;}';
+        $css .= '.dz-ep-result-item .stock.out{color:#d9534f;font-size:11px;}';
+        $css .= '.dz-ep-result-item .pick{color:#0066cc;font-size:11px;font-weight:600;}';
+        $css .= '.dz-ep-add-form{background:#fff;border:1px solid #e2e6e8;border-radius:4px;padding:14px;margin-bottom:18px;}';
+        $css .= '.dz-ep-selected{padding:8px 10px;background:#f7faff;border:1px solid #c9d7f0;border-radius:3px;margin-bottom:10px;font-size:13px;}';
+        $css .= '.dz-ep-add-empty{padding:10px;font-style:italic;color:#888;font-size:13px;}';
+        $css .= '.dz-ep-field{margin-bottom:10px;}';
+        $css .= '.dz-ep-field label{display:block;font-size:12px;color:#555;margin-bottom:3px;font-weight:600;}';
+        $css .= '.dz-ep-field input[type=text],.dz-ep-field input[type=number],.dz-ep-field textarea{width:100%;max-width:540px;padding:7px 10px;border:1px solid #ccc;border-radius:3px;font-size:13px;box-sizing:border-box;}';
+        $css .= '.dz-ep-filters{display:flex;gap:8px;align-items:center;margin-bottom:12px;padding:8px;background:#f7f9fa;border:1px solid #e2e6e8;border-radius:4px;}';
+        $css .= '.dz-ep-filters select{padding:6px 10px;border:1px solid #ccc;border-radius:3px;font-size:13px;background:#fff;}';
+        $css .= '.dz-ep-row-actions{font-size:11px;min-width:200px;}';
+        $css .= '.dz-ep-row-actions .quick{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;}';
+        $css .= '.dz-ep-edit-details{margin:0 0 4px;}';
+        $css .= '.dz-ep-edit-details summary{cursor:pointer;color:#0066cc;font-weight:600;font-size:11px;}';
+        $css .= '.dz-ep-edit-form{padding:8px;background:#f7f9fa;margin-top:4px;border-radius:3px;display:grid;grid-template-columns:auto 1fr;gap:4px 8px;align-items:center;font-size:11px;}';
+        $css .= '.dz-ep-edit-form label{font-weight:600;color:#555;}';
+        $css .= '.dz-ep-edit-form input[type=text],.dz-ep-edit-form input[type=number],.dz-ep-edit-form select{padding:4px 6px;border:1px solid #ccc;border-radius:3px;font-size:11px;width:100%;box-sizing:border-box;background:#fff;}';
+        $css .= '.dz-ep-edit-form .submit-row{grid-column:1 / 3;margin-top:4px;}';
+        $css .= '.dz-ep-status{display:inline-block;padding:2px 8px;border-radius:3px;font-size:0.85em;font-weight:600;}';
+        $css .= '.dz-ep-status-active{background:#5cb85c;color:#fff;}';
+        $css .= '.dz-ep-status-inactive{background:#999;color:#fff;}';
         $css .= '.dz-conv-items{list-style:none;padding:0;margin:8px 0;}';
         $css .= '.dz-conv-items li{margin:0;padding:0;}';
         $css .= '.dz-conv-item{display:block;padding:10px 12px;border-bottom:1px solid #eee;color:#333;text-decoration:none;}';
@@ -246,19 +310,22 @@ class AdminDivezoneChatController extends ModuleAdminController
 
     private function renderTabsNav($activeTab, $role = '')
     {
-        // CHAT-T-048 (118a) + CHAT-T-050 (107a): kolejnosc wg czestosci uzycia.
+        // CHAT-T-048 (118a) + CHAT-T-050 (107a) + CHAT-T-055: kolejnosc wg czestosci uzycia.
         // Analityka tylko dla 'admin' (admin-only endpoints) — nie-admin nie widzi linka.
-        // Bezpieczny default: gdy rola pusta/nieznana (np. blad whoami) -> linka NIE pokazujemy.
+        // Editorial any-role (127b): widoczne dla operatora i admina.
+        // Bezpieczny default: gdy rola pusta/nieznana (blad whoami) -> Analityka NIE pokazana.
         $baseUrl = $this->context->link->getAdminLink('AdminDivezoneChat');
         $conv = $baseUrl . '&tab=' . self::TAB_CONVERSATIONS;
         $rec  = $baseUrl . '&tab=' . self::TAB_RECOMMENDATIONS;
         $ana  = $baseUrl . '&tab=' . self::TAB_ANALYTICS;
+        $edi  = $baseUrl . '&tab=' . self::TAB_EDITORIAL;
         $mod  = $baseUrl . '&tab=' . self::TAB_MODELS;
         $cfg  = $baseUrl . '&tab=' . self::TAB_CONFIG;
 
         $clsConv = $activeTab === self::TAB_CONVERSATIONS   ? ' is-active' : '';
         $clsRec  = $activeTab === self::TAB_RECOMMENDATIONS ? ' is-active' : '';
         $clsAna  = $activeTab === self::TAB_ANALYTICS       ? ' is-active' : '';
+        $clsEdi  = $activeTab === self::TAB_EDITORIAL       ? ' is-active' : '';
         $clsMod  = $activeTab === self::TAB_MODELS          ? ' is-active' : '';
         $clsCfg  = $activeTab === self::TAB_CONFIG          ? ' is-active' : '';
 
@@ -270,6 +337,7 @@ class AdminDivezoneChatController extends ModuleAdminController
         if ($isAdmin) {
             $html .= '<a href="' . htmlspecialchars($ana, ENT_QUOTES) . '" class="dz-tab-link' . $clsAna . '" role="tab">' . $this->l('Analityka') . '</a>';
         }
+        $html .= '<a href="' . htmlspecialchars($edi, ENT_QUOTES) . '" class="dz-tab-link' . $clsEdi . '" role="tab">' . $this->l('Editorial') . '</a>';
         $html .= '<a href="' . htmlspecialchars($mod, ENT_QUOTES) . '" class="dz-tab-link' . $clsMod . '" role="tab">' . $this->l('Modele') . '</a>';
         $html .= '<a href="' . htmlspecialchars($cfg, ENT_QUOTES) . '" class="dz-tab-link' . $clsCfg . '" role="tab">' . $this->l('Konfiguracja') . '</a>';
         $html .= '</nav>';
@@ -1679,6 +1747,525 @@ class AdminDivezoneChatController extends ModuleAdminController
             $str
         );
         return $str;
+    }
+
+    // ============================================================================
+    // SEKCJA: Editorial Picks (CHAT-T-055, ADR-076, decyzje 127b/128a/131a/132a).
+    //
+    // Architektura 132a: pelny server-side CRUD. Wyszukiwarka produktow przez
+    // reload zakladki z ?q=... (zero JS, zero proxy, zero live-fetch). Akcje
+    // (add/update/delete) jako POST formularze z hidden controller/token/tab.
+    // Aliasy POST (128a): update na POST /editorial-picks/{id}, delete na
+    // POST /editorial-picks/{id}/delete (callBackend wysyla body tylko dla POST).
+    // ANY-ROLE (127b): operator i admin maja dostep (NIE admin-only).
+    // ============================================================================
+
+    private function renderEditorialSection($employeeId)
+    {
+        // Filtry / parametry GET.
+        $active = (string) Tools::getValue('active', '');
+        if ($active !== '' && $active !== '0' && $active !== '1') {
+            $active = '';
+        }
+
+        $orderBy        = (string) Tools::getValue('order_by', 'added_at');
+        $allowedOrderBy = array('added_at', 'expires_at', 'boost_factor', 'product_name', 'last_review_at');
+        if (!in_array($orderBy, $allowedOrderBy, true)) {
+            $orderBy = 'added_at';
+        }
+
+        $q                   = trim((string) Tools::getValue('q', ''));
+        $selectedProductId   = (int) Tools::getValue('ep_product_id', 0);
+        $selectedProductName = trim((string) Tools::getValue('ep_product_name', ''));
+
+        // Build list query.
+        $listParams = array('order_by' => $orderBy);
+        if ($active !== '') {
+            $listParams['active'] = $active;
+        }
+
+        $list    = $this->callBackend(self::ENDPOINT_EDITORIAL . '?' . http_build_query($listParams), $employeeId);
+        $pending = $this->callBackend(self::ENDPOINT_EDITORIAL_PENDING, $employeeId);
+        $search  = null;
+        if ($q !== '') {
+            $search = $this->callBackend(self::ENDPOINT_PRODUCTS_SEARCH . '?q=' . rawurlencode($q), $employeeId);
+        }
+
+        $html  = '<div class="panel" style="border-top-left-radius:0;">';
+        $html .= '<div class="panel-heading"><i class="icon-star"></i> ' . $this->l('Editorial Picks') . '</div>';
+        $html .= '<div style="padding:18px;">';
+
+        // 403 guard (any-role: no_role / blad konfiguracji).
+        $checked = array($list, $pending);
+        if ($search !== null) {
+            $checked[] = $search;
+        }
+        if ($this->anyResponseIs403($checked)) {
+            $html .= '<div class="dz-analytics-forbidden"><strong>' . $this->l('Brak uprawnien.') . '</strong> ';
+            $html .= $this->l('Twoje konto nie ma roli w divechat_admin_roles. Editorial Picks wymaga roli operatora lub admina.');
+            $html .= '</div></div></div>';
+            return $html;
+        }
+
+        // Flash po POST.
+        if ($this->epFlash !== '') {
+            $html .= '<div class="dz-flash ' . htmlspecialchars($this->epFlashType, ENT_QUOTES) . '">'
+                  . htmlspecialchars($this->epFlash, ENT_QUOTES) . '</div>';
+        }
+
+        // a) Pasek pending reviews.
+        $html .= $this->renderEpPending($pending);
+
+        // b) Sekcja dodawania: wyszukiwarka + wyniki + formularz add.
+        $html .= '<section class="dz-analytics-section">';
+        $html .= '<h3>' . $this->l('Dodaj nowy pick') . '</h3>';
+        $html .= $this->renderEpSearchBar($q);
+        if ($search !== null) {
+            $html .= $this->renderEpSearchResults($search, $q);
+        }
+        $html .= $this->renderEpAddForm($selectedProductId, $selectedProductName, $q);
+        $html .= '</section>';
+
+        // c) Filtry + d) tabela z akcjami inline.
+        $html .= '<section class="dz-analytics-section">';
+        $html .= '<h3>' . $this->l('Lista pickow') . '</h3>';
+        $html .= $this->renderEpFilters($active, $orderBy);
+        $html .= $this->renderEpTable($list);
+        $html .= '</section>';
+
+        $html .= '</div></div>';
+        return $html;
+    }
+
+    private function renderEpPending($pending)
+    {
+        if (!is_array($pending) || isset($pending['error'])) {
+            return '';
+        }
+        $expired   = isset($pending['expired_this_week']) ? (int) $pending['expired_this_week'] : 0;
+        $longUnrev = isset($pending['long_unreviewed']) ? (int) $pending['long_unreviewed'] : 0;
+        $total     = isset($pending['total']) ? (int) $pending['total'] : 0;
+
+        if ($total === 0) {
+            return '<div class="dz-ep-pending dz-ep-pending--empty">' . $this->l('Brak pickow do przegladu.') . '</div>';
+        }
+
+        $html  = '<div class="dz-ep-pending">';
+        $html .= '<strong>' . $this->l('Do przegladu') . ':</strong> ';
+        $html .= $this->l('wygaslo w tym tygodniu') . ': <strong>' . $expired . '</strong>';
+        $html .= ' &middot; ' . $this->l('dlugo nieweryfikowane') . ': <strong>' . $longUnrev . '</strong>';
+        $html .= ' &middot; ' . $this->l('razem') . ': <strong>' . $total . '</strong>';
+        $html .= '</div>';
+        return $html;
+    }
+
+    private function renderEpSearchBar($q)
+    {
+        $token = Tools::getAdminTokenLite('AdminDivezoneChat');
+
+        $html  = '<form method="get" class="dz-ep-search" action="">';
+        $html .= '<input type="hidden" name="controller" value="AdminDivezoneChat">';
+        $html .= '<input type="hidden" name="token" value="' . htmlspecialchars($token, ENT_QUOTES) . '">';
+        $html .= '<input type="hidden" name="tab" value="' . self::TAB_EDITORIAL . '">';
+        $html .= '<input type="text" name="q" value="' . htmlspecialchars($q, ENT_QUOTES) . '" placeholder="' . $this->l('Szukaj produktu (nazwa / ID / referencja, min. 2 znaki)') . '" size="40">';
+        $html .= '<button type="submit" class="btn btn-default">' . $this->l('Szukaj produkt') . '</button>';
+        $html .= '</form>';
+        return $html;
+    }
+
+    private function renderEpSearchResults($search, $q)
+    {
+        if (isset($search['error'])) {
+            return '<div class="dz-ep-results dz-ep-results--empty">' . $this->l('Blad wyszukiwarki:') . ' ' . htmlspecialchars((string) $search['error'], ENT_QUOTES) . '</div>';
+        }
+
+        $products = isset($search['products']) && is_array($search['products']) ? $search['products'] : array();
+        if (empty($products)) {
+            $msg = isset($search['message']) && $search['message'] !== '' ? (string) $search['message'] : $this->l('Brak wynikow.');
+            return '<div class="dz-ep-results dz-ep-results--empty">' . htmlspecialchars($msg, ENT_QUOTES) . '</div>';
+        }
+
+        $html  = '<div class="dz-ep-results"><strong>' . $this->l('Wyniki') . ':</strong>';
+        $html .= '<ul>';
+        foreach ($products as $p) {
+            if (!is_array($p)) {
+                continue;
+            }
+            $id      = isset($p['id']) ? (int) $p['id'] : 0;
+            $name    = isset($p['name']) ? (string) $p['name'] : '';
+            $price   = isset($p['price']) ? (float) $p['price'] : 0.0;
+            $inStock = !empty($p['in_stock']);
+
+            if ($id <= 0 || $name === '') {
+                continue;
+            }
+
+            $url = $this->context->link->getAdminLink('AdminDivezoneChat')
+                . '&tab=' . self::TAB_EDITORIAL
+                . '&ep_product_id=' . $id
+                . '&ep_product_name=' . rawurlencode($name);
+            if ($q !== '') {
+                $url .= '&q=' . rawurlencode($q);
+            }
+
+            $html .= '<li><a href="' . htmlspecialchars($url, ENT_QUOTES) . '" class="dz-ep-result-item">';
+            $html .= '<span class="name">' . htmlspecialchars($name, ENT_QUOTES) . '</span>';
+            $html .= '<span class="id">#' . $id . '</span>';
+            $html .= '<span class="price">' . number_format($price, 2, ',', ' ') . ' zl</span>';
+            $html .= '<span class="stock ' . ($inStock ? 'in' : 'out') . '">' . ($inStock ? $this->l('w magazynie') : $this->l('brak')) . '</span>';
+            $html .= '<span class="pick">' . $this->l('Wybierz') . ' &rarr;</span>';
+            $html .= '</a></li>';
+        }
+        $html .= '</ul></div>';
+        return $html;
+    }
+
+    private function renderEpAddForm($selectedProductId, $selectedProductName, $q)
+    {
+        $action = $this->context->link->getAdminLink('AdminDivezoneChat')
+            . '&tab=' . self::TAB_EDITORIAL;
+        if ($q !== '') {
+            $action .= '&q=' . rawurlencode($q);
+        }
+
+        $html  = '<form method="post" action="' . htmlspecialchars($action, ENT_QUOTES) . '" class="dz-ep-add-form">';
+
+        if ($selectedProductId <= 0) {
+            $html .= '<div class="dz-ep-add-empty">' . $this->l('Najpierw wyszukaj produkt powyzej i kliknij "Wybierz" przy odpowiedniej pozycji.') . '</div>';
+            $html .= '</form>';
+            return $html;
+        }
+
+        $html .= '<input type="hidden" name="ep_product_id" value="' . (int) $selectedProductId . '">';
+        $html .= '<input type="hidden" name="ep_product_name" value="' . htmlspecialchars($selectedProductName, ENT_QUOTES) . '">';
+
+        $html .= '<div class="dz-ep-selected"><strong>' . $this->l('Wybrany produkt') . ':</strong> ';
+        $html .= htmlspecialchars($selectedProductName, ENT_QUOTES);
+        $html .= ' <span style="color:#999">#' . (int) $selectedProductId . '</span></div>';
+
+        $html .= '<div class="dz-ep-field"><label for="dz-ep-reason">' . $this->l('Powod (reason) — WYMAGANE') . '</label>';
+        $html .= '<textarea id="dz-ep-reason" name="reason" rows="2" required></textarea></div>';
+
+        $html .= '<div class="dz-ep-field"><label for="dz-ep-boost">' . $this->l('Boost factor (1.0 - 2.5)') . '</label>';
+        $html .= '<input type="number" id="dz-ep-boost" name="boost_factor" value="1.5" min="1.0" max="2.5" step="0.1" required></div>';
+
+        $html .= '<div class="dz-ep-field"><label for="dz-ep-cat">' . $this->l('Kategoria (opcjonalne)') . '</label>';
+        $html .= '<input type="text" id="dz-ep-cat" name="category_hint" value="" placeholder="' . $this->l('np. regulator_recreational (puste = wszystkie)') . '"></div>';
+
+        $html .= '<div class="dz-ep-field"><label for="dz-ep-ttl">' . $this->l('TTL dni (opcjonalne, puste = bezterminowo)') . '</label>';
+        $html .= '<input type="number" id="dz-ep-ttl" name="ttl_days" value="" min="1" max="3650"></div>';
+
+        $html .= '<div style="margin-top:14px;"><button type="submit" name="submitDivezoneChatEpAdd" class="btn btn-primary" style="padding:9px 22px;background:#1a5e5a;color:#fff;border:0;border-radius:4px;font-weight:600;cursor:pointer;font-size:13px;">' . $this->l('Dodaj pick') . '</button></div>';
+
+        $html .= '</form>';
+        return $html;
+    }
+
+    private function renderEpFilters($active, $orderBy)
+    {
+        $token = Tools::getAdminTokenLite('AdminDivezoneChat');
+
+        $html  = '<form method="get" class="dz-ep-filters" action="">';
+        $html .= '<input type="hidden" name="controller" value="AdminDivezoneChat">';
+        $html .= '<input type="hidden" name="token" value="' . htmlspecialchars($token, ENT_QUOTES) . '">';
+        $html .= '<input type="hidden" name="tab" value="' . self::TAB_EDITORIAL . '">';
+
+        $html .= '<select name="active">';
+        $html .= '<option value=""' . ($active === '' ? ' selected' : '') . '>' . $this->l('— wszystkie —') . '</option>';
+        $html .= '<option value="1"' . ($active === '1' ? ' selected' : '') . '>' . $this->l('tylko aktywne') . '</option>';
+        $html .= '<option value="0"' . ($active === '0' ? ' selected' : '') . '>' . $this->l('tylko nieaktywne') . '</option>';
+        $html .= '</select>';
+
+        $orderOpts = array(
+            'added_at'       => $this->l('data dodania'),
+            'expires_at'     => $this->l('data wygasniecia'),
+            'boost_factor'   => $this->l('boost'),
+            'product_name'   => $this->l('nazwa produktu'),
+            'last_review_at' => $this->l('ost. przeglad'),
+        );
+        $html .= '<select name="order_by">';
+        foreach ($orderOpts as $k => $lbl) {
+            $sel = $k === $orderBy ? ' selected' : '';
+            $html .= '<option value="' . htmlspecialchars($k, ENT_QUOTES) . '"' . $sel . '>' . $this->l('sortuj:') . ' ' . htmlspecialchars($lbl, ENT_QUOTES) . '</option>';
+        }
+        $html .= '</select>';
+
+        $html .= '<button type="submit" class="btn btn-default">' . $this->l('Filtruj') . '</button>';
+        $html .= '</form>';
+        return $html;
+    }
+
+    private function renderEpTable($list)
+    {
+        if (isset($list['error'])) {
+            return '<div class="dz-analytics-empty">' . $this->l('Blad pobrania listy:') . ' ' . htmlspecialchars((string) $list['error'], ENT_QUOTES) . '</div>';
+        }
+
+        $picks = isset($list['picks']) && is_array($list['picks']) ? $list['picks'] : array();
+        if (empty($picks)) {
+            return '<div class="dz-analytics-empty">' . $this->l('Brak pickow w wybranych filtrach.') . '</div>';
+        }
+
+        $html  = '<table class="dz-analytics-table">';
+        $html .= '<thead><tr>';
+        $html .= '<th>' . $this->l('Produkt') . '</th>';
+        $html .= '<th class="num">' . $this->l('Boost') . '</th>';
+        $html .= '<th>' . $this->l('Powod') . '</th>';
+        $html .= '<th>' . $this->l('Kategoria') . '</th>';
+        $html .= '<th>' . $this->l('Dodane') . '</th>';
+        $html .= '<th>' . $this->l('Wygasa') . '</th>';
+        $html .= '<th>' . $this->l('Ost. przeglad') . '</th>';
+        $html .= '<th>' . $this->l('Status') . '</th>';
+        $html .= '<th>' . $this->l('Akcje') . '</th>';
+        $html .= '</tr></thead><tbody>';
+
+        foreach ($picks as $pick) {
+            if (!is_array($pick)) {
+                continue;
+            }
+            $html .= $this->renderEpRow($pick);
+        }
+
+        $html .= '</tbody></table>';
+        return $html;
+    }
+
+    private function renderEpRow($pick)
+    {
+        $id           = isset($pick['id']) ? (int) $pick['id'] : 0;
+        $productId    = isset($pick['product_id']) ? (int) $pick['product_id'] : 0;
+        $productName  = isset($pick['product_name']) ? (string) $pick['product_name'] : '?';
+        $categoryHint = (isset($pick['category_hint']) && $pick['category_hint'] !== null && $pick['category_hint'] !== '')
+            ? (string) $pick['category_hint']
+            : '';
+        $boost      = isset($pick['boost_factor']) ? (float) $pick['boost_factor'] : 1.0;
+        $reason     = isset($pick['reason']) ? (string) $pick['reason'] : '';
+        $addedBy    = isset($pick['added_by']) ? (string) $pick['added_by'] : '';
+        $addedAt    = isset($pick['added_at']) ? (string) $pick['added_at'] : '';
+        $expiresAt  = (isset($pick['expires_at']) && $pick['expires_at'] !== null) ? (string) $pick['expires_at'] : '';
+        $lastReview = (isset($pick['last_review_at']) && $pick['last_review_at'] !== null) ? (string) $pick['last_review_at'] : '';
+        $active     = !empty($pick['active']);
+
+        // Skrocony reason w komorce (pelny w title="").
+        if (function_exists('mb_strlen') && mb_strlen($reason, 'UTF-8') > 80) {
+            $reasonShort = mb_substr($reason, 0, 80, 'UTF-8') . '…';
+        } elseif (strlen($reason) > 80) {
+            $reasonShort = substr($reason, 0, 80) . '…';
+        } else {
+            $reasonShort = $reason;
+        }
+
+        $rowStyle = $active ? '' : ' style="background:#fafafa;color:#888;"';
+
+        $html  = '<tr' . $rowStyle . '>';
+        $html .= '<td><strong>' . htmlspecialchars($productName, ENT_QUOTES) . '</strong> <small style="color:#999">#' . $productId . '</small></td>';
+        $html .= '<td class="num"><strong>' . number_format($boost, 2, '.', '') . '</strong></td>';
+        $html .= '<td title="' . htmlspecialchars($reason, ENT_QUOTES) . '">' . htmlspecialchars($reasonShort, ENT_QUOTES) . '</td>';
+        $html .= '<td>' . ($categoryHint !== '' ? '<code style="font-size:11px">' . htmlspecialchars($categoryHint, ENT_QUOTES) . '</code>' : '<em style="color:#999">' . $this->l('wszystkie') . '</em>') . '</td>';
+        $html .= '<td>' . htmlspecialchars($this->formatConvDate($addedAt), ENT_QUOTES);
+        if ($addedBy !== '') {
+            $html .= '<br><small style="color:#999">' . htmlspecialchars($addedBy, ENT_QUOTES) . '</small>';
+        }
+        $html .= '</td>';
+        $html .= '<td>' . ($expiresAt !== '' ? htmlspecialchars($this->formatConvDate($expiresAt), ENT_QUOTES) : '<em style="color:#999">' . $this->l('bezterminowo') . '</em>') . '</td>';
+        $html .= '<td>' . ($lastReview !== '' ? htmlspecialchars($this->formatConvDate($lastReview), ENT_QUOTES) : '<span style="color:#999">—</span>') . '</td>';
+        $html .= '<td>' . ($active ? '<span class="dz-ep-status dz-ep-status-active">' . $this->l('aktywny') . '</span>' : '<span class="dz-ep-status dz-ep-status-inactive">' . $this->l('nieaktywny') . '</span>') . '</td>';
+        $html .= '<td class="dz-ep-row-actions">' . $this->renderEpRowActions($id, $boost, $reason, $active) . '</td>';
+        $html .= '</tr>';
+        return $html;
+    }
+
+    private function renderEpRowActions($id, $boost, $reason, $active)
+    {
+        $action = $this->context->link->getAdminLink('AdminDivezoneChat')
+            . '&tab=' . self::TAB_EDITORIAL;
+
+        // Edycja inline (rozwijana <details>).
+        $html  = '<details class="dz-ep-edit-details"><summary>' . $this->l('Edytuj') . '</summary>';
+        $html .= '<form method="post" action="' . htmlspecialchars($action, ENT_QUOTES) . '" class="dz-ep-edit-form">';
+        $html .= '<input type="hidden" name="ep_id" value="' . (int) $id . '">';
+
+        $html .= '<label>' . $this->l('Boost') . '</label>';
+        $html .= '<input type="number" name="boost_factor" value="' . number_format($boost, 2, '.', '') . '" min="1.0" max="2.5" step="0.1">';
+
+        $html .= '<label>' . $this->l('Powod') . '</label>';
+        $html .= '<input type="text" name="reason" value="' . htmlspecialchars($reason, ENT_QUOTES) . '">';
+
+        $html .= '<label>' . $this->l('Aktywny') . '</label>';
+        $html .= '<label style="font-weight:400;"><input type="checkbox" name="active" value="1"' . ($active ? ' checked' : '') . '> ' . $this->l('zaznacz aby aktywny') . '</label>';
+
+        $html .= '<label>' . $this->l('Przedluz TTL') . '</label>';
+        $html .= '<select name="ttl_extend_days"><option value="">—</option><option value="30">+30 ' . $this->l('dni') . '</option><option value="90">+90 ' . $this->l('dni') . '</option><option value="365">+365 ' . $this->l('dni') . '</option></select>';
+
+        $html .= '<div class="submit-row"><button type="submit" name="submitDivezoneChatEpUpdate" class="btn btn-primary btn-xs">' . $this->l('Zapisz') . '</button></div>';
+        $html .= '</form>';
+        $html .= '</details>';
+
+        // Quick action: "Oznacz przejrzane".
+        $html .= '<div class="quick">';
+        $html .= '<form method="post" action="' . htmlspecialchars($action, ENT_QUOTES) . '" style="display:inline;">';
+        $html .= '<input type="hidden" name="ep_id" value="' . (int) $id . '">';
+        $html .= '<input type="hidden" name="ep_action" value="mark_reviewed">';
+        $html .= '<button type="submit" name="submitDivezoneChatEpUpdate" class="btn btn-default btn-xs">' . $this->l('Oznacz przejrzane') . '</button>';
+        $html .= '</form>';
+
+        // Delete (inline confirm — jedyny mikro-JS w sekcji).
+        $confirmMsg = $this->jsEscape($this->l('Na pewno usunac ten pick?'));
+        $html .= '<form method="post" action="' . htmlspecialchars($action, ENT_QUOTES) . '" style="display:inline;" onsubmit="return confirm(\'' . $confirmMsg . '\');">';
+        $html .= '<input type="hidden" name="ep_id" value="' . (int) $id . '">';
+        $html .= '<button type="submit" name="submitDivezoneChatEpDelete" class="btn btn-danger btn-xs" style="background:#d9534f;color:#fff;border:0;padding:3px 8px;border-radius:3px;">' . $this->l('Usun') . '</button>';
+        $html .= '</form>';
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    // ============================================================================
+    // Editorial Picks — handlery POST (CHAT-T-055).
+    // ============================================================================
+
+    private function handleEpAdd($employeeId)
+    {
+        $productId   = (int) Tools::getValue('ep_product_id', 0);
+        $productName = trim((string) Tools::getValue('ep_product_name', ''));
+        $reason      = trim((string) Tools::getValue('reason', ''));
+        $boost       = (float) Tools::getValue('boost_factor', 0);
+        $categoryRaw = trim((string) Tools::getValue('category_hint', ''));
+        $ttlRaw      = trim((string) Tools::getValue('ttl_days', ''));
+
+        // Walidacja lokalna PRZED POST do backendu.
+        if ($productId <= 0 || $productName === '') {
+            $this->epFlash     = $this->l('Brak wybranego produktu. Najpierw wyszukaj i kliknij "Wybierz".');
+            $this->epFlashType = 'error';
+            return;
+        }
+        if ($reason === '') {
+            $this->epFlash     = $this->l('Powod (reason) jest wymagany.');
+            $this->epFlashType = 'error';
+            return;
+        }
+        if ($boost < 1.0 || $boost > 2.5) {
+            $this->epFlash     = $this->l('Boost musi byc w zakresie 1.0-2.5.');
+            $this->epFlashType = 'error';
+            return;
+        }
+
+        $payload = array(
+            'product_id'   => $productId,
+            'product_name' => $productName,
+            'reason'       => $reason,
+            'boost_factor' => $boost,
+        );
+        if ($categoryRaw !== '') {
+            $payload['category_hint'] = $categoryRaw;
+        }
+        if ($ttlRaw !== '') {
+            $payload['ttl_days'] = (int) $ttlRaw;
+        }
+
+        $body = json_encode($payload);
+        $resp = $this->callBackend(self::ENDPOINT_EDITORIAL, $employeeId, 'POST', $body);
+
+        $this->setEpFlashFromResponse($resp, $this->l('Pick dodany.'));
+    }
+
+    private function handleEpUpdate($employeeId)
+    {
+        $id = (int) Tools::getValue('ep_id', 0);
+        if ($id <= 0) {
+            $this->epFlash     = $this->l('Brak ep_id.');
+            $this->epFlashType = 'error';
+            return;
+        }
+
+        $epAction = (string) Tools::getValue('ep_action', '');
+        $payload  = array();
+
+        if ($epAction === 'mark_reviewed') {
+            // Szybka akcja — tylko jeden klucz.
+            $payload['mark_reviewed'] = true;
+        } else {
+            // Pelny edit: boost / reason / active / ttl_extend.
+            $boostRaw = Tools::getValue('boost_factor', null);
+            if ($boostRaw !== null && $boostRaw !== '') {
+                $boost = (float) $boostRaw;
+                if ($boost < 1.0 || $boost > 2.5) {
+                    $this->epFlash     = $this->l('Boost musi byc w zakresie 1.0-2.5.');
+                    $this->epFlashType = 'error';
+                    return;
+                }
+                $payload['boost_factor'] = $boost;
+            }
+
+            $reasonRaw = Tools::getValue('reason', null);
+            if ($reasonRaw !== null) {
+                $reason = trim((string) $reasonRaw);
+                if ($reason === '') {
+                    $this->epFlash     = $this->l('Powod nie moze byc pusty.');
+                    $this->epFlashType = 'error';
+                    return;
+                }
+                $payload['reason'] = $reason;
+            }
+
+            // active checkbox: '1' jesli zaznaczone, brak w POST jesli odznaczone.
+            $payload['active'] = ((string) Tools::getValue('active', '') === '1');
+
+            $ttlExtend = (int) Tools::getValue('ttl_extend_days', 0);
+            if ($ttlExtend > 0) {
+                $payload['ttl_extend_days'] = $ttlExtend;
+            }
+        }
+
+        if (empty($payload)) {
+            $this->epFlash     = $this->l('Brak zmian do zapisania.');
+            $this->epFlashType = 'error';
+            return;
+        }
+
+        $body = json_encode($payload);
+        $resp = $this->callBackend(self::ENDPOINT_EDITORIAL . '/' . $id, $employeeId, 'POST', $body);
+
+        $successMsg = $epAction === 'mark_reviewed'
+            ? $this->l('Oznaczono jako przejrzane.')
+            : $this->l('Pick zaktualizowany.');
+        $this->setEpFlashFromResponse($resp, $successMsg);
+    }
+
+    private function handleEpDelete($employeeId)
+    {
+        $id = (int) Tools::getValue('ep_id', 0);
+        if ($id <= 0) {
+            $this->epFlash     = $this->l('Brak ep_id.');
+            $this->epFlashType = 'error';
+            return;
+        }
+
+        $resp = $this->callBackend(self::ENDPOINT_EDITORIAL . '/' . $id . '/delete', $employeeId, 'POST', '{}');
+        $this->setEpFlashFromResponse($resp, $this->l('Pick usuniety.'));
+    }
+
+    private function setEpFlashFromResponse($resp, $successMsg)
+    {
+        if (is_array($resp) && isset($resp['error'])) {
+            $httpStatus = isset($resp['http_status']) ? (int) $resp['http_status'] : 0;
+            if ($httpStatus === 401) {
+                $this->epFlash = $this->l('Brak/nieprawidlowy token kanalu serwerowego. Sprawdz konfiguracje modulu (Sekret SERWEROWY).');
+            } elseif ($httpStatus === 403) {
+                $this->epFlash = $this->l('Brak roli (no_role): konto nie ma roli w divechat_admin_roles. Editorial wymaga operatora lub admina.');
+            } elseif ($httpStatus === 400) {
+                $this->epFlash = $this->l('Walidacja backendu:') . ' ' . (string) $resp['error'];
+            } elseif ($httpStatus === 404) {
+                $this->epFlash = $this->l('Pick nie znaleziony.');
+            } else {
+                $this->epFlash = $this->l('Blad:') . ' ' . (string) $resp['error'];
+            }
+            $this->epFlashType = 'error';
+            return;
+        }
+
+        $this->epFlash     = $successMsg;
+        $this->epFlashType = 'success';
     }
 
     // ============================================================================
