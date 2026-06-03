@@ -57,11 +57,14 @@ return static function (
     // dlugosci inputu, sprawdzane PO HMAC, PRZED chatService (ochrona publiczna).
     // CHAT-T-066: RateLimiter — sliding window per sessionId i per IP (token-bucket
     // PG), PO cap/input, PRZED LLM. Wspolny PostgresConnection (singleton).
+    // CHAT-T-067 (176a): SettingsStore wstrzykniety dla odczytu progow z panelu PS
+    // (klucze protect_*); .env fallback gdy brak wpisu.
     $chatController = new ChatController(
         $chatService,
         new ConversationStore(),
         new CostGuard(PostgresConnection::getInstance()),
         new RateLimiter(PostgresConnection::getInstance()),
+        new SettingsStore(),
     );
     $router->post('/api/chat', $chatController->handle(...));
     $router->post('/api/chat/stream', $chatController->stream(...));

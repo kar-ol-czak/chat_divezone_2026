@@ -7,6 +7,7 @@ namespace DiveChat\Controller;
 use DiveChat\Auth\HmacVerifier;
 use DiveChat\Chat\ChatService;
 use DiveChat\Chat\ConversationStore;
+use DiveChat\Chat\SettingsStore;
 use DiveChat\Config;
 use DiveChat\Http\Request;
 use DiveChat\Http\Response;
@@ -29,7 +30,60 @@ final class ChatController
         private readonly ConversationStore $conversationStore,
         private readonly CostGuard $costGuard,
         private readonly RateLimiter $rateLimiter,
+        private readonly SettingsStore $settingsStore,
     ) {}
+
+    /**
+     * Odczyt progu liczbowego (float/int) z SettingsStore + fallback .env (CHAT-T-067).
+     *
+     * Decyzja 176a: SettingsStore wygrywa (panel PS = jeden punkt strojenia),
+     * .env jako fallback gdy brak klucza w bazie. Sanity: jesli wartosc z
+     * panelu jest bezsensowna (nie-liczba, <=0, NaN, INF) -> .env default
+     * (NIE wylaczamy ochrony blednym wpisem — bezpiecznik niech zawsze dziala).
+     *
+     * @return float|int wg parametru asInt
+     */
+    private function readNumericThreshold(string $storeKey, string $envKey, float|int $default, bool $asInt): float|int
+    {
+        $raw = $this->settingsStore->get($storeKey, null);
+
+        if ($raw !== null && is_numeric($raw)) {
+            $val = $asInt ? (int) $raw : (float) $raw;
+            if ($val > 0 && is_finite((float) $val)) {
+                return $val;
+            }
+        }
+
+        // Fallback .env (z defaultem gdy brak klucza). Tym samym filtrem sanity.
+        $envVal = Config::get($envKey);
+        if ($envVal !== null && is_numeric($envVal)) {
+            $val = $asInt ? (int) $envVal : (float) $envVal;
+            if ($val > 0 && is_finite((float) $val)) {
+                return $val;
+            }
+        }
+
+        return $default;
+    }
+
+    /**
+     * Odczyt emaila z SettingsStore + fallback .env (CHAT-T-067).
+     * Sanity: filter_var FILTER_VALIDATE_EMAIL; pusty/zly -> fallback.
+     */
+    private function readEmail(string $storeKey, string $envKey, string $default): string
+    {
+        $raw = $this->settingsStore->get($storeKey, null);
+        if (is_string($raw) && filter_var($raw, FILTER_VALIDATE_EMAIL) !== false) {
+            return $raw;
+        }
+
+        $envVal = Config::get($envKey);
+        if (is_string($envVal) && filter_var($envVal, FILTER_VALIDATE_EMAIL) !== false) {
+            return $envVal;
+        }
+
+        return $default;
+    }
 
     /**
      * Komunikat pokazywany uzytkownikowi gdy dzienny cap zostal przekroczony.
@@ -49,9 +103,10 @@ final class ChatController
      */
     private function enforceCostGuard(): bool
     {
-        $hardCap = (float) (Config::get('DIVECHAT_DAILY_CAP_USD') ?? '10');
-        $alertThreshold = (float) (Config::get('DIVECHAT_COST_ALERT_USD') ?? '5');
-        $alertEmail = Config::get('DIVECHAT_COST_ALERT_EMAIL') ?? 'k.susicki@divezone.pl';
+        // CHAT-T-067 (176a): progi z SettingsStore (panel PS), .env fallback. Sanity w readers.
+        $hardCap = (float) $this->readNumericThreshold('protect_daily_cap_usd', 'DIVECHAT_DAILY_CAP_USD', 10.0, false);
+        $alertThreshold = (float) $this->readNumericThreshold('protect_cost_alert_usd', 'DIVECHAT_COST_ALERT_USD', 5.0, false);
+        $alertEmail = $this->readEmail('protect_cost_alert_email', 'DIVECHAT_COST_ALERT_EMAIL', 'k.susicki@divezone.pl');
 
         try {
             $spent = $this->costGuard->dailyCostUsd();
@@ -75,13 +130,13 @@ final class ChatController
 
     private function inputTooLong(string $message): bool
     {
-        $maxChars = (int) (Config::get('DIVECHAT_MAX_INPUT_CHARS') ?? '2000');
-        return mb_strlen($message) > $maxChars;
+        return mb_strlen($message) > $this->maxInputChars();
     }
 
     private function maxInputChars(): int
     {
-        return (int) (Config::get('DIVECHAT_MAX_INPUT_CHARS') ?? '2000');
+        // CHAT-T-067: panel PS -> .env fallback -> default 2000.
+        return (int) $this->readNumericThreshold('protect_max_input_chars', 'DIVECHAT_MAX_INPUT_CHARS', 2000, true);
     }
 
     /**
@@ -93,10 +148,11 @@ final class ChatController
      */
     private function rateLimitExceeded(string $sessionId, ?string $ip): bool
     {
-        $sessMax = (int) (Config::get('DIVECHAT_RL_SESSION_MAX') ?? '10');
-        $sessWindow = (int) (Config::get('DIVECHAT_RL_SESSION_WINDOW') ?? '300');
-        $ipMax = (int) (Config::get('DIVECHAT_RL_IP_MAX') ?? '40');
-        $ipWindow = (int) (Config::get('DIVECHAT_RL_IP_WINDOW') ?? '300');
+        // CHAT-T-067: panel PS -> .env fallback -> defaults 10/300, 40/300.
+        $sessMax = (int) $this->readNumericThreshold('protect_rl_session_max', 'DIVECHAT_RL_SESSION_MAX', 10, true);
+        $sessWindow = (int) $this->readNumericThreshold('protect_rl_session_window', 'DIVECHAT_RL_SESSION_WINDOW', 300, true);
+        $ipMax = (int) $this->readNumericThreshold('protect_rl_ip_max', 'DIVECHAT_RL_IP_MAX', 40, true);
+        $ipWindow = (int) $this->readNumericThreshold('protect_rl_ip_window', 'DIVECHAT_RL_IP_WINDOW', 300, true);
 
         // KAZDY request inkrementuje OBA liczniki (atomowo). NIE robimy
         // short-circuit po sess — chcemy widziec rzeczywiste obciazenie IP
