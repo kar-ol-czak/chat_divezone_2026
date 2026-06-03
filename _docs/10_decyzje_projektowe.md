@@ -2279,3 +2279,19 @@ Etapy 2-4 = osobne taski po sesji. Ten ADR utrwala zasady, nie implementacje.
 **Pola listy (decyzja Karola):** TYLKO pierwsza wiadomość + data rozpoczęcia + „Klient | Status(badge)". Model/koszt/liczba wiadomości wyłącznie w prawej kolumnie.
 
 **Konsekwencje:** Task dotyka 2 obszarów — standalone backend (`ConversationStore.php`, CC wdraża sam) + moduł PS (kontroler, Karol wgrywa ręcznie wg 116b). Sekwencja: backend najpierw (deploy CC), potem moduł.
+
+
+---
+
+### ADR-074: Etap 2 migracji panelu — Analityka backend (CHAT-T-049)
+**Data:** 2026-06-03 | **Status:** PRZYJĘTA | **Powiązane:** ADR-070, ADR-072, CHAT-T-044, handoff 25
+
+**Kontekst:** Drugi etap programu „wszystko w PS". 4 endpointy analityki (`/api/admin/cost/kpi|trend|by-model`, `/api/admin/conversations/top`) były za Basic Auth (`AdminAuthMiddleware` + `.htpasswd`) — panel PS używa kanału serwerowego (`ServerHmacVerifier`). Migracja każdej zakładki = najpierw przełączenie auth, potem UI.
+
+**Decyzje:**
+- **107a/108a — Analityka admin-only.** Koszty (KPI, trend, by-model) i ranking najdroższych rozmów (top) to dane zarządcze; rola `admin` w `divechat_admin_roles` (stricter niż any-role Rozmów). Operator ma pełny dostęp operacyjny do rozmów przez zakładkę Rozmowy (any-role) — nie potrzebuje rachunku za API.
+- **109a — `conversations/{id}` NIE migrujemy.** Dubluje zakładkę Rozmowy (która pokazuje szczegóły po `session_id`). Ranking „top" zwraca `session_id`, więc UI Analityki linkuje do istniejącej zakładki Rozmowy — zero duplikacji widoku rozmowy. `conversations/{id}` zostaje na Basic Auth, ginie przy wyłączeniu `/admin`.
+- **110a — Etap 2 = dwa taski.** Najpierw backend (CHAT-T-049, auth), potem UI (CHAT-T-050, wykresy). Ta sama zasada co pilotaż: backend domknięty i zweryfikowany przed UI.
+- **118b — nowy `AdminAnalyticsController`, stary `AdminController` nietknięty.** 4 migrowane endpointy → nowy kontroler (czysto HMAC admin-only, wzorzec 1:1 z `SettingsController`). Stary `AdminController` zostaje z jedynym żywym `conversations/{id}` (Basic Auth) i ginie w całości przy wyłączeniu `/admin`. Odrzucone 118a (mieszanie dwóch auth w jednej klasie — pułapka czytelności i sprzątania).
+
+**Konsekwencje:** Stary `/admin` (zakładka koszty) przestanie czytać kpi/trend/by-model/top (401, brak nagłówków serwerowych) — oczekiwane, analogicznie do history.js po CHAT-T-046. Backend standalone — CC wdraża sam. Następny: CHAT-T-050 (UI zakładki Analityka, wykresy — technika do decyzji przy składaniu).
