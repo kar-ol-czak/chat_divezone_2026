@@ -54,3 +54,21 @@ DOPRECYZOWANIE (nie wyjątek od zakazu, tylko granica produkt vs procedura):
 5. Dopytanie „jak wyprać/jak użyć krok po kroku" → nadal odesłanie do instrukcji producenta (guardrail konserwacji działa).
 6. Test regresji: pranie skafandra/rashguarda → nadal odmowa procedury (golden DOMAIN-006/SCOPE-002 niezłamane).
 7. php -l clean.
+
+---
+
+## ZMIANA 5 — nauka modelu: kiedy i jak używać sort po cenie (E4 UX, decyzja 155a+c)
+KONTEKST: CHAT-T-062 dodał do ProductSearch parametr `sort` (relevance/price_asc/price_desc) + metodę searchByPrice (sortuje WSZYSTKICH kandydatów kategorii po cenie z MySQL). Schemat narzędzia (ProductSearch ~linia 107) ma już opis sort. ALE: test CC wykazał problem UX — kategoria parent „Komputery Nurkowe" miesza sprzęt z akcesoriami (baterie, kompasy, manometry), więc sort=price_asc na „komputery" zwraca akcesoria 20-33 zł zamiast najtańszego KOMPUTERA. Sam relevance (RRF) radzi sobie tu lepiej (SUUNTO Nautic S 2276 zł na #1). searchByPrice respektuje price_min/price_max przez buildFilters — mechanizm price_floor JUŻ działa, brak tylko nauki modelu.
+
+NAUCZYĆ MODEL w SystemPrompt (sekcja wyszukiwania/doboru produktów):
+- Gdy klient pyta o „najtańszy/najtaniej/od najtańszego/tani [konkretny typ sprzętu]" → użyj search_products z sort=price_asc. Dla „najdroższy/premium/topowy" → sort=price_desc.
+- KRYTYCZNE (155a — zawężenie zakresu): sortowanie po cenie obejmuje CAŁĄ kategorię, która może zawierać akcesoria (baterie, kompasy, paski, manometry w „Komputery Nurkowe"). Żeby „najtańszy komputer" nie zwrócił baterii:
+  - Zawęź do właściwej kategorii/podkategorii konkretnego sprzętu, jeśli istnieje (np. komputery zegarkowe vs akcesoria).
+  - ORAZ/LUB (155c — price_floor) podaj rozsądny price_min odcinający drobnicę/akcesoria, gdy pytanie dotyczy realnego sprzętu, nie akcesoriów (np. komputer nurkowy raczej > 800-1000 zł — akcesorium za 20-30 zł to nie komputer). price_min jest respektowany przez sortowanie cenowe.
+- Zdrowy rozsądek: jeśli wynik sort=price_asc to oczywiste akcesorium (cena rażąco niższa od typowej dla danego sprzętu), NIE prezentuj go jako „najtańszy [sprzęt]" — zawęź zakres (kategoria/price_min) i wyszukaj ponownie, albo użyj relevance i skomentuj najtańszą sensowną pozycję.
+- Nie podawaj „najtańszy" na podstawie niepewnych danych — jeśli sort cenowy daje wynik niespójny z intencją (akcesorium), popraw zapytanie zamiast prezentować błędny wynik (to był krytyczny błąd E4).
+
+## Kryteria akceptacji (uzupełnienie)
+8. „Najtańszy komputer nurkowy" zwraca najtańszy faktyczny KOMPUTER (nie baterię/akcesorium) — model używa sort=price_asc z zawężeniem kategorii i/lub price_min.
+9. „Najdroższy [sprzęt]" → sort=price_desc z właściwym zakresem.
+10. Model nie prezentuje akcesorium jako „najtańszy [sprzęt]" gdy cena rażąco odbiega od typowej dla danego typu.
