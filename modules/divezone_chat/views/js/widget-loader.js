@@ -70,7 +70,7 @@
     '  background:' + AMBER + ';',
     '  border:2px solid ' + TEAL + ';',
     '}',
-    /* CHAT-T-056 + CHAT-T-058: proaktywny dymek (nudge) — nad launcherem, klikalny, X zamyka */
+    /* CHAT-T-056 + CHAT-T-058 + CHAT-T-060: proaktywny dymek (nudge) — nad launcherem, klikalny, X zamyka */
     '.dz-nudge{',
     '  position:fixed;right:20px;bottom:88px;',
     '  width:320px;max-width:calc(100vw - 40px);',
@@ -78,16 +78,17 @@
     '  padding:20px 38px 20px 20px;',
     '  border-radius:12px;',
     '  box-shadow:0 8px 24px rgba(0,0,0,0.18),0 2px 6px rgba(0,0,0,0.10);',
-    '  font-family:"DM Sans",Arial,sans-serif;font-size:16px;line-height:1.4;',
+    '  font-family:"DM Sans",Arial,sans-serif;font-size:17px;line-height:1.4;',
     '  pointer-events:auto;cursor:pointer;',
     '  animation:dzNudgeIn .3s ease;',
     '}',
-    '.dz-nudge__text{margin:0 0 12px;word-break:break-word;}',
+    '.dz-nudge__text{margin:0 0 20px;word-break:break-word;}',
+    '.dz-nudge__line{display:block;}',
     '.dz-nudge__cta{',
     '  display:block;width:100%;padding:12px 14px;',
     '  background:#f7b427;color:#0b3b3d;',
     '  border:0;border-radius:6px;cursor:pointer;',
-    '  font-family:inherit;font-size:15px;font-weight:600;',
+    '  font-family:inherit;font-size:16px;font-weight:600;',
     '}',
     '.dz-nudge__cta:hover{background:#e0a31f;}',
     '.dz-nudge__cta:focus-visible{outline:2px solid ' + TEAL + ';outline-offset:2px;}',
@@ -108,7 +109,8 @@
     '  .dz-nudge{animation:none}',
     '}',
     '@media (max-width: 599.98px){',
-    '  .dz-nudge{right:12px;bottom:84px;width:240px;}',
+    '  .dz-nudge{right:12px;bottom:84px;width:340px;padding:25px 55px 25px 25px;font-size:18px;}',
+    '  .dz-nudge__cta{font-size:18px;}',
     '}'
   ].join('\n');
   root.appendChild(baseStyle);
@@ -251,10 +253,24 @@
 
     var textEl = document.createElement('p');
     textEl.className = 'dz-nudge__text';
-    // ESCAPE: textContent zamiast innerHTML — anty-XSS dla configu z panelu PS.
+    // ESCAPE: textContent na kazdej linii — anty-XSS dla configu z panelu PS.
     // CHAT-T-058 (140a): emoji prefixowany z loadera, bo pr_configuration utf8 (3-bajt)
     // zjada 4-bajtowy 🤿 jako "????". Tekst z configu zostaje bez emoji.
-    textEl.textContent = NUDGE_EMOJI + ' ' + text;
+    // CHAT-T-060: rozbicie na 3 linie po znakach konca zdania (! lub ?). Pierwsza
+    // linia w <strong> (bold "Hej!"), pozostale w <span class="dz-nudge__line">.
+    // Marker  (kontrolny SOH, niespotykany w UI) zamiast lookbehind regex —
+    // max kompatybilnosc przegladarek.
+    var fullText = NUDGE_EMOJI + ' ' + text;
+    var marker = '';
+    var lines = fullText.replace(/([!?])\s+/g, '$1' + marker).split(marker);
+    lines.forEach(function (line, i) {
+      var trimmed = line.replace(/^\s+|\s+$/g, '');
+      if (trimmed === '') return;
+      var lineEl = document.createElement(i === 0 ? 'strong' : 'span');
+      lineEl.className = 'dz-nudge__line';
+      lineEl.textContent = trimmed;
+      textEl.appendChild(lineEl);
+    });
 
     var ctaBtn = document.createElement('button');
     ctaBtn.className = 'dz-nudge__cta';
