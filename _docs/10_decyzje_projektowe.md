@@ -2240,3 +2240,20 @@ Etapy 2-4 = osobne taski po sesji. Ten ADR utrwala zasady, nie implementacje.
 - Bogaty model wezla (warunki/zmienne/petle): edytor ktorego nikt nie uzyje. Plaski model wystarcza.
 - 2 poziomy dla wszystkich kategorii od razu (rozwazane w 75/76): puste galezie do AI, tygodnie tresci dla galezi ktore i tak koncza w AI. Glebokosc-za-danymi zamiast tego.
 - Hardkod drzewa w widgecie: blokowalby edycje przez pracownikow (sprzeczne z panelem).
+
+
+---
+
+### ADR-072: Zakładka „Rozmowy" w panelu PS — pilotaż migracji (CHAT-T-048)
+**Data:** 2026-06-03 | **Status:** PRZYJĘTA | **Powiązane:** ADR-070, ADR-068, CHAT-T-046, handoff 25 (117a/118a)
+
+**Kontekst:** Pierwsza migrowana zakładka programu „wszystko w PS". Backend `/api/conversations/*` już za kanałem serwerowym (any-role, CHAT-T-046) — etap czysto UI, ustala wzorzec dla kolejnych (Analityka, Editorial).
+
+**Decyzje:**
+- **104b — odczyt + zmiana statusu od razu.** Pilotaż obejmuje pełną pętlę operatora (przejrzyj → oznacz), nie sam odczyt. Powód: tagowanie konwersacji to pierwotny cel panelu obsługi i codzienna praca; backend (`POST .../status`) i `callBackend` POST (CHAT-T-045) już gotowe; drugi task = ponowne ręczne wgranie modułu (koszt wg 116b).
+- **105a — 4 statusy backendu, etykiety PL.** UI używa dokładnie whitelisty backendu (`new`/`reviewed`/`knowledge_created`/`ignored`); polskie etykiety to tylko prezentacja, wartość wysyłana = klucz EN. Zero zmian w backendzie — UI dopasowuje się do kontraktu, nie odwrotnie.
+- **106a — Rozmowy = domyślna zakładka, w tym samym tasku.** Default zmieniony z Rekomendacji na Rozmowy (3 miejsca w `initContent`), pasek wg częstości (Rozmowy, Rekomendacje, Modele, Konfiguracja). Jeden cykl wdrożenia zamiast dwóch; ryzyko minimalne (pozostałe zakładki + whoami niezależne).
+
+**Konsekwencje:** Wzorzec „ciężkiej zakładki z danymi" (lista + szczegóły + akcja POST, dwa tryby wg `?session_id`, render server-side bez JS) staje się szablonem dla Analityki i Editorial. Etap 2 (Analityka) wymaga NAJPIERW przełączenia `/api/admin/cost/*` + `/api/admin/conversations/*` z Basic Auth na kanał serwerowy.
+
+**Odrzucone:** 104a (sam odczyt — sztuczny podział pełnej pętli na 2 wgrania modułu); 106b (default zmieniany osobno — niepotrzebny drugi cykl deploy).
