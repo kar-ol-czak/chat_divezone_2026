@@ -2313,3 +2313,18 @@ Etapy 2-4 = osobne taski po sesji. Ten ADR utrwala zasady, nie implementacje.
 - **TOP rozmów (109a):** wiersze linkują do zakładki Rozmowy po session_id — zero duplikacji widoku rozmowy.
 
 **Konsekwencje:** Po wdrożeniu Etap 2 (Analityka) domknięty. Stary /admin (koszty) całkowicie zastąpiony zakładką w PS. Kolejne etapy migracji (np. Editorial) wg tego samego wzorca: backend auth → UI.
+
+
+---
+
+### ADR-076: Etap 3 migracji panelu — Editorial Picks backend (CHAT-T-054)
+**Data:** 2026-06-03 | **Status:** PRZYJĘTA | **Powiązane:** ADR-070/074, CHAT-T-046/049
+
+**Kontekst:** Ostatni moduł funkcjonalny na Basic Auth. 6 endpointów editorial-picks (+ products/search) za AdminAuthMiddleware. Stary /admin ma 2 żywe zakładki: Koszty (zastąpiona Analityką) i Editorial Picks (jeszcze nie). Po migracji Editorial w /admin zostaje już tylko conversations/{id} (109a) → gotowość do wyłączenia /admin.
+
+**Decyzje:**
+- **127b — any-role (operator+admin).** Editorial Picks to praca operacyjna z treścią rekomendacji (kuratorowanie tego, co czat poleca klientom), najbliżej zakładce Rekomendacje (any-role). Nie są to dane zarządcze (koszty/modele/settings = admin-only). Operator obsługujący klientów ma móc poprawić zły pick. Wzorzec 1:1 z AdminRecommendationsController (HMAC + lookup roli, BEZ wymogu admin).
+- **128a — aliasy POST dla update/delete.** Ustalono w kodzie: callBackend (moduł PS) wysyła body i Content-Type TYLKO dla method==='POST'; PS UI to formularze (GET/POST), nie REST. Prawdziwy PUT/DELETE z <form> nie istnieje bez JS/fetch (a fetch wraca do problemu HMAC z 113a/120a). Dlatego dodajemy ścieżki POST /api/admin/editorial-picks/{id} (update) i POST .../{id}/delete (delete) obok istniejących PUT/DELETE (zachowane dla zgodności). Wariant z osobną ścieżką /delete zamiast magii _action — czytelniejszy.
+- **129a — Etap 3 = dwa taski.** Backend (CHAT-T-054, auth + aliasy POST) przed UI (CHAT-T-055). Ta sama zasada co Etapy 1-2: backend domknięty i przetestowany (role 200/401/403) przed UI. Editorial UI cięższe (CRUD + autocomplete produktów + pending reviews).
+
+**Konsekwencje:** Po wdrożeniu stary /admin (editorial) zacznie dostawać 401 — oczekiwane. Po CHAT-T-055 (UI) panel PS kompletny, /admin do wyłączenia (zostaje tylko conversations/{id} ginący razem z /admin). Następny: CHAT-T-055 (UI zakładka Editorial — CRUD, wyszukiwarka produktów z autocomplete, lista pending; technika autocomplete do decyzji przy składaniu).
