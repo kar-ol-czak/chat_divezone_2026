@@ -10,6 +10,7 @@ use DiveChat\Chat\ConversationStore;
 use DiveChat\Config;
 use DiveChat\Http\Request;
 use DiveChat\Http\Response;
+use DiveChat\Usage\CostGuard;
 
 /**
  * Endpoint czatu.
@@ -25,7 +26,55 @@ final class ChatController
     public function __construct(
         private readonly ChatService $chatService,
         private readonly ConversationStore $conversationStore,
+        private readonly CostGuard $costGuard,
     ) {}
+
+    /**
+     * Komunikat pokazywany uzytkownikowi gdy dzienny cap zostal przekroczony.
+     * Tekst uzgodniony w CHAT-T-064 (decyzja 161/165b/166).
+     */
+    private const CAP_MESSAGE = 'Czat jest chwilowo niedostępny. Napisz na dive@divezone.pl lub zadzwoń 56 307 03 03 — chętnie pomożemy.';
+
+    /**
+     * Sprawdza cap kosztow + ewentualnie wysyla alert. Idempotentnie.
+     * Zwraca true jesli cap PRZEKROCZONY (caller ma NIE wolac LLM).
+     */
+    private function enforceCostGuard(): bool
+    {
+        $hardCap = (float) (Config::get('DIVECHAT_DAILY_CAP_USD') ?? '10');
+        $alertThreshold = (float) (Config::get('DIVECHAT_COST_ALERT_USD') ?? '5');
+        $alertEmail = Config::get('DIVECHAT_COST_ALERT_EMAIL') ?? 'k.susicki@divezone.pl';
+
+        try {
+            $spent = $this->costGuard->dailyCostUsd();
+        } catch (\Throwable $e) {
+            // DB chwilowo niedostepna -> NIE blokuj czatu (cap to bezpiecznik, nie zaleznosc krytyczna).
+            error_log('[ChatController] cost guard read failed, fail-open: ' . $e->getMessage());
+            return false;
+        }
+
+        if ($spent > $alertThreshold) {
+            // Best-effort, NIE blokuje glownej sciezki nawet przy throw (defensywa).
+            try {
+                $this->costGuard->maybeSendAlert($spent, $hardCap, $alertEmail);
+            } catch (\Throwable $e) {
+                error_log('[ChatController] cost guard alert failed: ' . $e->getMessage());
+            }
+        }
+
+        return $spent >= $hardCap;
+    }
+
+    private function inputTooLong(string $message): bool
+    {
+        $maxChars = (int) (Config::get('DIVECHAT_MAX_INPUT_CHARS') ?? '2000');
+        return mb_strlen($message) > $maxChars;
+    }
+
+    private function maxInputChars(): int
+    {
+        return (int) (Config::get('DIVECHAT_MAX_INPUT_CHARS') ?? '2000');
+    }
 
     public function handle(Request $request): void
     {
@@ -55,6 +104,30 @@ final class ChatController
 
         if ($message === '') {
             Response::error('Pole "message" jest wymagane i nie może być puste', 400);
+        }
+
+        // 2a. Limit dlugosci inputu (CHAT-T-064, ochrona publiczna PRZED LLM).
+        if ($this->inputTooLong($message)) {
+            Response::error(
+                'Wiadomość jest za długa (max ' . $this->maxInputChars() . ' znaków). Skróć pytanie lub napisz na dive@divezone.pl.',
+                400,
+            );
+        }
+
+        // 2b. Dzienny cap kosztow (CHAT-T-064): jesli przekroczony — NIE wolaj LLM,
+        // zwroc grzeczny komunikat jako wiadomosc bota (HTTP 200, success=false,
+        // pole `response` z tekstem; front pokaze jako wiadomosc, nie blad sieci).
+        if ($this->enforceCostGuard()) {
+            Response::json([
+                'success' => false,
+                'response' => self::CAP_MESSAGE,
+                'session_id' => $sessionId,
+                'tools_used' => [],
+                'products' => [],
+                'usage' => null,
+                'conversation_cost' => null,
+                'diagnostics' => ['cost_cap_reached' => true],
+            ]);
         }
 
         // 3. Obsługa czatu
@@ -116,6 +189,42 @@ final class ChatController
 
         if ($message === '') {
             Response::error('Pole "message" jest wymagane i nie może być puste', 400);
+        }
+
+        // 2a. Limit dlugosci inputu (CHAT-T-064). 400 PRZED SSE — transport
+        // pokaze jako blad walidacji (uzytkownik wpisal za dlugo, swiadomy feedback).
+        if ($this->inputTooLong($message)) {
+            Response::error(
+                'Wiadomość jest za długa (max ' . $this->maxInputChars() . ' znaków). Skróć pytanie lub napisz na dive@divezone.pl.',
+                400,
+            );
+        }
+
+        // 2b. Dzienny cap kosztow (CHAT-T-064): jesli przekroczony — NIE wolaj LLM.
+        // W trybie SSE emitujemy event `done` z komunikatem jako wiadomosc bota
+        // (front transport.js: onDone(payload) -> appendBotMessage(payload.response)),
+        // a nie blad transportu. Headery SSE musza pojsc PRZED echo.
+        if ($this->enforceCostGuard()) {
+            Response::setCorsHeaders();
+            header('Content-Type: text/event-stream');
+            header('Cache-Control: no-cache');
+            header('Connection: keep-alive');
+            header('X-Accel-Buffering: no');
+            while (ob_get_level() > 0) {
+                ob_end_flush();
+            }
+            echo "event: done\ndata: " . json_encode([
+                'success' => false,
+                'response' => self::CAP_MESSAGE,
+                'session_id' => $sessionId,
+                'tools_used' => [],
+                'products' => [],
+                'usage' => null,
+                'conversation_cost' => null,
+                'diagnostics' => ['cost_cap_reached' => true],
+            ], JSON_UNESCAPED_UNICODE) . "\n\n";
+            flush();
+            exit;
         }
 
         // 3. Ustaw headery SSE + CORS

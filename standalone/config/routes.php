@@ -30,6 +30,7 @@ use DiveChat\Editorial\EditorialPicksService;
 use DiveChat\Http\AdminAuthMiddleware;
 use DiveChat\Router;
 use DiveChat\Tools\OrderStatus;
+use DiveChat\Usage\CostGuard;
 
 /**
  * Definicje endpointów API.
@@ -51,7 +52,13 @@ return static function (
     // CHAT-T-059: ConversationStore wstrzykniety dla GET /api/chat/history
     // (odtworzenie rozmowy po nawigacji miedzy stronami; weryfikacja wlasciciela
     // po HMAC customerId == ps_customer_id rozmowy).
-    $chatController = new ChatController($chatService, new ConversationStore());
+    // CHAT-T-064: CostGuard — twardy dzienny cap kosztow + alert e-mail + limit
+    // dlugosci inputu, sprawdzane PO HMAC, PRZED chatService (ochrona publiczna).
+    $chatController = new ChatController(
+        $chatService,
+        new ConversationStore(),
+        new CostGuard(PostgresConnection::getInstance()),
+    );
     $router->post('/api/chat', $chatController->handle(...));
     $router->post('/api/chat/stream', $chatController->stream(...));
     $router->get('/api/chat/history', $chatController->history(...));
