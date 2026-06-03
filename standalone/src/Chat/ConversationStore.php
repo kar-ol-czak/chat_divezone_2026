@@ -126,6 +126,10 @@ final class ConversationStore
         $params[] = $perPage;
         $params[] = $offset;
 
+        // CHAT-T-051 (decyzja 112a): first_user_message skorelowane podzapytanie
+        // wzorzec z CostAnalytics::topConversations(). Alias tabeli list() to bare
+        // `divechat_conversations` (nie `c.` jak w topConversations) — podzapytanie
+        // odnosi sie do divechat_conversations.id, reszta bez zmian.
         $rows = $this->db->fetchAll(
             "SELECT id, session_id, ps_customer_id, model_used, tools_used,
                     tokens_input, tokens_output,
@@ -133,7 +137,10 @@ final class ConversationStore
                     estimated_cost,
                     knowledge_gap, admin_status,
                     jsonb_array_length(COALESCE(messages, '[]'::jsonb)) as message_count,
-                    started_at, updated_at
+                    started_at, updated_at,
+                    (SELECT m.content FROM divechat_messages m
+                     WHERE m.conversation_id = divechat_conversations.id AND m.role = 'user'
+                     ORDER BY m.created_at, m.id LIMIT 1) AS first_user_message
              FROM divechat_conversations
              {$where}
              ORDER BY updated_at DESC
@@ -158,6 +165,7 @@ final class ConversationStore
                 'admin_status' => $row['admin_status'] ?? 'new',
                 'started_at' => $row['started_at'],
                 'updated_at' => $row['updated_at'],
+                'first_message' => $row['first_user_message'] ?: null,
             ], $rows),
             'total' => $total,
             'page' => $page,
