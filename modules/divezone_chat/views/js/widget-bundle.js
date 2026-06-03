@@ -38,7 +38,7 @@
 
   var PRIVACY_NOTE_HTML =
     'Rozmawiasz z asystentem AI — nie podawaj danych wrażliwych. ' +
-    '<a href="https://divezone.pl/content/3-polityka-prywatnosci" target="_blank" rel="noopener noreferrer">Polityka prywatności.</a>';
+    '<a href="https://divezone.pl/polityka-prywatnosci" target="_blank" rel="noopener noreferrer">Polityka prywatności.</a>';
 
   var ORDER_MODAL_TITLE = 'Sprawdź status zamówienia';
   var ORDER_MODAL_INTRO = 'Podaj numer zamówienia i adres e-mail użyty przy zakupie — sprawdzimy status od razu.';
@@ -772,10 +772,14 @@
       document.documentElement.style.overflow = 'hidden';
       document.body.style.overflow = 'hidden';
     }
-    // Fokus na input (po animacji)
-    setTimeout(function () {
-      if (state.inputEl) state.inputEl.focus();
-    }, 180);
+    // CHAT-T-053 (124a): autofocus tylko na desktopie — na mobile klawiatura
+    // ekranowa zaslania chipy powitalne. Klawiatura otwiera sie dopiero gdy
+    // user sam tapnie pole tekstowe.
+    if (!isMobile) {
+      setTimeout(function () {
+        if (state.inputEl) state.inputEl.focus();
+      }, 180);
+    }
   }
 
   function closeWindow() {
