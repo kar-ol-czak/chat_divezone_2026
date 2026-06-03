@@ -24,6 +24,10 @@
   var TEAL = '#1e6363';
   var TEAL_DARK = '#155050';
   var AMBER = '#e8a800';
+  // CHAT-T-058 (140a): emoji prefixowany z KODU loadera, NIE z configu.
+  // Powod: pr_configuration w PS uzywa utf8 (3-bajt), 4-bajtowy 🤿 ginie jako "????".
+  // Plik MUSI byc zapisany w UTF-8.
+  var NUDGE_EMOJI = '🤿';
 
   /* ───────────────────────── Shadow host ───────────────────────── */
 
@@ -66,35 +70,37 @@
     '  background:' + AMBER + ';',
     '  border:2px solid ' + TEAL + ';',
     '}',
-    /* CHAT-T-056: proaktywny dymek (nudge) — nad launcherem, klikalny, X zamyka */
+    /* CHAT-T-056 + CHAT-T-058: proaktywny dymek (nudge) — nad launcherem, klikalny, X zamyka */
     '.dz-nudge{',
     '  position:fixed;right:20px;bottom:88px;',
-    '  width:280px;max-width:calc(100vw - 40px);',
-    '  background:#ffffff;color:#1f2937;',
-    '  padding:14px 38px 14px 14px;',
+    '  width:320px;max-width:calc(100vw - 40px);',
+    '  background:#f2feff;color:#1f2937;',
+    '  padding:20px 38px 20px 20px;',
     '  border-radius:12px;',
     '  box-shadow:0 8px 24px rgba(0,0,0,0.18),0 2px 6px rgba(0,0,0,0.10);',
-    '  font-family:"DM Sans",Arial,sans-serif;font-size:14px;line-height:1.4;',
+    '  font-family:"DM Sans",Arial,sans-serif;font-size:16px;line-height:1.4;',
     '  pointer-events:auto;cursor:pointer;',
     '  animation:dzNudgeIn .3s ease;',
     '}',
-    '.dz-nudge__text{margin:0 0 10px;word-break:break-word;white-space:pre-line;}',
+    '.dz-nudge__text{margin:0 0 12px;word-break:break-word;}',
     '.dz-nudge__cta{',
-    '  display:block;width:100%;padding:8px 14px;',
-    '  background:' + TEAL + ';color:#fff;',
+    '  display:block;width:100%;padding:12px 14px;',
+    '  background:#f7b427;color:#0b3b3d;',
     '  border:0;border-radius:6px;cursor:pointer;',
-    '  font-family:inherit;font-size:13px;font-weight:600;',
+    '  font-family:inherit;font-size:15px;font-weight:600;',
     '}',
-    '.dz-nudge__cta:hover{background:' + TEAL_DARK + ';}',
+    '.dz-nudge__cta:hover{background:#e0a31f;}',
     '.dz-nudge__cta:focus-visible{outline:2px solid ' + TEAL + ';outline-offset:2px;}',
     '.dz-nudge__close{',
-    '  position:absolute;top:6px;right:6px;',
-    '  width:24px;height:24px;',
+    '  position:absolute;top:6px;right:10px;',
+    '  width:40px;height:40px;',
     '  background:transparent;border:0;',
-    '  color:#888;font-size:18px;font-family:inherit;',
+    '  color:#555555;font-size:36px;',
+    '  font-family:"Helvetica Neue",Arial,sans-serif;font-weight:300;',
     '  cursor:pointer;border-radius:4px;line-height:1;',
+    '  display:flex;align-items:center;justify-content:center;',
     '}',
-    '.dz-nudge__close:hover{background:#f0f0f0;color:#333;}',
+    '.dz-nudge__close:hover{background:#f0f0f0;color:#1e6363;}',
     '.dz-nudge__close:focus-visible{outline:2px solid ' + TEAL + ';outline-offset:1px;}',
     '@keyframes dzNudgeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}',
     '@media (prefers-reduced-motion: reduce){',
@@ -246,7 +252,9 @@
     var textEl = document.createElement('p');
     textEl.className = 'dz-nudge__text';
     // ESCAPE: textContent zamiast innerHTML — anty-XSS dla configu z panelu PS.
-    textEl.textContent = text;
+    // CHAT-T-058 (140a): emoji prefixowany z loadera, bo pr_configuration utf8 (3-bajt)
+    // zjada 4-bajtowy 🤿 jako "????". Tekst z configu zostaje bez emoji.
+    textEl.textContent = NUDGE_EMOJI + ' ' + text;
 
     var ctaBtn = document.createElement('button');
     ctaBtn.className = 'dz-nudge__cta';
