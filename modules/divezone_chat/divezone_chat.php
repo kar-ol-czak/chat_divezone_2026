@@ -517,15 +517,13 @@ class Divezone_Chat extends Module
         $timestamp = time();
         $token     = hash_hmac('sha256', $customerId . ':' . $timestamp, $clientSecret);
 
-        // URL loadera (stub) — staly wzgledem modulu, niezalezny od front controllera.
-        $loaderUrl = rtrim(__PS_BASE_URI__, '/')
-            . '/modules/' . $this->name . '/views/js/widget-loader.js';
-        $bundleUrl = rtrim(__PS_BASE_URI__, '/')
-            . '/modules/' . $this->name . '/views/js/widget-bundle.js';
-        $cssUrl = rtrim(__PS_BASE_URI__, '/')
-            . '/modules/' . $this->name . '/views/css/widget.css';
-        $transportUrl = rtrim(__PS_BASE_URI__, '/')
-            . '/modules/' . $this->name . '/views/js/transport.js';
+        // CHAT-T-061 (decyzja 148a): cache-busting ?v=md5_8 per asset. Liczone PO
+        // shouldShowWidget — hash (md5_file I/O) tylko gdy widget faktycznie idzie
+        // do uzytkownika (nie placimy hashowania dla botow/grup wykluczonych).
+        $loaderUrl    = $this->assetUrl('views/js/widget-loader.js');
+        $bundleUrl    = $this->assetUrl('views/js/widget-bundle.js');
+        $cssUrl       = $this->assetUrl('views/css/widget.css');
+        $transportUrl = $this->assetUrl('views/js/transport.js');
 
         // CHAT-T-056: galaz nudge dla loadera (proaktywny dymek). Dziedziczy gating
         // launchera — jesli shouldShowWidget() przepuscil, loader sprawdza nudge.enabled.
@@ -740,5 +738,35 @@ class Divezone_Chat extends Module
     private function cfIpCountryAvailable()
     {
         return !empty($_SERVER['HTTP_CF_IPCOUNTRY']);
+    }
+
+    /**
+     * CHAT-T-061 (decyzja 148a): URL assetu widgetu z cache-bust ?v=md5_8.
+     *
+     * Wolane WYLACZNIE z hookDisplayFooter PO early-return shouldShowWidget,
+     * wiec md5_file (I/O na dysk) odpala sie tylko dla wizyt, ktore faktycznie
+     * dostaja widget — koszt zerowy dla wizyt botow / grup wykluczonych.
+     *
+     * Sciezka do md5_file uzywa dirname(__FILE__) — tj. katalogu samego modulu,
+     * niezalezna od stalej _PS_MODULE_DIR_ (pewniejsze, dziala identycznie
+     * w kazdym kontekscie wywolania hooka).
+     *
+     * Graceful: md5_file zwraca false (plik usuniety / brak uprawnien) -> URL
+     * bez ?v (widget dalej dziala, tracimy tylko cache-bust w tym hicie).
+     * Suppression @ celowo — chcemy zerowych warningow w PHP error log podczas
+     * normalnego dzialania (md5_file false trafi do return false ponizej).
+     *
+     * @param string $relativePath ścieżka od katalogu modulu, np. 'views/js/widget-loader.js'
+     * @return string URL z ?v=md5_8 lub bez (graceful fallback)
+     */
+    private function assetUrl($relativePath)
+    {
+        $url      = rtrim(__PS_BASE_URI__, '/') . '/modules/' . $this->name . '/' . $relativePath;
+        $filePath = dirname(__FILE__) . '/' . $relativePath;
+        $hash     = @md5_file($filePath);
+        if ($hash === false) {
+            return $url;
+        }
+        return $url . '?v=' . substr($hash, 0, 8);
     }
 }
