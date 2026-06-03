@@ -42,6 +42,12 @@ class Divezone_Chat extends Module
     const KEY_SHOW_ALL        = 'DIVEZONE_CHAT_SHOW_ALL';
     const KEY_FILTER_BOTS     = 'DIVEZONE_CHAT_FILTER_BOTS';
     const KEY_ACK_PUBLIC_RISK = 'DIVEZONE_CHAT_ACK_PUBLIC_RISK';
+    // CHAT-T-056: proaktywny dymek (nudge) — 3 pola configu, default OFF, lazy init.
+    const KEY_NUDGE_ENABLED   = 'DIVEZONE_CHAT_NUDGE_ENABLED';
+    const KEY_NUDGE_DELAY     = 'DIVEZONE_CHAT_NUDGE_DELAY';
+    const KEY_NUDGE_TEXT      = 'DIVEZONE_CHAT_NUDGE_TEXT';
+    const DEFAULT_NUDGE_DELAY = 20;
+    const DEFAULT_NUDGE_TEXT  = 'Hej! 🤿 Nie wiesz, jaki sprzęt wybrać? Zapytaj naszych specjalistów.';
     const TAB_CLASS          = 'AdminDivezoneChat';
     // T-034: zlecenie Karola — tab w sidebar Ulepsz, pomiedzy "Moduly" a "Wyglad".
     // Wybor T-034 (AdminModulesSf, id=44) byl bledny — to kontener Module Manager UI,
@@ -214,6 +220,17 @@ class Divezone_Chat extends Module
         $showCustomers = (string)Configuration::get(self::KEY_SHOW_CUSTOMERS) === '1';
         $filterBots    = (string)Configuration::get(self::KEY_FILTER_BOTS) === '1';
 
+        // CHAT-T-056: nudge config (lazy init — Configuration::get '' = OFF/default).
+        $nudgeEnabled = (string)Configuration::get(self::KEY_NUDGE_ENABLED) === '1';
+        $nudgeDelay   = (int)Configuration::get(self::KEY_NUDGE_DELAY);
+        if ($nudgeDelay < 3 || $nudgeDelay > 300) {
+            $nudgeDelay = self::DEFAULT_NUDGE_DELAY;
+        }
+        $nudgeText = (string)Configuration::get(self::KEY_NUDGE_TEXT);
+        if ($nudgeText === '') {
+            $nudgeText = self::DEFAULT_NUDGE_TEXT;
+        }
+
         if ($useSubmittedRiskValues) {
             // Po validation fail: pokaz uzytkownikowi to, co probowal zapisac.
             $showPoland = (int)Tools::getValue('show_poland', 0) === 1;
@@ -311,6 +328,24 @@ class Divezone_Chat extends Module
         $output .= '<small style="color:#666">' . $this->l('Detekcja po naglowku User-Agent. Latwe do podrobienia (NIE security), redukuje koszty LLM przy crawlerach.') . '</small>';
         $output .= '</p>';
 
+        // === SEKCJA 5: Proaktywny dymek (nudge) — CHAT-T-056 ===
+        $output .= '<hr><h3 style="margin-bottom:4px">' . $this->l('Proaktywny dymek (nudge)') . '</h3>';
+        $output .= '<p style="margin-top:0;color:#666"><em>' . $this->l('Wysuwany dymek przy launcherze po N sekundach od wejscia na strone — zacheta do rozmowy. Dziedziczy gating launchera (drabina ekspozycji). Pokazany RAZ na sesje, do zamkniecia (×) lub otwarcia czatu.') . '</em></p>';
+        $output .= '<p style="margin:6px 0">';
+        $output .= '<label><input type="checkbox" name="nudge_enabled" value="1"' . ($nudgeEnabled ? ' checked' : '') . '> <strong>' . $this->l('Wlacz dymek') . '</strong></label><br>';
+        $output .= '<small style="color:#666">' . $this->l('Default OFF. Bez wlaczenia dymek nie pojawi sie nawet jak launcher jest widoczny.') . '</small>';
+        $output .= '</p>';
+        $output .= '<p style="margin:6px 0">';
+        $output .= '<label>' . $this->l('Opoznienie (sekundy, 3-300)') . ':<br>';
+        $output .= '<input type="number" name="nudge_delay" value="' . (int)$nudgeDelay . '" min="3" max="300" step="1" style="width:100px"></label><br>';
+        $output .= '<small style="color:#666">' . $this->l('Po ilu sekundach od zaladowania strony pokazac dymek. Default 20s. Wartosci poza zakresem = default.') . '</small>';
+        $output .= '</p>';
+        $output .= '<p style="margin:6px 0">';
+        $output .= '<label>' . $this->l('Tresc zachety') . ':<br>';
+        $output .= '<textarea name="nudge_text" rows="3" cols="60" style="width:100%;max-width:540px;">' . htmlspecialchars($nudgeText, ENT_QUOTES) . '</textarea></label><br>';
+        $output .= '<small style="color:#666">' . $this->l('Krotki, przyjazny tekst zachecajacy do rozmowy. Emoji OK. HTML NIE — tresc renderowana jako tekst (anty-XSS). Puste = domyslna tresc.') . '</small>';
+        $output .= '</p>';
+
         $output .= '<p style="margin-top:18px"><input type="submit" class="button" name="submitDivezoneChatConfig" value="' . $this->l('Zapisz') . '"></p>';
         $output .= '</fieldset></form>';
 
@@ -385,6 +420,20 @@ class Divezone_Chat extends Module
         Configuration::updateValue(self::KEY_SHOW_CUSTOMERS, (int)Tools::getValue('show_customers', 0) === 1 ? '1' : '0');
         Configuration::updateValue(self::KEY_FILTER_BOTS,    (int)Tools::getValue('filter_bots', 0)    === 1 ? '1' : '0');
 
+        // CHAT-T-056: nudge — 3 pola (enabled / delay / text). Walidacja delay 3-300.
+        Configuration::updateValue(self::KEY_NUDGE_ENABLED, (int)Tools::getValue('nudge_enabled', 0) === 1 ? '1' : '0');
+        $nudgeDelayRaw = (int)Tools::getValue('nudge_delay', self::DEFAULT_NUDGE_DELAY);
+        if ($nudgeDelayRaw < 3 || $nudgeDelayRaw > 300) {
+            $nudgeDelayRaw = self::DEFAULT_NUDGE_DELAY;
+        }
+        Configuration::updateValue(self::KEY_NUDGE_DELAY, (string)$nudgeDelayRaw);
+        $nudgeTextRaw = trim((string)Tools::getValue('nudge_text', ''));
+        // Pusty submit -> wracamy do default (UX: czyszczenie pola = reset).
+        if ($nudgeTextRaw === '') {
+            $nudgeTextRaw = self::DEFAULT_NUDGE_TEXT;
+        }
+        Configuration::updateValue(self::KEY_NUDGE_TEXT, $nudgeTextRaw);
+
         // === Pola "risk" — wymagaja ack przy aktywacji PL/Wszyscy ===
         $wantsPoland = (int)Tools::getValue('show_poland', 0) === 1;
         $wantsAll    = (int)Tools::getValue('show_all', 0) === 1;
@@ -450,6 +499,18 @@ class Divezone_Chat extends Module
         $transportUrl = rtrim(__PS_BASE_URI__, '/')
             . '/modules/' . $this->name . '/views/js/transport.js';
 
+        // CHAT-T-056: galaz nudge dla loadera (proaktywny dymek). Dziedziczy gating
+        // launchera — jesli shouldShowWidget() przepuscil, loader sprawdza nudge.enabled.
+        $nudgeEnabled = (string)Configuration::get(self::KEY_NUDGE_ENABLED) === '1';
+        $nudgeDelay   = (int)Configuration::get(self::KEY_NUDGE_DELAY);
+        if ($nudgeDelay < 3 || $nudgeDelay > 300) {
+            $nudgeDelay = self::DEFAULT_NUDGE_DELAY;
+        }
+        $nudgeText = (string)Configuration::get(self::KEY_NUDGE_TEXT);
+        if ($nudgeText === '') {
+            $nudgeText = self::DEFAULT_NUDGE_TEXT;
+        }
+
         $boot = array(
             'token'        => $token,
             'customerId'   => (string)$customerId,
@@ -461,6 +522,11 @@ class Divezone_Chat extends Module
                 'bundle'    => $bundleUrl,
                 'transport' => $transportUrl,
                 'css'       => $cssUrl,
+            ),
+            'nudge'        => array(
+                'enabled' => $nudgeEnabled,
+                'delay'   => $nudgeDelay,
+                'text'    => $nudgeText,
             ),
             'version'      => '1.0.1',
         );

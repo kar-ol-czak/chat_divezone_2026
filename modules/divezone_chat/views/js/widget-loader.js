@@ -66,8 +66,43 @@
     '  background:' + AMBER + ';',
     '  border:2px solid ' + TEAL + ';',
     '}',
+    /* CHAT-T-056: proaktywny dymek (nudge) — nad launcherem, klikalny, X zamyka */
+    '.dz-nudge{',
+    '  position:fixed;right:20px;bottom:88px;',
+    '  width:280px;max-width:calc(100vw - 40px);',
+    '  background:#ffffff;color:#1f2937;',
+    '  padding:14px 38px 14px 14px;',
+    '  border-radius:12px;',
+    '  box-shadow:0 8px 24px rgba(0,0,0,0.18),0 2px 6px rgba(0,0,0,0.10);',
+    '  font-family:"DM Sans",Arial,sans-serif;font-size:14px;line-height:1.4;',
+    '  pointer-events:auto;cursor:pointer;',
+    '  animation:dzNudgeIn .3s ease;',
+    '}',
+    '.dz-nudge__text{margin:0 0 10px;word-break:break-word;white-space:pre-line;}',
+    '.dz-nudge__cta{',
+    '  display:block;width:100%;padding:8px 14px;',
+    '  background:' + TEAL + ';color:#fff;',
+    '  border:0;border-radius:6px;cursor:pointer;',
+    '  font-family:inherit;font-size:13px;font-weight:600;',
+    '}',
+    '.dz-nudge__cta:hover{background:' + TEAL_DARK + ';}',
+    '.dz-nudge__cta:focus-visible{outline:2px solid ' + TEAL + ';outline-offset:2px;}',
+    '.dz-nudge__close{',
+    '  position:absolute;top:6px;right:6px;',
+    '  width:24px;height:24px;',
+    '  background:transparent;border:0;',
+    '  color:#888;font-size:18px;font-family:inherit;',
+    '  cursor:pointer;border-radius:4px;line-height:1;',
+    '}',
+    '.dz-nudge__close:hover{background:#f0f0f0;color:#333;}',
+    '.dz-nudge__close:focus-visible{outline:2px solid ' + TEAL + ';outline-offset:1px;}',
+    '@keyframes dzNudgeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}',
     '@media (prefers-reduced-motion: reduce){',
     '  .dz-launcher{transition:none}',
+    '  .dz-nudge{animation:none}',
+    '}',
+    '@media (max-width: 599.98px){',
+    '  .dz-nudge{right:12px;bottom:84px;width:240px;}',
     '}'
   ].join('\n');
   root.appendChild(baseStyle);
@@ -156,7 +191,112 @@
     });
   }
 
+  /* ───────────────────────── CHAT-T-056: nudge ─────────────────────────
+   * Proaktywny dymek nad launcherem. Konfig z BOOT.nudge (PHP hookDisplayFooter).
+   * Decyzje: 133b (caly dymek klikalny + przycisk, X zamyka), 134a (sessionStorage:
+   * dz_nudge_dismissed / dz_chat_opened), 135a (3 pola), 136a (prosty, bez A/B/tracking).
+   * Nudge dziedziczy gating launchera — pojawia sie tylko gdy launcher jest widoczny.
+   * Lazy: nudge NIE pobiera bundla. Klik w dymek/CTA = ta sama sciezka co klik launcher.
+   */
+  var nudgeEl = null;
+
+  function ssGet(key) {
+    try { return window.sessionStorage && sessionStorage.getItem(key); }
+    catch (_) { return null; }
+  }
+  function ssSet(key, val) {
+    try { if (window.sessionStorage) sessionStorage.setItem(key, val); }
+    catch (_) {}
+  }
+
+  function openChatFlow() {
+    ssSet('dz_chat_opened', '1');
+    hideNudge();
+    if (bundleReady && typeof window.DivezoneChatOpen === 'function') {
+      window.DivezoneChatOpen();
+    } else {
+      bootBundle().then(function () {
+        if (typeof window.DivezoneChatOpen === 'function') {
+          window.DivezoneChatOpen();
+        }
+      });
+    }
+  }
+
+  function hideNudge() {
+    if (nudgeEl && nudgeEl.parentNode) {
+      nudgeEl.parentNode.removeChild(nudgeEl);
+    }
+    nudgeEl = null;
+  }
+
+  function renderNudge(text) {
+    if (nudgeEl) return;
+    nudgeEl = document.createElement('div');
+    nudgeEl.className = 'dz-nudge';
+    nudgeEl.setAttribute('role', 'dialog');
+    nudgeEl.setAttribute('aria-label', 'Zaproszenie do czatu DIVEZONE.PL');
+
+    var closeBtn = document.createElement('button');
+    closeBtn.className = 'dz-nudge__close';
+    closeBtn.type = 'button';
+    closeBtn.setAttribute('aria-label', 'Zamknij zaproszenie');
+    closeBtn.textContent = '×';
+
+    var textEl = document.createElement('p');
+    textEl.className = 'dz-nudge__text';
+    // ESCAPE: textContent zamiast innerHTML — anty-XSS dla configu z panelu PS.
+    textEl.textContent = text;
+
+    var ctaBtn = document.createElement('button');
+    ctaBtn.className = 'dz-nudge__cta';
+    ctaBtn.type = 'button';
+    ctaBtn.textContent = 'Porozmawiajmy na czacie';
+
+    nudgeEl.appendChild(closeBtn);
+    nudgeEl.appendChild(textEl);
+    nudgeEl.appendChild(ctaBtn);
+    root.appendChild(nudgeEl);
+
+    // Klik gdziekolwiek w dymku (poza ×) — otworz czat (133b).
+    nudgeEl.addEventListener('click', function (e) {
+      if (e.target === closeBtn || closeBtn.contains(e.target)) return;
+      openChatFlow();
+    });
+
+    // Klik × — zamknij + flag, NIE otwiera czatu (stopPropagation, by nie bublowac do kontenera).
+    closeBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      ssSet('dz_nudge_dismissed', '1');
+      hideNudge();
+    });
+  }
+
+  function setupNudge() {
+    var cfg = BOOT.nudge;
+    if (!cfg || !cfg.enabled) return;
+    // Sprawdzenie sessionStorage (134a: raz na sesje).
+    if (ssGet('dz_nudge_dismissed') === '1') return;
+    if (ssGet('dz_chat_opened') === '1') return;
+
+    var delay = (typeof cfg.delay === 'number' && cfg.delay >= 3 && cfg.delay <= 300) ? cfg.delay : 20;
+    var text = String(cfg.text || '').replace(/^\s+|\s+$/g, '');
+    if (!text) return;
+
+    setTimeout(function () {
+      // Recheck guards — czat moze byc otwarty w trakcie czekania.
+      if (ssGet('dz_nudge_dismissed') === '1') return;
+      if (ssGet('dz_chat_opened') === '1') return;
+      renderNudge(text);
+    }, delay * 1000);
+  }
+
+  /* ──────────────────────────────────────────────────────────────────── */
+
   launcher.addEventListener('click', function () {
+    // CHAT-T-056: klik launchera tez ustawia flage i ukrywa nudge (jakby wszedl rownolegle).
+    ssSet('dz_chat_opened', '1');
+    hideNudge();
     if (bundleReady && typeof window.DivezoneChatOpen === 'function') {
       window.DivezoneChatOpen();
     } else {
@@ -167,6 +307,9 @@
       });
     }
   });
+
+  // Uruchom nudge (zaplanuj setTimeout) — bez pobierania bundla.
+  setupNudge();
 
   // Pre-fetch bundla na idle, by pierwszy klik byl natychmiastowy.
   // ADR-060: nie konkurowac z LCP. requestIdleCallback z timeoutem 4s.
