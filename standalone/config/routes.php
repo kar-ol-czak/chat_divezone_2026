@@ -114,13 +114,24 @@ return static function (
     $router->get('/api/admin/conversations/top', $adminAnalyticsController->topConversations(...));
     $router->get('/api/admin/conversations/{id}', $adminController->conversationDetail(...));
 
-    // Admin: Editorial Picks (T-008, ADR-054) — chronione przez AdminAuthMiddleware
+    // Admin: Editorial Picks (T-008, ADR-054).
+    // CHAT-T-054 Etap 3 (127b/128a): przepiete z Basic Auth na kanal serwerowy
+    // any-role (operator+admin); dodane aliasy POST /{id} i POST /{id}/delete
+    // (callBackend w module PS wysyla body tylko dla POST). PUT/DELETE zostaja
+    // dla zgodnosci wstecznej. UI Editorial w PS = CHAT-T-055.
     $editorialPicksService = new EditorialPicksService($db);
-    $editorialPicksController = new AdminEditorialPicksController($editorialPicksService, $adminAuth);
+    $editorialPicksController = new AdminEditorialPicksController(
+        $editorialPicksService,
+        $serverVerifier,
+        $db,
+    );
     // Statyczne paths PRZED parametrycznym /{id} — Router dispatcher matchuje po kolejności.
     $router->get('/api/admin/editorial-picks/pending-reviews', $editorialPicksController->pendingReviews(...));
     $router->get('/api/admin/editorial-picks', $editorialPicksController->list(...));
     $router->post('/api/admin/editorial-picks', $editorialPicksController->add(...));
+    // Aliasy POST (128a) — bardziej specyficzny /{id}/delete PRZED /{id}.
+    $router->post('/api/admin/editorial-picks/{id}/delete', $editorialPicksController->delete(...));
+    $router->post('/api/admin/editorial-picks/{id}', $editorialPicksController->update(...));
     $router->put('/api/admin/editorial-picks/{id}', $editorialPicksController->update(...));
     $router->delete('/api/admin/editorial-picks/{id}', $editorialPicksController->delete(...));
 

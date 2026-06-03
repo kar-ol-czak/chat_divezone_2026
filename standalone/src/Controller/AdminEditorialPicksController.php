@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace DiveChat\Controller;
 
+use DiveChat\Auth\ServerHmacVerifier;
 use DiveChat\Database\MysqlConnection;
+use DiveChat\Database\PostgresConnection;
 use DiveChat\Editorial\EditorialPicksService;
-use DiveChat\Http\AdminAuthMiddleware;
 use DiveChat\Http\Request;
 use DiveChat\Http\Response;
 
@@ -17,17 +18,28 @@ use DiveChat\Http\Response;
  * POST   /api/admin/editorial-picks            — body: {product_id, product_name, category_hint?, boost_factor, reason, ttl_days?}
  * PUT    /api/admin/editorial-picks/{id}       — body: subset {boost_factor, reason, expires_at, active, ttl_extend_days, mark_reviewed}
  * DELETE /api/admin/editorial-picks/{id}       — twarde DELETE (audit trail przez deactivate w PUT)
+ *
+ * Aliasy POST (CHAT-T-054 decyzja 128a — PS callBackend wysyla body tylko dla POST):
+ * POST   /api/admin/editorial-picks/{id}         — alias PUT update
+ * POST   /api/admin/editorial-picks/{id}/delete  — alias DELETE
+ *
+ * Auth (CHAT-T-054, ADR-068/070, decyzja 127b): kanal serwerowy panelu PS —
+ * ServerHmacVerifier (X-DiveChat-Server-*, sekret DIVECHAT_SERVER_SECRET) +
+ * lookup roli w divechat_admin_roles. ANY-ROLE: operator + admin (NIE
+ * admin-only, w przeciwienstwie do Settings/Pricing/Analytics). 401 brak/zly
+ * podpis, 403 no_role.
  */
 final class AdminEditorialPicksController
 {
     public function __construct(
         private readonly EditorialPicksService $service,
-        private readonly AdminAuthMiddleware $auth,
+        private readonly ServerHmacVerifier $serverVerifier,
+        private readonly PostgresConnection $pg,
     ) {}
 
     public function list(Request $request): void
     {
-        $this->auth->check();
+        $this->requireAnyRole();
 
         $activeParam = strtolower((string) ($_GET['active'] ?? 'all'));
         $active = match ($activeParam) {
@@ -45,7 +57,7 @@ final class AdminEditorialPicksController
 
     public function add(Request $request): void
     {
-        $this->auth->check();
+        $employeeId = $this->requireAnyRole();
 
         $body = $request->getJsonBody() ?? [];
         $productId = (int) ($body['product_id'] ?? 0);
@@ -72,7 +84,9 @@ final class AdminEditorialPicksController
         $ttlDays = isset($body['ttl_days']) && $body['ttl_days'] !== null
             ? (int) $body['ttl_days']
             : null;
-        $addedBy = $_SERVER['PHP_AUTH_USER'] ?? 'admin';
+        // CHAT-T-054: po przelaczeniu na kanal serwerowy nie ma PHP_AUTH_USER.
+        // Audit trail uzywa employee_id z weryfikowanego podpisu (jednoznaczne).
+        $addedBy = 'employee:' . $employeeId;
 
         try {
             $pick = $this->service->add(
@@ -93,7 +107,7 @@ final class AdminEditorialPicksController
 
     public function update(Request $request): void
     {
-        $this->auth->check();
+        $this->requireAnyRole();
 
         $id = (int) ($request->params['id'] ?? 0);
         if ($id <= 0) {
@@ -141,7 +155,7 @@ final class AdminEditorialPicksController
 
     public function delete(Request $request): void
     {
-        $this->auth->check();
+        $this->requireAnyRole();
 
         $id = (int) ($request->params['id'] ?? 0);
         if ($id <= 0) {
@@ -158,7 +172,7 @@ final class AdminEditorialPicksController
 
     public function pendingReviews(Request $request): void
     {
-        $this->auth->check();
+        $this->requireAnyRole();
         Response::json($this->service->pendingReviews());
     }
 
@@ -168,7 +182,7 @@ final class AdminEditorialPicksController
      */
     public function productsSearch(Request $request): void
     {
-        $this->auth->check();
+        $this->requireAnyRole();
 
         $q = trim((string) ($_GET['q'] ?? ''));
         if (mb_strlen($q) < 2) {
@@ -211,5 +225,48 @@ final class AdminEditorialPicksController
         }
 
         Response::json(['products' => $products, 'count' => count($products)]);
+    }
+
+    /**
+     * Weryfikacja kanalu serwerowego + lookup roli (any-role: operator+admin).
+     * Wzorzec 1:1 z AdminRecommendationsController::handle() — koszty/settings
+     * sa admin-only (SettingsController::requireAdmin), editorial picks dostepne
+     * dla operatora i admina (decyzja 127b — operator zarzadza wpisami w
+     * standardowym workflow).
+     *
+     * Response::json konczy `exit`, wiec po nieudanej walidacji metoda nie wraca.
+     * Zwraca employee_id z podpisu — uzywany dla audit trail w add() (zamiast
+     * PHP_AUTH_USER z bylego Basic Auth).
+     */
+    private function requireAnyRole(): int
+    {
+        $token = (string) ($_SERVER['HTTP_X_DIVECHAT_SERVER_TOKEN'] ?? '');
+        $employeeRaw = $_SERVER['HTTP_X_DIVECHAT_SERVER_EMPLOYEE'] ?? '';
+        $timeRaw = $_SERVER['HTTP_X_DIVECHAT_SERVER_TIME'] ?? '';
+
+        if ($token === '' || $employeeRaw === '' || $timeRaw === '') {
+            Response::json(['error' => 'Unauthorized'], 401);
+        }
+
+        $employeeId = filter_var($employeeRaw, FILTER_VALIDATE_INT);
+        $timestamp = filter_var($timeRaw, FILTER_VALIDATE_INT);
+        if ($employeeId === false || $timestamp === false || $employeeId <= 0) {
+            Response::json(['error' => 'Unauthorized'], 401);
+        }
+
+        if (!$this->serverVerifier->verify($token, $employeeId, $timestamp)) {
+            Response::json(['error' => 'Unauthorized'], 401);
+        }
+
+        $row = $this->pg->fetchOne(
+            'SELECT role FROM divechat_admin_roles WHERE employee_id = ?',
+            [$employeeId],
+        );
+
+        if ($row === null) {
+            Response::json(['error' => 'Forbidden', 'reason' => 'no_role'], 403);
+        }
+
+        return $employeeId;
     }
 }
