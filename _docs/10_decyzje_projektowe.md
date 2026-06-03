@@ -2421,3 +2421,21 @@ Etapy 2-4 = osobne taski po sesji. Ten ADR utrwala zasady, nie implementacje.
 **Podział:** CHAT-T-062 (backend dane: E4 sortowanie + E5 spójność ceny), CHAT-T-063 (prompt: format + disclaimer + budżet + antifog). Niezależne, mogą iść równolegle. Fałszywe alarmy (A1/A2/A4/A5/B1-B6/C2/C6/C7/D2/D3/D5/E1/E2/E3 — oceny 4-5) NIE ruszane.
 
 **Uzupełnienie ADR-081 (po raporcie CHAT-T-062):** CC wdrożył E4 (sort price_asc/desc + searchByPrice, wariant B lekki ~130 linii) i E5 (ProductDetails używa enrichment — spójność cen 4/4 PASS). Wykryto problem UX: kategorie parent (np. „Komputery Nurkowe") mieszają sprzęt z akcesoriami (baterie/kompasy), więc sort=price_asc zwraca akcesorium 20-33 zł zamiast najtańszego komputera; relevance/RRF radzi sobie tu lepiej. **Decyzja 155a+c:** rozwiązanie w prompcie (CHAT-T-063 ZMIANA 5) — model uczony używać sort=price_asc z ZAWĘŻENIEM kategorii (155a) ORAZ/LUB price_min jako price_floor odcinający drobnicę (155c; searchByPrice respektuje price_min przez buildFilters — mechanizm już działa, bez zmiany kodu). Pas i szelki: zawężenie + bezpiecznik cenowy. Narzędzie (T-062) gotowe; mądre użycie = prompt (T-063).
+
+
+---
+
+### ADR-082: Realizacja ochrony publicznej ADR-064 — warstwy i kolejność (CHAT-T-064+)
+**Data:** 2026-06-03 | **Status:** PRZYJĘTA | **Powiązane:** ADR-064 (projekt ochrony kosztów), ADR-079 (TTL tokenu), ADR-078 (A/B nudge)
+
+**Kontekst:** Czat POTWIERDZONY jako publicznie dostępny (Karol, 157a), a backend NIE ma żadnej ochrony kosztów (zero rate-limit/cap/limit inputu — zweryfikowane w kodzie). Anonimowy endpoint LLM = otwarte ryzyko palenia budżetu API. ADR-064 zaprojektował ochronę (Turnstile, token-bucket per visitor_id, capy, progi) ale niewdrożoną. Ta ADR przekuwa ADR-064 w realizację, rozbijając na warstwy wg pilności.
+
+**Kolejność warstw (159a — od najpilniejszej, najtańszej, bez zależności zewnętrznych):**
+1. **CHAT-T-064 (TERAZ): dzienny cap kosztów + alert + limit inputu.** Czysto serwerowe, zero zależności. Gasi największe ryzyko (palenie budżetu). Progi (161): twardy cap 10 USD/dobę (po przekroczeniu backend NIE woła LLM, grzeczny komunikat z kontaktem — decyzja 160), alert e-mail przy 5 USD na k.susicki@divezone.pl (165b) przez php mail() (166), max raz/dobę. Limit inputu 2000 znaków. Cap czyta divechat_message_usage (to samo źródło co CostAnalytics — jeden licznik). Progi w .env (zmiana bez deployu).
+2. **CHAT-T-065 (POTEM): ukrywanie launchera po przekroczeniu capa.** Decyzja 162a+164a: moduł PS pyta backend o status capa (lekki endpoint), cache 30 min (znikomy narzut — 1 request/30min, nie na każdą odsłonę). Jeśli cap przekroczony → shouldShowWidget=false, launcher znika. WAŻNE: to warstwa UX, NIE ochrona — prawdziwa ochrona to twardy cap w backendzie (T-064), działa nawet gdy ktoś omija widget. Okno cache 30 min nieszkodliwe, bo backend i tak blokuje wołania LLM. Wymaga modułu PS (Karol wgrywa ręcznie) + endpoint statusu.
+3. **Rate-limit per visitor/sesja (token-bucket).** ADR-064: per visitor_id (NIE sam IP — CGNAT), wyższy próg per IP. UWAGA: customerId=0 dla wszystkich anonimów → nie nadaje się jako klucz; użyć sessionId lub osobnego visitor_id. Osobny task.
+4. **Turnstile.** Gate przed wydaniem tokenu. Turnstile jest DARMOWY na każdym planie Cloudflare (też Free — nie zależy od pakietu; Karol ma CF). Wymaga: site key+secret w panelu CF, klauzula w polityce prywatności. Osobny task gdy Karol skonfiguruje.
+5. **Odświeżanie tokenu klienta (dług ADR-079).** Front pobiera świeży token przez chroniony endpoint zamiast statycznego; wtedy TTL wraca do krótkiego. Po rate-limit/Turnstile (endpoint tokenów musi być chroniony).
+6. **A/B/X nudge z raportem CTR (ADR-078).** Publiczny endpoint zdarzeń — dopiero gdy ochrona publiczna gotowa. Osobny mini-projekt.
+
+**Zasada przewodnia:** ochrona kosztów MUSI być w backendzie i działać niezależnie od frontu. Ukrywanie launchera, Turnstile = warstwy na wierzchu, nie zamiast twardego capa. Najpierw pewna tama serwerowa (T-064), potem elegancja UX i bramki bot-detection.
