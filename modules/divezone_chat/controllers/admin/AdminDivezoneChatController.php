@@ -37,6 +37,13 @@ class AdminDivezoneChatController extends ModuleAdminController
     // Szczegoly: ENDPOINT_CONVERSATIONS . '/' . rawurlencode($sessionId).
     // Status:    ENDPOINT_CONVERSATIONS . '/' . rawurlencode($sessionId) . '/status'.
     const ENDPOINT_CONVERSATIONS   = '/api/conversations';
+    // CHAT-T-050: Analityka (admin-only, CHAT-T-049 backend, ADR-074).
+    const ENDPOINT_COST_KPI          = '/api/admin/cost/kpi';
+    const ENDPOINT_COST_TREND        = '/api/admin/cost/trend';
+    const ENDPOINT_COST_BY_MODEL     = '/api/admin/cost/by-model';
+    const ENDPOINT_CONVERSATIONS_TOP = '/api/admin/conversations/top';
+    // Chart.js z CDN — graceful degradation gdy CSP/siec blokuje (typeof Chart guard).
+    const CHARTJS_CDN = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
 
     // Aktywna zakladka — CHAT-T-048 (106a): DEFAULT = Rozmowy.
     const TAB_CONVERSATIONS   = 'conversations';
@@ -46,6 +53,8 @@ class AdminDivezoneChatController extends ModuleAdminController
     // renderConfigSection() wola publiczne metody Divezone_Chat (decyzja 114a OPCJA B):
     // renderConfigForm() + handleConfigSubmit() — zero duplikacji formularza.
     const TAB_CONFIG          = 'config';
+    // CHAT-T-050: analityka (admin-only).
+    const TAB_ANALYTICS       = 'analytics';
 
     /** @var string komunikat flashowy do wyswietlenia na gorze ekranu Modele */
     private $modelsFlash = '';
@@ -72,7 +81,7 @@ class AdminDivezoneChatController extends ModuleAdminController
 
         // 1. Aktywna zakladka — z querystring lub form submit, default Rozmowy (CHAT-T-048, 106a).
         $activeTab = (string) Tools::getValue('tab', self::TAB_CONVERSATIONS);
-        if (!in_array($activeTab, array(self::TAB_CONVERSATIONS, self::TAB_RECOMMENDATIONS, self::TAB_MODELS, self::TAB_CONFIG), true)) {
+        if (!in_array($activeTab, array(self::TAB_CONVERSATIONS, self::TAB_RECOMMENDATIONS, self::TAB_MODELS, self::TAB_CONFIG, self::TAB_ANALYTICS), true)) {
             $activeTab = self::TAB_CONVERSATIONS;
         }
 
@@ -93,8 +102,10 @@ class AdminDivezoneChatController extends ModuleAdminController
             $activeTab = self::TAB_CONVERSATIONS;
         }
 
-        // 3. Whoami zawsze (maly pasek u gory).
+        // 3. Whoami zawsze (maly pasek u gory). CHAT-T-050: rola sluzy tez do ukrycia
+        // linka "Analityka" w nav dla nie-adminow (Analityka jest admin-only).
         $whoami = $this->callBackend(self::ENDPOINT_WHOAMI, $employeeId);
+        $role   = (isset($whoami['role']) && is_string($whoami['role'])) ? $whoami['role'] : '';
 
         // 4. Tresc aktywnej zakladki — pobieramy TYLKO te dane, ktorych potrzebujemy.
         $tabContent = '';
@@ -105,6 +116,8 @@ class AdminDivezoneChatController extends ModuleAdminController
             $tabContent = $this->renderModelsSection($settings);
         } elseif ($activeTab === self::TAB_CONFIG) {
             $tabContent = $this->renderConfigSection();
+        } elseif ($activeTab === self::TAB_ANALYTICS) {
+            $tabContent = $this->renderAnalyticsSection($employeeId);
         } else {
             $recommendations = $this->callBackend(self::ENDPOINT_RECOMMENDATIONS, $employeeId);
             $tabContent = $this->renderRecommendationsSection($recommendations);
@@ -112,7 +125,7 @@ class AdminDivezoneChatController extends ModuleAdminController
 
         $html  = $this->renderTabsStyles();
         $html .= $this->renderWhoamiBar($whoami, $employeeId);
-        $html .= $this->renderTabsNav($activeTab);
+        $html .= $this->renderTabsNav($activeTab, $role);
         $html .= $tabContent;
         $html .= $this->renderTabsScript();
 
@@ -184,6 +197,31 @@ class AdminDivezoneChatController extends ModuleAdminController
         // CHAT-T-052 (poprawka 4): meta + koszty obok siebie (2 kolumny, wrap na waskim).
         $css .= '.dz-conv-meta-row{display:flex;gap:14px;align-items:stretch;flex-wrap:wrap;margin-bottom:14px;}';
         $css .= '.dz-conv-meta-row > .dz-conv-meta,.dz-conv-meta-row > .dz-conv-cost{flex:1 1 280px;min-width:280px;margin-bottom:0;}';
+        // CHAT-T-050: Analityka — filtry, karty KPI, wykres-wrapper, tabele.
+        $css .= '.dz-analytics-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;padding:10px;background:#f7f9fa;border:1px solid #e2e6e8;border-radius:4px;}';
+        $css .= '.dz-analytics-filters label{font-size:12px;color:#555;display:block;font-weight:600;margin-bottom:3px;}';
+        $css .= '.dz-analytics-filters select{padding:6px 10px;border:1px solid #ccc;border-radius:3px;background:#fff;font-size:13px;}';
+        $css .= '.dz-analytics-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:18px;}';
+        $css .= '.dz-analytics-kpi-card{background:#fff;border:1px solid #e2e6e8;border-left:4px solid #1a5e5a;border-radius:4px;padding:14px 16px;}';
+        $css .= '.dz-analytics-kpi-card .dz-kpi-title{font-size:12px;color:#777;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;margin-bottom:6px;}';
+        $css .= '.dz-analytics-kpi-card .dz-kpi-main{font-size:22px;font-weight:700;color:#1a5e5a;line-height:1.1;}';
+        $css .= '.dz-analytics-kpi-card .dz-kpi-sub{font-size:12px;color:#999;margin-top:2px;}';
+        $css .= '.dz-analytics-kpi-card .dz-kpi-meta{font-size:12px;color:#666;margin-top:8px;border-top:1px solid #f0f0f0;padding-top:6px;}';
+        $css .= '.dz-analytics-kpi-card--resolution{border-left-color:#0066cc;background:#f7faff;}';
+        $css .= '.dz-analytics-kpi-card--resolution .dz-kpi-main{color:#0066cc;}';
+        $css .= '.dz-analytics-section{margin-bottom:24px;}';
+        $css .= '.dz-analytics-section h3{margin:0 0 10px;border-bottom:1px solid #ddd;padding-bottom:6px;font-size:14px;color:#444;}';
+        $css .= '.dz-analytics-chart-wrap{position:relative;height:320px;background:#fff;border:1px solid #e2e6e8;border-radius:4px;padding:10px;}';
+        $css .= '.dz-analytics-empty{padding:30px;text-align:center;color:#999;background:#f7f9fa;border:1px dashed #ccc;border-radius:4px;}';
+        $css .= '.dz-analytics-table{width:100%;font-size:12px;border-collapse:collapse;}';
+        $css .= '.dz-analytics-table th{background:#f7f9fa;text-align:left;padding:8px 10px;border-bottom:2px solid #e2e6e8;color:#555;font-weight:600;}';
+        $css .= '.dz-analytics-table td{padding:8px 10px;border-bottom:1px solid #f0f0f0;}';
+        $css .= '.dz-analytics-table tr:hover td{background:#fafbfc;}';
+        $css .= '.dz-analytics-table .num{text-align:right;font-variant-numeric:tabular-nums;}';
+        $css .= '.dz-analytics-top-row{cursor:pointer;}';
+        $css .= '.dz-analytics-top-row a{color:#1a5e5a;text-decoration:none;display:block;}';
+        $css .= '.dz-analytics-top-row a:hover{text-decoration:underline;}';
+        $css .= '.dz-analytics-forbidden{padding:20px;background:#fcf8e3;border:1px solid #d6c87a;color:#8a6d3b;border-radius:4px;font-size:13px;}';
         $css .= '.dz-conv-items{list-style:none;padding:0;margin:8px 0;}';
         $css .= '.dz-conv-items li{margin:0;padding:0;}';
         $css .= '.dz-conv-item{display:block;padding:10px 12px;border-bottom:1px solid #eee;color:#333;text-decoration:none;}';
@@ -206,23 +244,32 @@ class AdminDivezoneChatController extends ModuleAdminController
         return '';
     }
 
-    private function renderTabsNav($activeTab)
+    private function renderTabsNav($activeTab, $role = '')
     {
-        // CHAT-T-048 (118a): kolejnosc wg czestosci uzycia — Rozmowy pierwsze.
+        // CHAT-T-048 (118a) + CHAT-T-050 (107a): kolejnosc wg czestosci uzycia.
+        // Analityka tylko dla 'admin' (admin-only endpoints) — nie-admin nie widzi linka.
+        // Bezpieczny default: gdy rola pusta/nieznana (np. blad whoami) -> linka NIE pokazujemy.
         $baseUrl = $this->context->link->getAdminLink('AdminDivezoneChat');
         $conv = $baseUrl . '&tab=' . self::TAB_CONVERSATIONS;
         $rec  = $baseUrl . '&tab=' . self::TAB_RECOMMENDATIONS;
+        $ana  = $baseUrl . '&tab=' . self::TAB_ANALYTICS;
         $mod  = $baseUrl . '&tab=' . self::TAB_MODELS;
         $cfg  = $baseUrl . '&tab=' . self::TAB_CONFIG;
 
         $clsConv = $activeTab === self::TAB_CONVERSATIONS   ? ' is-active' : '';
         $clsRec  = $activeTab === self::TAB_RECOMMENDATIONS ? ' is-active' : '';
+        $clsAna  = $activeTab === self::TAB_ANALYTICS       ? ' is-active' : '';
         $clsMod  = $activeTab === self::TAB_MODELS          ? ' is-active' : '';
         $clsCfg  = $activeTab === self::TAB_CONFIG          ? ' is-active' : '';
+
+        $isAdmin = ($role === 'admin');
 
         $html  = '<nav class="dz-tabs-nav" role="tablist">';
         $html .= '<a href="' . htmlspecialchars($conv, ENT_QUOTES) . '" class="dz-tab-link' . $clsConv . '" role="tab">' . $this->l('Rozmowy') . '</a>';
         $html .= '<a href="' . htmlspecialchars($rec, ENT_QUOTES) . '" class="dz-tab-link' . $clsRec . '" role="tab">' . $this->l('Rekomendacje') . '</a>';
+        if ($isAdmin) {
+            $html .= '<a href="' . htmlspecialchars($ana, ENT_QUOTES) . '" class="dz-tab-link' . $clsAna . '" role="tab">' . $this->l('Analityka') . '</a>';
+        }
         $html .= '<a href="' . htmlspecialchars($mod, ENT_QUOTES) . '" class="dz-tab-link' . $clsMod . '" role="tab">' . $this->l('Modele') . '</a>';
         $html .= '<a href="' . htmlspecialchars($cfg, ENT_QUOTES) . '" class="dz-tab-link' . $clsCfg . '" role="tab">' . $this->l('Konfiguracja') . '</a>';
         $html .= '</nav>';
@@ -1248,6 +1295,390 @@ class AdminDivezoneChatController extends ModuleAdminController
             return (string) $iso;
         }
         return date('Y-m-d H:i', $t);
+    }
+
+    // ============================================================================
+    // SEKCJA: Analityka (CHAT-T-050, ADR-074).
+    //
+    // Architektura 120a: PHP wola backend kanalem serwerowym (admin-only, CHAT-T-049),
+    // osadza dane (KPI/by-model/top server-side; trend jako JSON dla Chart.js). JS
+    // tylko rysuje wykres — ZERO fetch z przegladarki (sekret HMAC zostaje na serwerze).
+    //
+    // 403 — komunikat "tylko dla administratorow", nie bialy ekran.
+    // CSP/CDN: Chart.js z jsdelivr; jesli CSP/siec blokuje -> wykres degraduje
+    // gracefully (typeof Chart guard), reszta sekcji dziala.
+    // ============================================================================
+
+    private function renderAnalyticsSection($employeeId)
+    {
+        // Whitelist filtrow.
+        $days   = (int) Tools::getValue('days', 30);
+        if (!in_array($days, array(7, 30, 90), true)) {
+            $days = 30;
+        }
+        $period = (string) Tools::getValue('period', 'daily');
+        if (!in_array($period, array('daily', 'weekly', 'monthly'), true)) {
+            $period = 'daily';
+        }
+
+        // 4 wywolania endpointow.
+        $kpi     = $this->callBackend(self::ENDPOINT_COST_KPI, $employeeId);
+        $trend   = $this->callBackend(self::ENDPOINT_COST_TREND . '?period=' . rawurlencode($period) . '&days=' . $days, $employeeId);
+        $byModel = $this->callBackend(self::ENDPOINT_COST_BY_MODEL . '?days=' . $days, $employeeId);
+        $top     = $this->callBackend(self::ENDPOINT_CONVERSATIONS_TOP . '?limit=10&days=' . $days, $employeeId);
+
+        $html  = '<div class="panel" style="border-top-left-radius:0;">';
+        $html .= '<div class="panel-heading"><i class="icon-bar-chart"></i> ' . $this->l('Analityka — koszty i wykorzystanie') . '</div>';
+        $html .= '<div style="padding:18px;">';
+
+        // 403 z dowolnego endpointu -> komunikat, nie bialy ekran.
+        if ($this->anyResponseIs403(array($kpi, $trend, $byModel, $top))) {
+            $html .= '<div class="dz-analytics-forbidden"><strong>' . $this->l('Brak uprawnien.') . '</strong> ';
+            $html .= $this->l('Analityka dostepna tylko dla administratorow. Twoje konto ma role operatora lub nie ma roli w divechat_admin_roles.');
+            $html .= '</div>';
+            $html .= '</div></div>';
+            return $html;
+        }
+
+        // Filtry (sekcja a)
+        $html .= $this->renderAnalyticsFilters($days, $period);
+
+        // KPI (sekcja b)
+        $html .= '<section class="dz-analytics-section">';
+        $html .= $this->renderAnalyticsKpiGrid($kpi);
+        $html .= '</section>';
+
+        // Wykres trendu (sekcja c)
+        $html .= '<section class="dz-analytics-section">';
+        $html .= '<h3>' . $this->l('Trend wydatkow') . ' (' . htmlspecialchars($period, ENT_QUOTES) . ', ' . $days . ' ' . $this->l('dni') . ')</h3>';
+        $html .= $this->renderAnalyticsTrendChart($trend);
+        $html .= '</section>';
+
+        // By-model (sekcja d)
+        $html .= '<section class="dz-analytics-section">';
+        $html .= '<h3>' . $this->l('Per model AI') . ' (' . $days . ' ' . $this->l('dni') . ')</h3>';
+        $html .= $this->renderAnalyticsByModelTable($byModel);
+        $html .= '</section>';
+
+        // Top rozmow (sekcja e, 109a)
+        $html .= '<section class="dz-analytics-section">';
+        $html .= '<h3>' . $this->l('TOP 10 najdrozszych rozmow') . ' (' . $days . ' ' . $this->l('dni') . ')</h3>';
+        $html .= $this->renderAnalyticsTopConversations($top);
+        $html .= '</section>';
+
+        $html .= '</div></div>';
+        return $html;
+    }
+
+    private function anyResponseIs403($responses)
+    {
+        foreach ($responses as $r) {
+            if (!is_array($r)) {
+                continue;
+            }
+            if (isset($r['error']) && isset($r['http_status']) && (int) $r['http_status'] === 403) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function renderAnalyticsFilters($days, $period)
+    {
+        $token = Tools::getAdminTokenLite('AdminDivezoneChat');
+
+        $html  = '<form method="get" class="dz-analytics-filters" action="">';
+        $html .= '<input type="hidden" name="controller" value="AdminDivezoneChat">';
+        $html .= '<input type="hidden" name="token" value="' . htmlspecialchars($token, ENT_QUOTES) . '">';
+        $html .= '<input type="hidden" name="tab" value="' . self::TAB_ANALYTICS . '">';
+
+        $html .= '<div><label for="dz-ana-days">' . $this->l('Okres (dni)') . '</label>';
+        $html .= '<select id="dz-ana-days" name="days">';
+        foreach (array(7, 30, 90) as $d) {
+            $sel = $d === $days ? ' selected' : '';
+            $html .= '<option value="' . $d . '"' . $sel . '>' . $d . '</option>';
+        }
+        $html .= '</select></div>';
+
+        $periodLabels = array(
+            'daily'   => $this->l('dziennie'),
+            'weekly'  => $this->l('tygodniowo'),
+            'monthly' => $this->l('miesiecznie'),
+        );
+        $html .= '<div><label for="dz-ana-period">' . $this->l('Granularnosc') . '</label>';
+        $html .= '<select id="dz-ana-period" name="period">';
+        foreach ($periodLabels as $k => $lbl) {
+            $sel = $k === $period ? ' selected' : '';
+            $html .= '<option value="' . htmlspecialchars($k, ENT_QUOTES) . '"' . $sel . '>' . htmlspecialchars($lbl, ENT_QUOTES) . '</option>';
+        }
+        $html .= '</select></div>';
+
+        $html .= '<div><button type="submit" class="btn btn-primary">' . $this->l('Pokaz') . '</button></div>';
+        $html .= '</form>';
+        return $html;
+    }
+
+    private function renderAnalyticsKpiGrid($kpi)
+    {
+        if (isset($kpi['error'])) {
+            return '<div class="dz-analytics-empty">' . $this->l('Brak danych KPI:') . ' ' . htmlspecialchars((string) $kpi['error'], ENT_QUOTES) . '</div>';
+        }
+
+        $today      = isset($kpi['today']) && is_array($kpi['today']) ? $kpi['today'] : array();
+        $thisWeek   = isset($kpi['this_week']) && is_array($kpi['this_week']) ? $kpi['this_week'] : array();
+        $thisMonth  = isset($kpi['this_month']) && is_array($kpi['this_month']) ? $kpi['this_month'] : array();
+        $cpr        = isset($kpi['cost_per_resolution']) && is_array($kpi['cost_per_resolution']) ? $kpi['cost_per_resolution'] : array();
+
+        $html  = '<div class="dz-analytics-kpi-grid">';
+        $html .= $this->renderAnalyticsKpiCard($this->l('Dzis'),     $today);
+        $html .= $this->renderAnalyticsKpiCard($this->l('Tydzien'),  $thisWeek);
+        $html .= $this->renderAnalyticsKpiCard($this->l('Miesiac'),  $thisMonth);
+        $html .= $this->renderAnalyticsKpiResolutionCard($cpr);
+        $html .= '</div>';
+        return $html;
+    }
+
+    private function renderAnalyticsKpiCard($title, $data)
+    {
+        $costPln = isset($data['cost_pln']) ? (float) $data['cost_pln'] : 0.0;
+        $costUsd = isset($data['cost_usd']) ? (float) $data['cost_usd'] : 0.0;
+        $conv    = isset($data['conversations']) ? (int) $data['conversations'] : 0;
+        $msg     = isset($data['messages']) ? (int) $data['messages'] : 0;
+
+        $html  = '<div class="dz-analytics-kpi-card">';
+        $html .= '<div class="dz-kpi-title">' . htmlspecialchars($title, ENT_QUOTES) . '</div>';
+        $html .= '<div class="dz-kpi-main">' . number_format($costPln, 2, ',', ' ') . ' zl</div>';
+        $html .= '<div class="dz-kpi-sub">$' . number_format($costUsd, 4, '.', '') . ' USD</div>';
+        $html .= '<div class="dz-kpi-meta">' . $conv . ' ' . $this->l('rozm.') . ' &middot; ' . $msg . ' ' . $this->l('wiad.') . '</div>';
+        $html .= '</div>';
+        return $html;
+    }
+
+    private function renderAnalyticsKpiResolutionCard($cpr)
+    {
+        $thisMonthUsd = isset($cpr['this_month_usd']) ? (float) $cpr['this_month_usd'] : 0.0;
+        $thisMonthPln = isset($cpr['this_month_pln']) ? (float) $cpr['this_month_pln'] : 0.0;
+        $benchmark    = isset($cpr['industry_benchmark_usd']) ? (float) $cpr['industry_benchmark_usd'] : 0.0;
+        $vsHuman      = isset($cpr['vs_human_agent_usd']) ? (float) $cpr['vs_human_agent_usd'] : 0.0;
+
+        $html  = '<div class="dz-analytics-kpi-card dz-analytics-kpi-card--resolution">';
+        $html .= '<div class="dz-kpi-title">' . $this->l('Koszt na rozmowe (miesiac)') . '</div>';
+        $html .= '<div class="dz-kpi-main">' . number_format($thisMonthPln, 4, ',', ' ') . ' zl</div>';
+        $html .= '<div class="dz-kpi-sub">$' . number_format($thisMonthUsd, 4, '.', '') . ' USD</div>';
+        $meta = array();
+        if ($benchmark > 0) {
+            $meta[] = $this->l('benchmark branzy') . ': $' . number_format($benchmark, 4, '.', '');
+        }
+        if ($vsHuman > 0) {
+            $meta[] = $this->l('vs. agent ludzki') . ': $' . number_format($vsHuman, 2, '.', '');
+        }
+        if (!empty($meta)) {
+            $html .= '<div class="dz-kpi-meta">' . htmlspecialchars(implode(' · ', $meta), ENT_QUOTES) . '</div>';
+        }
+        $html .= '</div>';
+        return $html;
+    }
+
+    private function renderAnalyticsTrendChart($trend)
+    {
+        if (isset($trend['error'])) {
+            return '<div class="dz-analytics-empty">' . $this->l('Brak danych trendu:') . ' ' . htmlspecialchars((string) $trend['error'], ENT_QUOTES) . '</div>';
+        }
+
+        $data = isset($trend['data']) && is_array($trend['data']) ? $trend['data'] : array();
+
+        // Pusta tablica -> komunikat zamiast wykresu.
+        if (empty($data)) {
+            return '<div class="dz-analytics-empty">' . $this->l('Brak danych w wybranym okresie.') . '</div>';
+        }
+
+        // Sanityzowane minimalne pola dla JS — tylko to czego uzywa wykres.
+        $points = array();
+        foreach ($data as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $points[] = array(
+                'date'          => isset($row['date']) ? (string) $row['date'] : '',
+                'cost_pln'      => isset($row['cost_pln']) ? (float) $row['cost_pln'] : 0.0,
+                'cost_usd'      => isset($row['cost_usd']) ? (float) $row['cost_usd'] : 0.0,
+                'conversations' => isset($row['conversations']) ? (int) $row['conversations'] : 0,
+            );
+        }
+
+        $jsonStr = json_encode($points, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($jsonStr === false) {
+            $jsonStr = '[]';
+        }
+
+        // Osadzony JSON w <script type="application/json"> — bezpieczne (nie wykonywane),
+        // wystarczy zamknac </script tag wewnatrz: zastapic by json wiarygodnie escape'owac.
+        // JSON_HEX_TAG + tweak: zamiana < zeby uniknac wczesnego </script>.
+        $jsonSafe = str_replace('<', '\\u003c', $jsonStr);
+
+        $html  = '<script type="application/json" id="dz-trend-data">' . $jsonSafe . '</script>';
+        $html .= '<div class="dz-analytics-chart-wrap"><canvas id="dz-trend-chart"></canvas></div>';
+        $html .= '<div id="dz-trend-empty" class="dz-analytics-empty" style="display:none;margin-top:10px;"></div>';
+
+        // Chart.js z CDN — jesli CSP/siec blokuje, guard typeof Chart pokaze fallback.
+        $html .= '<script src="' . self::CHARTJS_CDN . '"></script>';
+        $html .= '<script>(function(){'
+            . 'function init(){'
+            . 'var dataEl=document.getElementById("dz-trend-data");'
+            . 'var canvas=document.getElementById("dz-trend-chart");'
+            . 'var emptyEl=document.getElementById("dz-trend-empty");'
+            . 'if(!dataEl||!canvas)return;'
+            . 'var data;try{data=JSON.parse(dataEl.textContent||"[]");}catch(e){return;}'
+            . 'if(typeof Chart==="undefined"){'
+            . 'if(emptyEl){emptyEl.style.display="block";emptyEl.textContent="' . $this->jsEscape($this->l('Chart.js niedostepny (CSP/siec) — wykres pominiety.')) . '";}'
+            . 'return;'
+            . '}'
+            . 'if(!data.length){if(emptyEl){emptyEl.style.display="block";emptyEl.textContent="' . $this->jsEscape($this->l('Brak danych w okresie.')) . '";}return;}'
+            . 'var labels=data.map(function(d){return d.date;});'
+            . 'var pln=data.map(function(d){return d.cost_pln;});'
+            . 'var usd=data.map(function(d){return d.cost_usd;});'
+            . 'var conv=data.map(function(d){return d.conversations;});'
+            . 'new Chart(canvas.getContext("2d"),{'
+            . 'type:"line",'
+            . 'data:{labels:labels,datasets:[{label:"' . $this->jsEscape($this->l('Koszt (PLN)')) . '",data:pln,borderColor:"#0066cc",backgroundColor:"rgba(0,102,204,0.08)",borderWidth:2,tension:0.3,fill:true,pointRadius:3,pointHoverRadius:5}]},'
+            . 'options:{responsive:true,maintainAspectRatio:false,'
+            . 'plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){var i=ctx.dataIndex;return [pln[i].toFixed(2)+" PLN",usd[i].toFixed(4)+" USD",conv[i]+" ' . $this->jsEscape($this->l('rozm.')) . '"];}}}},'
+            . 'scales:{y:{beginAtZero:true,ticks:{callback:function(v){return v.toFixed(2)+" PLN";}}},x:{ticks:{maxRotation:45,minRotation:0}}}'
+            . '}'
+            . '});'
+            . '}'
+            . 'if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",init);}'
+            . 'else{init();}'
+            . '})();</script>';
+
+        return $html;
+    }
+
+    private function renderAnalyticsByModelTable($byModel)
+    {
+        if (isset($byModel['error'])) {
+            return '<div class="dz-analytics-empty">' . $this->l('Brak danych per model:') . ' ' . htmlspecialchars((string) $byModel['error'], ENT_QUOTES) . '</div>';
+        }
+
+        $models = isset($byModel['models']) && is_array($byModel['models']) ? $byModel['models'] : array();
+        if (empty($models)) {
+            return '<div class="dz-analytics-empty">' . $this->l('Brak danych.') . '</div>';
+        }
+
+        $html  = '<table class="dz-analytics-table">';
+        $html .= '<thead><tr>';
+        $html .= '<th>' . $this->l('Model') . '</th>';
+        $html .= '<th>' . $this->l('Provider') . '</th>';
+        $html .= '<th class="num">' . $this->l('Uzycia') . '</th>';
+        $html .= '<th class="num">' . $this->l('Tokeny in') . '</th>';
+        $html .= '<th class="num">' . $this->l('Tokeny out') . '</th>';
+        $html .= '<th class="num">' . $this->l('Cache read') . '</th>';
+        $html .= '<th class="num">' . $this->l('Koszt PLN') . '</th>';
+        $html .= '<th class="num">' . $this->l('Koszt USD') . '</th>';
+        $html .= '<th class="num">' . $this->l('Sr. koszt/uzycie') . '</th>';
+        $html .= '<th class="num">' . $this->l('Sr. latencja [ms]') . '</th>';
+        $html .= '</tr></thead><tbody>';
+
+        foreach ($models as $m) {
+            if (!is_array($m)) {
+                continue;
+            }
+            $label    = isset($m['label']) ? (string) $m['label'] : (isset($m['model_id']) ? (string) $m['model_id'] : '?');
+            $provider = isset($m['provider']) ? (string) $m['provider'] : '';
+            $uses     = isset($m['uses']) ? (int) $m['uses'] : 0;
+            $tokIn    = isset($m['input_tokens']) ? (int) $m['input_tokens'] : 0;
+            $tokOut   = isset($m['output_tokens']) ? (int) $m['output_tokens'] : 0;
+            $cache    = isset($m['cache_read_tokens']) ? (int) $m['cache_read_tokens'] : 0;
+            $costPln  = isset($m['cost_pln']) ? (float) $m['cost_pln'] : 0.0;
+            $costUsd  = isset($m['cost_usd']) ? (float) $m['cost_usd'] : 0.0;
+            $avgCost  = isset($m['avg_cost_per_use_usd']) ? (float) $m['avg_cost_per_use_usd'] : 0.0;
+            $avgLat   = isset($m['avg_latency_ms']) ? (float) $m['avg_latency_ms'] : 0.0;
+
+            $html .= '<tr>';
+            $html .= '<td><code style="font-size:11px;">' . htmlspecialchars($label, ENT_QUOTES) . '</code></td>';
+            $html .= '<td>' . htmlspecialchars($provider, ENT_QUOTES) . '</td>';
+            $html .= '<td class="num">' . number_format($uses) . '</td>';
+            $html .= '<td class="num">' . number_format($tokIn) . '</td>';
+            $html .= '<td class="num">' . number_format($tokOut) . '</td>';
+            $html .= '<td class="num">' . number_format($cache) . '</td>';
+            $html .= '<td class="num">' . number_format($costPln, 4, ',', ' ') . '</td>';
+            $html .= '<td class="num">$' . number_format($costUsd, 4, '.', '') . '</td>';
+            $html .= '<td class="num">$' . number_format($avgCost, 6, '.', '') . '</td>';
+            $html .= '<td class="num">' . number_format($avgLat, 0) . '</td>';
+            $html .= '</tr>';
+        }
+
+        $html .= '</tbody></table>';
+        return $html;
+    }
+
+    private function renderAnalyticsTopConversations($top)
+    {
+        if (isset($top['error'])) {
+            return '<div class="dz-analytics-empty">' . $this->l('Brak danych top rozmow:') . ' ' . htmlspecialchars((string) $top['error'], ENT_QUOTES) . '</div>';
+        }
+
+        $convs = isset($top['conversations']) && is_array($top['conversations']) ? $top['conversations'] : array();
+        if (empty($convs)) {
+            return '<div class="dz-analytics-empty">' . $this->l('Brak rozmow w okresie.') . '</div>';
+        }
+
+        $html  = '<table class="dz-analytics-table">';
+        $html .= '<thead><tr>';
+        $html .= '<th>' . $this->l('Rozpoczeto') . '</th>';
+        $html .= '<th>' . $this->l('Model') . '</th>';
+        $html .= '<th class="num">' . $this->l('Wiad.') . '</th>';
+        $html .= '<th class="num">' . $this->l('Koszt PLN') . '</th>';
+        $html .= '<th class="num">' . $this->l('Koszt USD') . '</th>';
+        $html .= '<th>' . $this->l('Pierwsza wiadomosc') . '</th>';
+        $html .= '</tr></thead><tbody>';
+
+        foreach ($convs as $c) {
+            if (!is_array($c)) {
+                continue;
+            }
+            $sid       = isset($c['session_id']) ? (string) $c['session_id'] : '';
+            $startedAt = isset($c['started_at']) ? (string) $c['started_at'] : '';
+            $model     = isset($c['model_used']) ? (string) $c['model_used'] : '';
+            $msgCount  = isset($c['messages_count']) ? (int) $c['messages_count'] : 0;
+            $costUsd   = isset($c['cost_usd']) ? (float) $c['cost_usd'] : 0.0;
+            $costPln   = isset($c['cost_pln']) ? (float) $c['cost_pln'] : 0.0;
+            $firstMsg  = isset($c['first_user_message']) ? $c['first_user_message'] : null;
+
+            // 109a: wiersz LINKUJE do zakladki Rozmowy po session_id (NIE osobny widok).
+            $url = $this->context->link->getAdminLink('AdminDivezoneChat')
+                . '&tab=' . self::TAB_CONVERSATIONS
+                . '&session_id=' . rawurlencode($sid);
+
+            $msgPreview = $this->truncateFirstMessage($firstMsg);
+
+            $html .= '<tr class="dz-analytics-top-row">';
+            $html .= '<td><a href="' . htmlspecialchars($url, ENT_QUOTES) . '">' . htmlspecialchars($this->formatConvDate($startedAt), ENT_QUOTES) . '</a></td>';
+            $html .= '<td><a href="' . htmlspecialchars($url, ENT_QUOTES) . '"><code style="font-size:11px;">' . htmlspecialchars($model, ENT_QUOTES) . '</code></a></td>';
+            $html .= '<td class="num"><a href="' . htmlspecialchars($url, ENT_QUOTES) . '">' . $msgCount . '</a></td>';
+            $html .= '<td class="num"><a href="' . htmlspecialchars($url, ENT_QUOTES) . '">' . number_format($costPln, 4, ',', ' ') . '</a></td>';
+            $html .= '<td class="num"><a href="' . htmlspecialchars($url, ENT_QUOTES) . '">$' . number_format($costUsd, 4, '.', '') . '</a></td>';
+            $html .= '<td><a href="' . htmlspecialchars($url, ENT_QUOTES) . '">' . htmlspecialchars($msgPreview, ENT_QUOTES) . '</a></td>';
+            $html .= '</tr>';
+        }
+
+        $html .= '</tbody></table>';
+        return $html;
+    }
+
+    /**
+     * Bezpieczny escape stringu PHP -> wewnatrz "..." w JS (po htmlspecialchars HTML w outer
+     * markupie). Zamienia \\, ", newline, < (dla zamkniecia </script>) i ' tag.
+     */
+    private function jsEscape($str)
+    {
+        $str = (string) $str;
+        $str = str_replace(
+            array('\\', '"', "\r", "\n", '<', "'"),
+            array('\\\\', '\\"', '', '\\n', '\\u003c', "\\'"),
+            $str
+        );
+        return $str;
     }
 
     // ============================================================================
