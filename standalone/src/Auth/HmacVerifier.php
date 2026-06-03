@@ -11,7 +11,7 @@ final readonly class HmacVerifier
 {
     public function __construct(
         private string $secret,
-        private int $maxAgeSec = 300, // 5 min
+        private int $maxAgeSec = 3600, // 1 h (CHAT-T-057; bylo 5 min — za krotkie dla realnych sesji; odswiezanie tokenu w ADR-064)
     ) {}
 
     /**
