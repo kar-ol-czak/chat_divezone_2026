@@ -2344,3 +2344,21 @@ Etapy 2-4 = osobne taski po sesji. Ten ADR utrwala zasady, nie implementacje.
 - **Any-role (127b):** link Editorial widoczny dla operatora i admina (inaczej niż Analityka, gdzie ukrywany dla nie-adminów).
 
 **Konsekwencje — DOMKNIĘCIE MIGRACJI PANELU:** Po wdrożeniu CHAT-T-055 panel PS jest kompletny — wszystkie funkcje (Rozmowy, Rekomendacje, Analityka, Editorial, Modele, Konfiguracja) w jednym pasku zakładek, jeden mechanizm auth (kanał serwerowy HMAC). Stary /admin nie ma już żadnej żywej zakładki UI; jedyny pozostały endpoint to /api/admin/conversations/{id} (Basic Auth, 109a), nieużywany przez nowy panel. /admin gotowy do wyłączenia (osobny, opcjonalny task: usunięcie katalogu /admin + trasy conversations/{id} + AdminAuthMiddleware/.htpasswd + AdminController, jeśli nic innego ich nie używa).
+
+
+---
+
+### ADR-078: Proaktywne zaproszenie (nudge) przy launcherze (CHAT-T-056)
+**Data:** 2026-06-03 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-037, ADR-064
+
+**Kontekst:** Launcher (bąbelek) jest mało widoczny → niska otwieralność czatu. Dodajemy proaktywny dymek wysuwany po ustawionym czasie z zachętą do rozmowy.
+
+**Decyzje:**
+- **133b — cały dymek klikalny + przycisk „Porozmawiajmy na czacie" + „×".** Klik gdziekolwiek poza × otwiera czat; × zamyka bez otwierania. Większa powierzchnia kliknięcia, przycisk dla jednoznaczności/a11y.
+- **134a — sessionStorage, raz na sesję.** Po × lub otwarciu czatu nudge nie wraca w tej sesji; wraca przy następnej wizycie. sessionStorage (dane techniczne sesji, bez localStorage — spójnie z ostrożnością wobec LS). Jeśli czat już otwarty w sesji → nudge się nie pokazuje.
+- **135a — 3 pola w Konfiguracji modułu:** włącznik on/off (default OFF), opóźnienie w sekundach (3-300, default 20), treść tekstu (default „Hej! 🤿 Nie wiesz, jaki sprzęt wybrać? Zapytaj naszych specjalistów."). Treść w configu → zmiana bez deployu. Renderowana jako textContent (escape, anty-XSS).
+- **136a — prosty nudge teraz; A/B/X z raportowaniem % otwarć = OSOBNY PRZYSZŁY PROJEKT.** Rozważony i ŚWIADOMIE ODŁOŻONY pełny A/B/X (warianty tekstu + losowanie + zapis impression/click + agregacja + UI raportu). Powody: (1) najpierw zweryfikować, czy nudge w ogóle podnosi otwieralność, zanim budować pomiar; (2) A/B/X wymaga PUBLICZNEGO endpointu zapisu zdarzeń od anonimowych userów — to dokładnie ryzyko z ADR-064 (nieuwierzytelniony ruch → koszty/nadużycia), niewdrożona ochrona (rate-limit/Turnstile); nowy publiczny wektor zasługuje na własną decyzję, nie doklejkę; (3) prosty nudge = sam frontend + 3 pola configu, zero endpointu/tabeli/publicznego ruchu.
+
+**Architektura:** nudge w widget-loader.js (lekki stub, zawsze obecny), NIE w bundle — pojawia się po N s BEZ pobierania bundla; dopiero klik dociąga bundle. Config (enabled/delay/text) w boot payload (hookDisplayFooter, gałąź 'nudge'), bez nowego endpointu. Nudge dziedziczy gating launchera (shouldShowWidget), nie dokłada własnego geo/IP.
+
+**Na przyszłość (gdy nudge się sprawdzi):** A/B/X tekstu z raportem CTR per wariant — wymaga: publiczny endpoint zdarzeń POST /api/nudge/event Z OCHRONĄ (część tematu ADR-064), tabela divechat_nudge_events, losowanie wariantów w loaderze, agregacja + sekcja raportu w panelu (Analityka lub osobna). Rozmiar porównywalny z całą zakładką Analityka — własny mini-projekt.
