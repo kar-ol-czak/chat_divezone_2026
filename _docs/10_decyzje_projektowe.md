@@ -2362,3 +2362,20 @@ Etapy 2-4 = osobne taski po sesji. Ten ADR utrwala zasady, nie implementacje.
 **Architektura:** nudge w widget-loader.js (lekki stub, zawsze obecny), NIE w bundle — pojawia się po N s BEZ pobierania bundla; dopiero klik dociąga bundle. Config (enabled/delay/text) w boot payload (hookDisplayFooter, gałąź 'nudge'), bez nowego endpointu. Nudge dziedziczy gating launchera (shouldShowWidget), nie dokłada własnego geo/IP.
 
 **Na przyszłość (gdy nudge się sprawdzi):** A/B/X tekstu z raportem CTR per wariant — wymaga: publiczny endpoint zdarzeń POST /api/nudge/event Z OCHRONĄ (część tematu ADR-064), tabela divechat_nudge_events, losowanie wariantów w loaderze, agregacja + sekcja raportu w panelu (Analityka lub osobna). Rozmiar porównywalny z całą zakładką Analityka — własny mini-projekt.
+
+
+---
+
+### ADR-079: TTL tokenu klienta — szybki fix 5 min → 1 h (CHAT-T-057)
+**Data:** 2026-06-03 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-037, ADR-064
+
+**Kontekst:** PROD bug — czat zwraca 401 „Nieprawidłowy token" na stronie otwartej dłużej niż 5 min. Przyczyna: token klienta generowany RAZ przy renderze strony (hookDisplayFooter), transport.js NIE odświeża (świadomy skrót etapu 1), HmacVerifier maxAgeSec=300. Świeża strona działa, po >5 min 401. Realni użytkownicy (czat publiczny dla PL) trzymają stronę otwartą długo → masowy problem.
+
+**Decyzje:**
+- **138c — szybki fix TTL teraz, pełne odświeżanie do ADR-064.** Wydłużenie TTL gasi pożar; odświeżanie tokenu (rozwiązanie u źródła) wymaga endpointu tokenów z rate-limitem → należy do ochrony publicznej (ADR-064), nie naprędce teraz.
+- **139a — TTL = 1 h (3600 s).** Pokrywa praktycznie wszystkie realne sesje „otworzył, poczytał, zapytał". Okno replay 1 h akceptowalne: czat nie wykonuje operacji finansowych, generuje tylko odpowiedzi. 30 min zostawiałoby część userów z 401; 24 h niepotrzebnie szerokie.
+- **Implementacja: zmiana DEFAULTU w HmacVerifier (300→3600), nie argument w 3 miejscach.** 3 konsumentów (ChatController chat+stream, OrderStatusController) dziedziczy default → jedno miejsce, zero rozjazdu.
+
+**Świadomy kompromis:** wydłużenie TTL MASKUJE problem (token nadal statyczny), nie usuwa u źródła. Usunięcie = odświeżanie tokenu na froncie.
+
+**Do ADR-064 (ochrona publiczna) — pozycja dopisana:** odświeżanie tokenu klienta (front pobiera świeży token przez chroniony endpoint zamiast statycznego z renderu) + rate-limit/Turnstile. Wtedy TTL można wrócić do krótkiego. Endpoint wydający tokeny musi być chroniony, inaczej staje się otwartą fabryką ważnych tokenów. Komentarze w transport.js (mówiące o „5 min") do aktualizacji przy najbliższym froncie dotykającym modułu.
