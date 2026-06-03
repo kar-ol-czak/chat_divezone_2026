@@ -37,6 +37,10 @@ class AdminDivezoneChatController extends ModuleAdminController
     // Aktywna zakladka — fallback do 'recommendations' jak brak ?tab.
     const TAB_RECOMMENDATIONS = 'recommendations';
     const TAB_MODELS          = 'models';
+    // CHAT-T-047 (decyzja 108a): konfiguracja jako zakladka obok Moduly->Konfiguruj.
+    // renderConfigSection() wola publiczne metody Divezone_Chat (decyzja 114a OPCJA B):
+    // renderConfigForm() + handleConfigSubmit() — zero duplikacji formularza.
+    const TAB_CONFIG          = 'config';
 
     /** @var string komunikat flashowy do wyswietlenia na gorze ekranu Modele */
     private $modelsFlash = '';
@@ -59,7 +63,7 @@ class AdminDivezoneChatController extends ModuleAdminController
 
         // 1. Aktywna zakladka — z querystring lub form submit, default rekomendacje.
         $activeTab = (string) Tools::getValue('tab', self::TAB_RECOMMENDATIONS);
-        if (!in_array($activeTab, array(self::TAB_RECOMMENDATIONS, self::TAB_MODELS), true)) {
+        if (!in_array($activeTab, array(self::TAB_RECOMMENDATIONS, self::TAB_MODELS, self::TAB_CONFIG), true)) {
             $activeTab = self::TAB_RECOMMENDATIONS;
         }
 
@@ -67,6 +71,11 @@ class AdminDivezoneChatController extends ModuleAdminController
         if (Tools::isSubmit('submitDivezoneChatModels')) {
             $this->handleModelsSave($employeeId);
             $activeTab = self::TAB_MODELS; // zostan na zakladce po zapisie
+        }
+
+        // 2b. Submit ekranu Konfiguracja -> zostan na zakladce po zapisie (CHAT-T-047).
+        if (Tools::isSubmit('submitDivezoneChatConfig')) {
+            $activeTab = self::TAB_CONFIG;
         }
 
         // 3. Whoami zawsze (maly pasek u gory).
@@ -77,6 +86,8 @@ class AdminDivezoneChatController extends ModuleAdminController
         if ($activeTab === self::TAB_MODELS) {
             $settings = $this->callBackend(self::ENDPOINT_SETTINGS, $employeeId);
             $tabContent = $this->renderModelsSection($settings);
+        } elseif ($activeTab === self::TAB_CONFIG) {
+            $tabContent = $this->renderConfigSection();
         } else {
             $recommendations = $this->callBackend(self::ENDPOINT_RECOMMENDATIONS, $employeeId);
             $tabContent = $this->renderRecommendationsSection($recommendations);
@@ -136,13 +147,16 @@ class AdminDivezoneChatController extends ModuleAdminController
         $baseUrl = $this->context->link->getAdminLink('AdminDivezoneChat');
         $rec = $baseUrl . '&tab=' . self::TAB_RECOMMENDATIONS;
         $mod = $baseUrl . '&tab=' . self::TAB_MODELS;
+        $cfg = $baseUrl . '&tab=' . self::TAB_CONFIG;
 
         $clsRec = $activeTab === self::TAB_RECOMMENDATIONS ? ' is-active' : '';
         $clsMod = $activeTab === self::TAB_MODELS          ? ' is-active' : '';
+        $clsCfg = $activeTab === self::TAB_CONFIG          ? ' is-active' : '';
 
         $html  = '<nav class="dz-tabs-nav" role="tablist">';
         $html .= '<a href="' . htmlspecialchars($rec, ENT_QUOTES) . '" class="dz-tab-link' . $clsRec . '" role="tab">' . $this->l('Rekomendacje') . '</a>';
         $html .= '<a href="' . htmlspecialchars($mod, ENT_QUOTES) . '" class="dz-tab-link' . $clsMod . '" role="tab">' . $this->l('Modele') . '</a>';
+        $html .= '<a href="' . htmlspecialchars($cfg, ENT_QUOTES) . '" class="dz-tab-link' . $clsCfg . '" role="tab">' . $this->l('Konfiguracja') . '</a>';
         $html .= '</nav>';
         return $html;
     }
@@ -539,6 +553,37 @@ class AdminDivezoneChatController extends ModuleAdminController
             $this->modelsFlash     = $this->l('Zapisano, ale backend nie potwierdzil success.');
             $this->modelsFlashType = 'success';
         }
+    }
+
+    // ============================================================================
+    // SEKCJA: Konfiguracja (CHAT-T-047, decyzja 108a).
+    //
+    // Zero duplikacji formularza — uzywamy publicznych metod Divezone_Chat
+    // (renderConfigForm + handleConfigSubmit). To samo zrodlo HTML co
+    // Moduly -> Konfiguruj (getContent). Decyzja 114a OPCJA B.
+    // ============================================================================
+    private function renderConfigSection()
+    {
+        $module = Module::getInstanceByName('divezone_chat');
+        if (!$module) {
+            return '<div class="alert alert-danger">' . $this->l('Modul divezone_chat niedostepny (Module::getInstanceByName zwrocil falsz).') . '</div>';
+        }
+
+        $html  = '<div class="panel" style="border-top-left-radius:0;">';
+        $html .= '<div class="panel-heading"><i class="icon-cog"></i> ' . $this->l('Konfiguracja modulu') . '</div>';
+        $html .= '<div style="padding:18px;">';
+
+        $useSubmitted = false;
+        if (Tools::isSubmit('submitDivezoneChatConfig')) {
+            $result        = $module->handleConfigSubmit();
+            $html         .= $result['messages_html'];
+            $useSubmitted  = $result['validation_failed'];
+        }
+
+        $html .= $module->renderConfigForm($useSubmitted);
+
+        $html .= '</div></div>';
+        return $html;
     }
 
     // ============================================================================
