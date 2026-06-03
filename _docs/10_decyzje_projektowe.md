@@ -2295,3 +2295,21 @@ Etapy 2-4 = osobne taski po sesji. Ten ADR utrwala zasady, nie implementacje.
 - **118b — nowy `AdminAnalyticsController`, stary `AdminController` nietknięty.** 4 migrowane endpointy → nowy kontroler (czysto HMAC admin-only, wzorzec 1:1 z `SettingsController`). Stary `AdminController` zostaje z jedynym żywym `conversations/{id}` (Basic Auth) i ginie w całości przy wyłączeniu `/admin`. Odrzucone 118a (mieszanie dwóch auth w jednej klasie — pułapka czytelności i sprzątania).
 
 **Konsekwencje:** Stary `/admin` (zakładka koszty) przestanie czytać kpi/trend/by-model/top (401, brak nagłówków serwerowych) — oczekiwane, analogicznie do history.js po CHAT-T-046. Backend standalone — CC wdraża sam. Następny: CHAT-T-050 (UI zakładki Analityka, wykresy — technika do decyzji przy składaniu).
+
+
+---
+
+### ADR-075: Zakładka Analityka w PS — UI (CHAT-T-050)
+**Data:** 2026-06-03 | **Status:** PRZYJĘTA | **Powiązane:** ADR-074, CHAT-T-049
+
+**Kontekst:** UI Etapu 2 migracji panelu. Backend (CHAT-T-049) wystawia kpi/trend/by-model/top za kanałem serwerowym admin-only. Trzeba zbudować zakładkę w PS, która te dane pokaże (karty KPI, wykres trendu, tabela per-model, ranking najdroższych rozmów).
+
+**Decyzje:**
+- **119a — wykres trendu na Chart.js z CDN** (jsdelivr 4.4.0), odtworzenie configu ze starego /admin (admin-charts.js: line, dataset PLN, tooltip PLN+USD+rozmowy). Tylko trend wymaga wykresu; KPI=karty, by-model=tabela, top=tabela z linkiem.
+- **120a — PHP pobiera dane przez callBackend i osadza.** KPI/tabele renderowane server-side; trend osadzany jako JSON, JS tylko rysuje. Sekret HMAC zostaje na serwerze (identyczna zasada jak 113a — zero live-fetch z przeglądarki do API). Filtry days/period przez reload z URL. Odrzucone: proxy-endpoint + live-fetch (ten sam większy temat co 113a, bez powodu otwierać teraz).
+- **Konsekwencja architektoniczna:** pierwszy JS w kontrolerze ADMINA (sekcja Rozmów była czysto server-side). Wykres jako inline <script> + Chart.js z CDN.
+- **Ryzyko CSP/CDN:** PS back office bywa wrażliwy na zewnętrzne CDN. Wykres degraduje się gracefully (guard typeof Chart === 'undefined') — przy zablokowanym CDN reszta zakładki (KPI, tabele) działa bez wykresu. Jeśli okaże się problemem na PROD, alternatywą jest lokalny hosting Chart.js w views/js/ (przyszły temat, nie teraz).
+- **Rola (107a/108a):** endpointy admin-only; operator dostaje 403 → zakładka obsługuje łagodnie (komunikat „tylko dla administratorów"), ewentualnie ukrycie linku w nav jeśli rola lokalnie znana kontrolerowi (CC sprawdza w KROK 0).
+- **TOP rozmów (109a):** wiersze linkują do zakładki Rozmowy po session_id — zero duplikacji widoku rozmowy.
+
+**Konsekwencje:** Po wdrożeniu Etap 2 (Analityka) domknięty. Stary /admin (koszty) całkowicie zastąpiony zakładką w PS. Kolejne etapy migracji (np. Editorial) wg tego samego wzorca: backend auth → UI.
