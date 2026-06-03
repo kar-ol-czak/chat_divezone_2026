@@ -5,15 +5,26 @@ declare(strict_types=1);
 namespace DiveChat\Tools;
 
 use DiveChat\Database\MysqlConnection;
+use DiveChat\Shop\MysqlProductEnrichmentService;
 
 /**
  * Szczegóły produktu z MySQL PrestaShop (read-only).
  * Pobiera: nazwa, opis, cechy, cena, dostępność, zdjęcie, promocje.
+ *
+ * CHAT-T-062 (E5): cena LICZONA przez MysqlProductEnrichmentService — TA SAMA
+ * sciezka co w ProductSearch (brutto z VAT, specific_price percentage/amount,
+ * hierarchia priorytetow). Cel: ten sam product_id → ta sama cena niezaleznie
+ * od narzedzia (E5 fix po ewaluacji 03.06.2026: 2940→2600 niespojnosc miedzy
+ * turami przy tym samym produkcie).
  */
 final class ProductDetails implements ToolInterface
 {
     private const LANG_ID = 1; // polski
     private const SHOP_ID = 1;
+
+    public function __construct(
+        private readonly MysqlProductEnrichmentService $enrichment,
+    ) {}
 
     public function getName(): string
     {
@@ -104,15 +115,28 @@ final class ProductDetails implements ToolInterface
             [$productId, self::SHOP_ID],
         );
 
-        // Buduj odpowiedź
-        $quantity = (int) ($stock['quantity'] ?? 0);
-        $outOfStock = (int) ($stock['out_of_stock'] ?? 0);
+        // CHAT-T-062 (E5): cena + availability + price_before_discount z TEGO SAMEGO
+        // serwisu co ProductSearch. Lokalne $stock + $specialPrice zostaja dla metadanych
+        // (quantity, special_price.from/to dla diagnostyki), ale `price` w odpowiedzi
+        // ZAWSZE z enrichment — koniec dwoch sciezek liczenia ceny.
+        $enrichData = $this->enrichment->enrich([$productId]);
+        $enrich = $enrichData[$productId] ?? null;
 
-        $availability = match (true) {
-            $quantity > 0 => 'Dostępny od ręki',
-            $outOfStock === 0 => 'Niedostępny',
-            default => $product['available_later'] ?: 'Na zamówienie',
-        };
+        $quantity = (int) ($stock['quantity'] ?? 0);
+
+        // Availability: priorytet enrichment (3-stanowy spojny z ProductSearch:
+        // in_stock / available_to_order / unavailable). Fallback na lokalne stock
+        // tylko gdy enrichment padl (timeout MySQL z error_log).
+        if ($enrich !== null) {
+            $availability = $enrich['availability'];
+        } else {
+            $outOfStock = (int) ($stock['out_of_stock'] ?? 0);
+            $availability = match (true) {
+                $quantity > 0 => 'in_stock',
+                $outOfStock === 1 => 'available_to_order',
+                default => 'unavailable',
+            };
+        }
 
         $imageUrl = $image
             ? "https://divezone.pl/{$image['id_image']}-large_default/{$product['link_rewrite']}.jpg"
@@ -126,7 +150,12 @@ final class ProductDetails implements ToolInterface
             'brand' => $product['manufacturer_name'],
             'description_short' => strip_tags($product['description_short'] ?? ''),
             'description' => strip_tags($product['description'] ?? ''),
-            'price' => (float) $product['price'],
+            // CHAT-T-062 (E5): brutto z VAT + promocja zastosowana (enrichment).
+            // Fallback na price_netto * 1.23 gdy enrichment padl — przyblizenie,
+            // model lepiej dostanie cos niz NULL/netto.
+            'price' => $enrich !== null
+                ? $enrich['price']
+                : round((float) $product['price'] * 1.23, 2),
             'availability' => $availability,
             'quantity' => $quantity,
             'url' => $productUrl,
@@ -136,6 +165,11 @@ final class ProductDetails implements ToolInterface
                 'value' => $f['feature_value'],
             ], $features),
         ];
+
+        // Cena przed rabatem — model moze powiedziec "przeceniony z X na Y".
+        if ($enrich !== null && isset($enrich['price_before_discount'])) {
+            $result['price_before_discount'] = $enrich['price_before_discount'];
+        }
 
         if ($specialPrice) {
             $result['special_price'] = [

@@ -102,6 +102,11 @@ final class ProductSearch implements ToolInterface
                     'type' => 'integer',
                     'description' => 'Liczba wyników (1-10, domyślnie 5).',
                 ],
+                'sort' => [
+                    'type' => 'string',
+                    'enum' => ['relevance', 'price_asc', 'price_desc'],
+                    'description' => 'Kolejność wyników. "relevance" (domyślne) = RRF semantyczny — używaj gdy klient szuka dopasowania (rozmiar, kompatybilność, opis). "price_asc" = od najtańszego — UŻYJ gdy klient pyta "najtańszy", "tani", "do X zł". "price_desc" = od najdroższego ("najdroższy", "premium"). Wymaga kategorii — sortowanie obejmuje WSZYSTKICH kandydatów w kategorii, nie tylko semantyczny top.',
+                ],
             ],
             'required' => ['query', 'search_plan'],
         ];
@@ -113,12 +118,35 @@ final class ProductSearch implements ToolInterface
         $limit = min((int) ($params['limit'] ?? 5), 10);
         $searchPlan = $params['search_plan'] ?? [];
         $filtersInput = $params['filters'] ?? [];
+        $sort = $params['sort'] ?? 'relevance';
+        if (!in_array($sort, ['relevance', 'price_asc', 'price_desc'], true)) {
+            $sort = 'relevance';
+        }
 
         // Migracja starych parametrów (backward compat)
         $normalized = $this->normalizeParams($params, $filtersInput);
 
         // Wspólne filtry SQL
         $filters = $this->buildFilters($normalized);
+
+        // CHAT-T-062 (E4 fix): sortowanie po cenie — osobna sciezka, BEZ RRF.
+        // Diagnoza: w mergeRRF enrichment dokladany PO obcieciu do top (limit*3 =
+        // 15-30), wiec sortowanie po cenie tej puli NIE znajdzie najtanszego z
+        // calej kategorii (188 komputerow, 341 automatow — top-30 semantyczny to
+        // ulamek). Fix: dla sort=price_asc/desc fetchujemy SZEROKA pule kandydatow
+        // (do 1000) z divechat_product_embeddings filtrowanych strukturalnie
+        // (buildFilters: category, price_min/max, brand, exclude, blacklist),
+        // enrich na calej puli (jeden batch SQL), filtr active/visible/in_stock,
+        // sortujemy po realnej cenie z MySQL, top $limit. Semantyka tu nie pomaga —
+        // "najtanszy komputer" to pytanie kategoryczne + cenowe, nie similarity.
+        if ($sort === 'price_asc' || $sort === 'price_desc') {
+            return $this->searchByPrice(
+                $filters, $sort, $limit,
+                !empty($normalized['in_stock_only']),
+                $normalized['category'] ?? null,
+                $searchPlan,
+            );
+        }
 
         // Embedding (CHAT-T-041: zmierz czas — diagnostyka RAG w search_debug.embedding_ms).
         $embeddingStart = microtime(true);
@@ -210,6 +238,157 @@ final class ProductSearch implements ToolInterface
         }
 
         return $merged;
+    }
+
+    /**
+     * CHAT-T-062 (E4 fix): wyszukiwanie posortowane po cenie z pelnej puli
+     * kategorii (NIE semantycznego top). Reusuje buildFilters + enrichment.
+     *
+     * Sciezka osobna od RRF — dla zapytan typu "najtanszy/najdrozszy [kategoria]"
+     * semantyka nie pomaga (similarity nie koreluje z cena). Fetchujemy szeroka
+     * pule (LIMIT 1000 — bezpiecznik, maksymalna sensowna kategoria to ~340),
+     * enrich na calej puli (jeden batch), sortujemy po realnej cenie brutto z
+     * promocjami z MySQL.
+     *
+     * @param array{where: string, params: list<mixed>, meta: array<string, mixed>} $filters
+     */
+    private function searchByPrice(
+        array $filters,
+        string $sort,
+        int $limit,
+        bool $inStockOnly,
+        ?string $category,
+        array $searchPlan,
+    ): array {
+        // Fetch szerokiej puli kandydatow — strukturalne filtry (active, category,
+        // price, brand, blacklist) juz nalozone przez buildFilters. LIMIT 1000 dla
+        // bezpieczenstwa; PG zwraca w kolejnosci dowolnej (ORDER nie ma znaczenia
+        // bo i tak sortujemy potem po MySQL price).
+        $candidates = $this->db->fetchAll(
+            "SELECT ps_product_id, product_name, brand_name, category_name,
+                    price, in_stock, product_url, image_url
+             FROM divechat_product_embeddings
+             WHERE {$filters['where']}
+             LIMIT 1000",
+            $filters['params'],
+        );
+
+        if (empty($candidates)) {
+            return [
+                'products' => [],
+                'count' => 0,
+                'message' => 'Nie znaleziono produktów pasujących do kategorii.',
+                'search_debug' => array_merge(
+                    ['sort' => $sort, 'pool_size' => 0, 'search_plan' => $searchPlan],
+                    $filters['meta'] ?? [],
+                ),
+            ];
+        }
+
+        $candidateIds = array_map(static fn(array $r) => (int) $r['ps_product_id'], $candidates);
+        $rowsById = [];
+        foreach ($candidates as $row) {
+            $rowsById[(int) $row['ps_product_id']] = $row;
+        }
+
+        // Enrichment dla CALEJ puli — jeden batch SQL (IN(...)).
+        $mysqlData = $this->enrichmentService->enrich($candidateIds);
+
+        // Filtr active/visible (jak w mergeRRF). Produkty bez danych MySQL —
+        // skip (sortowanie po cenie wymaga znanej ceny, fallback na pgvector
+        // jest nieaktualny i bilbym tu maskowal problem).
+        $eligible = [];
+        $filteredOut = [];
+        foreach ($candidateIds as $id) {
+            $data = $mysqlData[$id] ?? null;
+            if ($data === null) {
+                $filteredOut[] = ['id' => $id, 'reason' => 'no_mysql_data'];
+                continue;
+            }
+            if (!$data['active'] || !$data['visible']) {
+                $filteredOut[] = ['id' => $id, 'reason' => !$data['active'] ? 'active=false' : 'visibility=none'];
+                continue;
+            }
+            if ($inStockOnly && !$data['in_stock']) {
+                $filteredOut[] = ['id' => $id, 'reason' => 'in_stock_only=true, not in stock'];
+                continue;
+            }
+            $eligible[$id] = (float) $data['price'];
+        }
+
+        if (empty($eligible)) {
+            return [
+                'products' => [],
+                'count' => 0,
+                'message' => 'Nie znaleziono dostępnych produktów po sortowaniu po cenie.',
+                'search_debug' => array_merge(
+                    [
+                        'sort' => $sort,
+                        'pool_size' => count($candidateIds),
+                        'eligible_count' => 0,
+                        'filtered_out_sample' => array_slice($filteredOut, 0, 10),
+                        'search_plan' => $searchPlan,
+                    ],
+                    $filters['meta'] ?? [],
+                ),
+            ];
+        }
+
+        // Sortuj po cenie z MySQL (brutto z promocja).
+        if ($sort === 'price_asc') {
+            asort($eligible);
+        } else {
+            arsort($eligible);
+        }
+
+        $topIds = array_slice(array_keys($eligible), 0, $limit);
+
+        $products = [];
+        $debugItems = [];
+        foreach ($topIds as $id) {
+            $row = $rowsById[$id];
+            $product = [
+                'id' => (int) $row['ps_product_id'],
+                'name' => $row['product_name'],
+                'brand' => $row['brand_name'],
+                'category' => $row['category_name'],
+                'price' => $mysqlData[$id]['price'],
+                'in_stock' => $mysqlData[$id]['in_stock'],
+                'availability' => $mysqlData[$id]['availability'],
+                'url' => $row['product_url'],
+                'image_url' => $row['image_url'],
+            ];
+            if (isset($mysqlData[$id]['price_before_discount'])) {
+                $product['price_before_discount'] = $mysqlData[$id]['price_before_discount'];
+            }
+            $products[] = $product;
+
+            $debugItems[] = [
+                'product_id' => $id,
+                'mysql_price' => $mysqlData[$id]['price'],
+                'mysql_price_before_discount' => $mysqlData[$id]['price_before_discount'] ?? null,
+                'mysql_in_stock' => $mysqlData[$id]['in_stock'],
+                'mysql_availability' => $mysqlData[$id]['availability'],
+            ];
+        }
+
+        return [
+            'products' => $products,
+            'count' => count($products),
+            'search_debug' => array_merge(
+                [
+                    'sort' => $sort,
+                    'pool_size' => count($candidateIds),
+                    'eligible_count' => count($eligible),
+                    'category' => $category,
+                    'in_stock_only' => $inStockOnly,
+                    'filtered_out_sample' => array_slice($filteredOut, 0, 10),
+                    'items' => $debugItems,
+                    'search_plan' => $searchPlan,
+                ],
+                $filters['meta'] ?? [],
+            ),
+        ];
     }
 
     /**

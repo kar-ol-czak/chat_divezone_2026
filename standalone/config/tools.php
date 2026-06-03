@@ -29,7 +29,9 @@ return static function (EmbeddingService $embeddingService): ToolRegistry {
 
     $editorialPicks = new EditorialPicksService($pg);
     $registry->register(new ProductSearch($embeddingService, $pg, $synonymExpander, $enrichmentService, $editorialPicks));
-    $registry->register(new ProductDetails());
+    // CHAT-T-062 (E5): ProductDetails wola enrichment dla pojedynczego product_id —
+    // ta sama logika ceny brutto z VAT + specific_price co ProductSearch (jedno zrodlo).
+    $registry->register(new ProductDetails($enrichmentService));
     $registry->register(new ExpertKnowledge($embeddingService, $pg));
     $registry->register(new OrderStatus());
     $registry->register(new ShippingInfo($pg));
