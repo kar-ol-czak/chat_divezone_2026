@@ -76,6 +76,10 @@ class AdminDivezoneChatController extends ModuleAdminController
     private $epFlash = '';
     /** @var string typ komunikatu: success | error */
     private $epFlashType = 'success';
+    /** @var string komunikat flashowy sekcji "Ochrona i limity" w Konfiguracji (CHAT-T-067) */
+    private $protectFlash = '';
+    /** @var string typ komunikatu: success | error */
+    private $protectFlashType = 'success';
 
     public function __construct()
     {
@@ -105,6 +109,14 @@ class AdminDivezoneChatController extends ModuleAdminController
 
         // 2b. Submit ekranu Konfiguracja -> zostan na zakladce po zapisie (CHAT-T-047).
         if (Tools::isSubmit('submitDivezoneChatConfig')) {
+            $activeTab = self::TAB_CONFIG;
+        }
+
+        // 2b-bis. Submit sekcji "Ochrona i limity" (CHAT-T-067, admin-only).
+        // POST /api/settings bulk z 8 kluczami protect_*; sukces -> backend
+        // egzekwuje nowe progi przy nastepnym requeście czatu (SettingsStore).
+        if (Tools::isSubmit('submitDivezoneChatProtect')) {
+            $this->handleProtectSave($employeeId);
             $activeTab = self::TAB_CONFIG;
         }
 
@@ -142,7 +154,9 @@ class AdminDivezoneChatController extends ModuleAdminController
             $settings = $this->callBackend(self::ENDPOINT_SETTINGS, $employeeId);
             $tabContent = $this->renderModelsSection($settings);
         } elseif ($activeTab === self::TAB_CONFIG) {
-            $tabContent = $this->renderConfigSection();
+            // CHAT-T-067: $employeeId+$role potrzebne do sekcji "Ochrona i limity"
+            // (GET/POST /api/settings przez kanal serwerowy admin-only).
+            $tabContent = $this->renderConfigSection($employeeId, $role);
         } elseif ($activeTab === self::TAB_ANALYTICS) {
             $tabContent = $this->renderAnalyticsSection($employeeId);
         } elseif ($activeTab === self::TAB_EDITORIAL) {
@@ -745,7 +759,7 @@ class AdminDivezoneChatController extends ModuleAdminController
     // (renderConfigForm + handleConfigSubmit). To samo zrodlo HTML co
     // Moduly -> Konfiguruj (getContent). Decyzja 114a OPCJA B.
     // ============================================================================
-    private function renderConfigSection()
+    private function renderConfigSection($employeeId = 0, $role = '')
     {
         $module = Module::getInstanceByName('divezone_chat');
         if (!$module) {
@@ -766,7 +780,238 @@ class AdminDivezoneChatController extends ModuleAdminController
         $html .= $module->renderConfigForm($useSubmitted);
 
         $html .= '</div></div>';
+
+        // CHAT-T-067: sekcja "Ochrona i limity" — ADMIN-ONLY (decyzja 174a).
+        // Operator nie widzi (rola czatu, nie rola PS). Strojenie progow ochrony
+        // (cap kosztow, alert, rate-limit, limit inputu) bez SSH — POST /api/settings.
+        if ($role === 'admin' && $employeeId > 0) {
+            $html .= $this->renderProtectSection($employeeId);
+        }
+
         return $html;
+    }
+
+    // ============================================================================
+    // SEKCJA: Ochrona i limity (CHAT-T-067, 174a/176a/177a).
+    //
+    // Strojenie progow CHAT-T-064 (cap kosztow, alert, limit inputu) i
+    // CHAT-T-066 (rate-limit per sessionId i IP) z poziomu panelu PS bez SSH.
+    // Backend (ChatController) czyta progi z SettingsStore z fallbackiem na .env
+    // (sanity: bezsensowna wartosc -> .env default, ochrona nigdy nie wylaczona
+    // blednym wpisem). Panel PS = jedyne UI strojenia — zrodlo prawdy = backend
+    // SettingsStore. NIE zapisujemy progow w Configuration PS (decyzja 176a).
+    // ============================================================================
+    private function renderProtectSection($employeeId)
+    {
+        // Prefill biezacymi wartosciami z backendu (GET /api/settings, admin-only HMAC).
+        $resp = $this->callBackend(self::ENDPOINT_SETTINGS, $employeeId);
+        $settings = (isset($resp['settings']) && is_array($resp['settings'])) ? $resp['settings'] : array();
+
+        // Defaultys (te same co w backend ChatController readers — zrodlo prawdy
+        // w .env / kodzie, tu pokazujemy je adminowi gdy SettingsStore pusty).
+        $defaults = array(
+            'protect_daily_cap_usd'     => 10,
+            'protect_cost_alert_usd'    => 5,
+            'protect_cost_alert_email'  => 'k.susicki@divezone.pl',
+            'protect_max_input_chars'   => 2000,
+            'protect_rl_session_max'    => 10,
+            'protect_rl_session_window' => 300,
+            'protect_rl_ip_max'         => 40,
+            'protect_rl_ip_window'      => 300,
+        );
+
+        $val = array();
+        foreach ($defaults as $key => $def) {
+            $val[$key] = array_key_exists($key, $settings) ? $settings[$key] : $def;
+        }
+
+        $html  = '<div class="panel" style="border-top-left-radius:0;margin-top:18px;">';
+        $html .= '<div class="panel-heading"><i class="icon-shield"></i> ' . $this->l('Ochrona i limity (CHAT-T-064/066)') . '</div>';
+        $html .= '<div style="padding:18px;">';
+
+        if ($this->protectFlash !== '') {
+            $html .= '<div class="dz-flash ' . htmlspecialchars($this->protectFlashType, ENT_QUOTES) . '">'
+                  . htmlspecialchars($this->protectFlash, ENT_QUOTES) . '</div>';
+        }
+
+        if (isset($resp['error'])) {
+            $html .= '<div class="dz-flash error">'
+                  . $this->l('Nie udalo sie pobrac biezacych wartosci z backendu (uzyte defaultys):') . ' '
+                  . htmlspecialchars((string) $resp['error'], ENT_QUOTES)
+                  . '</div>';
+        }
+
+        $html .= '<p style="color:#8a6d3b;background:#fcf8e3;border:1px solid #faebcc;padding:10px;border-radius:3px;margin:0 0 16px;">';
+        $html .= '<strong>' . $this->l('Uwaga:') . '</strong> ';
+        $html .= $this->l('To bezpieczniki ochrony budzetu API i odpornosci na naduzycia. Zmieniaj swiadomie. Bezsensowna wartosc (0, ujemna) -> backend uzyje defaultu .env (ochrona NIE zostanie wylaczona).');
+        $html .= '</p>';
+
+        $html .= '<form method="post" action="" class="dz-models-form">';
+        $html .= '<input type="hidden" name="submitDivezoneChatProtect" value="1">';
+
+        // 1. Dzienny cap kosztow (USD)
+        $html .= '<div class="field-row">';
+        $html .= '<label for="protect_daily_cap_usd">' . $this->l('Dzienny cap kosztow (USD)') . '</label>';
+        $html .= '<div>';
+        $html .= '<input type="number" step="0.5" min="0.5" id="protect_daily_cap_usd" name="protect_daily_cap_usd" value="' . htmlspecialchars((string) $val['protect_daily_cap_usd'], ENT_QUOTES) . '">';
+        $html .= '<span class="field-hint">' . $this->l('Po przekroczeniu czat zwraca grzeczny komunikat z kontaktem zamiast wolac LLM. Default 10 USD/dobe.') . '</span>';
+        $html .= '</div></div>';
+
+        // 2. Prog alertu kosztow (USD)
+        $html .= '<div class="field-row">';
+        $html .= '<label for="protect_cost_alert_usd">' . $this->l('Prog alertu kosztow (USD)') . '</label>';
+        $html .= '<div>';
+        $html .= '<input type="number" step="0.5" min="0.5" id="protect_cost_alert_usd" name="protect_cost_alert_usd" value="' . htmlspecialchars((string) $val['protect_cost_alert_usd'], ENT_QUOTES) . '">';
+        $html .= '<span class="field-hint">' . $this->l('Po przekroczeniu — JEDEN mail/dobe na adres ponizej. Default 5 USD.') . '</span>';
+        $html .= '</div></div>';
+
+        // 3. Email alertu
+        $html .= '<div class="field-row">';
+        $html .= '<label for="protect_cost_alert_email">' . $this->l('Email alertu') . '</label>';
+        $html .= '<div>';
+        $html .= '<input type="email" id="protect_cost_alert_email" name="protect_cost_alert_email" value="' . htmlspecialchars((string) $val['protect_cost_alert_email'], ENT_QUOTES) . '">';
+        $html .= '<span class="field-hint">' . $this->l('Niewlasciwy adres -> backend uzyje defaultu .env.') . '</span>';
+        $html .= '</div></div>';
+
+        // 4. Limit dlugosci wiadomosci
+        $html .= '<div class="field-row">';
+        $html .= '<label for="protect_max_input_chars">' . $this->l('Limit dlugosci wiadomosci (znaki)') . '</label>';
+        $html .= '<div>';
+        $html .= '<input type="number" step="100" min="100" id="protect_max_input_chars" name="protect_max_input_chars" value="' . htmlspecialchars((string) $val['protect_max_input_chars'], ENT_QUOTES) . '">';
+        $html .= '<span class="field-hint">' . $this->l('Dluzsza wiadomosc -> 400 z komunikatem, przed LLM. Default 2000 znakow.') . '</span>';
+        $html .= '</div></div>';
+
+        // 5. Rate-limit sesji: max wiadomosci
+        $html .= '<div class="field-row">';
+        $html .= '<label for="protect_rl_session_max">' . $this->l('Rate-limit sesji: max wiadomosci') . '</label>';
+        $html .= '<div>';
+        $html .= '<input type="number" step="1" min="1" id="protect_rl_session_max" name="protect_rl_session_max" value="' . htmlspecialchars((string) $val['protect_rl_session_max'], ENT_QUOTES) . '">';
+        $html .= '<span class="field-hint">' . $this->l('Max wiadomosci z jednej rozmowy w oknie. Default 10.') . '</span>';
+        $html .= '</div></div>';
+
+        // 6. Rate-limit sesji: okno (sekundy)
+        $html .= '<div class="field-row">';
+        $html .= '<label for="protect_rl_session_window">' . $this->l('Rate-limit sesji: okno (sekundy)') . '</label>';
+        $html .= '<div>';
+        $html .= '<input type="number" step="30" min="30" id="protect_rl_session_window" name="protect_rl_session_window" value="' . htmlspecialchars((string) $val['protect_rl_session_window'], ENT_QUOTES) . '">';
+        $html .= '<span class="field-hint">' . $this->l('Default 300 (5 min).') . '</span>';
+        $html .= '</div></div>';
+
+        // 7. Rate-limit IP: max wiadomosci
+        $html .= '<div class="field-row">';
+        $html .= '<label for="protect_rl_ip_max">' . $this->l('Rate-limit IP: max wiadomosci') . '</label>';
+        $html .= '<div>';
+        $html .= '<input type="number" step="1" min="1" id="protect_rl_ip_max" name="protect_rl_ip_max" value="' . htmlspecialchars((string) $val['protect_rl_ip_max'], ENT_QUOTES) . '">';
+        $html .= '<span class="field-hint">' . $this->l('Lapie rotacje sessionId przez napastnika. Default 40.') . '</span>';
+        $html .= '</div></div>';
+
+        // 8. Rate-limit IP: okno
+        $html .= '<div class="field-row">';
+        $html .= '<label for="protect_rl_ip_window">' . $this->l('Rate-limit IP: okno (sekundy)') . '</label>';
+        $html .= '<div>';
+        $html .= '<input type="number" step="30" min="30" id="protect_rl_ip_window" name="protect_rl_ip_window" value="' . htmlspecialchars((string) $val['protect_rl_ip_window'], ENT_QUOTES) . '">';
+        $html .= '<span class="field-hint">' . $this->l('Default 300 (5 min).') . '</span>';
+        $html .= '</div></div>';
+
+        $html .= '<div class="submit-row">';
+        $html .= '<button type="submit" name="submitDivezoneChatProtect">' . $this->l('Zapisz progi ochrony') . '</button>';
+        $html .= '</div>';
+        $html .= '</form>';
+
+        $html .= '</div></div>';
+        return $html;
+    }
+
+    /**
+     * Handler zapisu sekcji "Ochrona i limity" (CHAT-T-067).
+     *
+     * Walidacja lokalna (>0 dla liczb, niepuste dla emaila) — bezsensowne wartosci
+     * NIE sa wysylane (zamiast zapisac smieci i liczyc na sanity backendu, blokujemy
+     * od razu po stronie panelu). Po POST -> backend egzekwuje nowe progi przy
+     * nastepnym requeście (SettingsStore wygrywa nad .env, decyzja 176a).
+     */
+    private function handleProtectSave($employeeId)
+    {
+        $errors  = array();
+        $payload = array('settings' => array());
+
+        // Liczby — muszą być > 0. Email — must validate.
+        $numericFields = array(
+            'protect_daily_cap_usd'     => array('float', $this->l('Dzienny cap kosztow')),
+            'protect_cost_alert_usd'    => array('float', $this->l('Prog alertu kosztow')),
+            'protect_max_input_chars'   => array('int',   $this->l('Limit dlugosci wiadomosci')),
+            'protect_rl_session_max'    => array('int',   $this->l('Rate-limit sesji: max')),
+            'protect_rl_session_window' => array('int',   $this->l('Rate-limit sesji: okno')),
+            'protect_rl_ip_max'         => array('int',   $this->l('Rate-limit IP: max')),
+            'protect_rl_ip_window'      => array('int',   $this->l('Rate-limit IP: okno')),
+        );
+
+        foreach ($numericFields as $key => $spec) {
+            $raw = Tools::getValue($key, '');
+            if ($raw === '' || $raw === null) {
+                continue; // puste pole -> nie zapisuj (zostaje poprzednia wartosc / fallback)
+            }
+            if (!is_numeric($raw)) {
+                $errors[] = sprintf($this->l('%s: niepoprawna liczba.'), $spec[1]);
+                continue;
+            }
+            $num = ($spec[0] === 'int') ? (int) $raw : (float) $raw;
+            if ($num <= 0) {
+                $errors[] = sprintf($this->l('%s: wartosc musi byc > 0.'), $spec[1]);
+                continue;
+            }
+            $payload['settings'][$key] = $num;
+        }
+
+        $email = trim((string) Tools::getValue('protect_cost_alert_email', ''));
+        if ($email !== '') {
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $errors[] = $this->l('Email alertu: niepoprawny format.');
+            } else {
+                $payload['settings']['protect_cost_alert_email'] = $email;
+            }
+        }
+
+        if (!empty($errors)) {
+            $this->protectFlash     = $this->l('Bledy walidacji:') . ' ' . implode(' / ', $errors);
+            $this->protectFlashType = 'error';
+            return;
+        }
+
+        if (empty($payload['settings'])) {
+            $this->protectFlash     = $this->l('Brak pol do zapisania.');
+            $this->protectFlashType = 'error';
+            return;
+        }
+
+        $body = json_encode($payload);
+        $resp = $this->callBackend(self::ENDPOINT_SETTINGS, $employeeId, 'POST', $body);
+
+        if (isset($resp['error'])) {
+            $httpStatus = isset($resp['http_status']) ? (int) $resp['http_status'] : 0;
+            if ($httpStatus === 403) {
+                $err = (string) $resp['error'];
+                if (strpos($err, 'admin') !== false) {
+                    $this->protectFlash = $this->l('Tylko administrator moze zmieniac progi ochrony. Twoja rola nie ma uprawnien.');
+                } else {
+                    $this->protectFlash = $this->l('Brak roli (no_role): konto nie ma przypisanej roli w divechat_admin_roles.');
+                }
+            } elseif ($httpStatus === 401) {
+                $this->protectFlash = $this->l('Brak/nieprawidlowy token kanalu serwerowego. Sprawdz konfiguracje modulu (Sekret SERWEROWY).');
+            } else {
+                $this->protectFlash = $this->l('Blad zapisu:') . ' ' . (string) $resp['error'];
+            }
+            $this->protectFlashType = 'error';
+            return;
+        }
+
+        if (isset($resp['success']) && $resp['success']) {
+            $this->protectFlash     = $this->l('Progi ochrony zapisane. Backend egzekwuje nowe wartosci od nastepnego requestu.');
+            $this->protectFlashType = 'success';
+        } else {
+            $this->protectFlash     = $this->l('Zapisano, ale backend nie potwierdzil success.');
+            $this->protectFlashType = 'success';
+        }
     }
 
     // ============================================================================
