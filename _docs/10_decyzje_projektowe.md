@@ -2379,3 +2379,22 @@ Etapy 2-4 = osobne taski po sesji. Ten ADR utrwala zasady, nie implementacje.
 **Świadomy kompromis:** wydłużenie TTL MASKUJE problem (token nadal statyczny), nie usuwa u źródła. Usunięcie = odświeżanie tokenu na froncie.
 
 **Do ADR-064 (ochrona publiczna) — pozycja dopisana:** odświeżanie tokenu klienta (front pobiera świeży token przez chroniony endpoint zamiast statycznego z renderu) + rate-limit/Turnstile. Wtedy TTL można wrócić do krótkiego. Endpoint wydający tokeny musi być chroniony, inaczej staje się otwartą fabryką ważnych tokenów. Komentarze w transport.js (mówiące o „5 min") do aktualizacji przy najbliższym froncie dotykającym modułu.
+
+
+---
+
+### ADR-080: Persystencja sesji czatu między stronami (CHAT-T-059)
+**Data:** 2026-06-03 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-037, ConversationStore, ADR-079
+
+**Kontekst:** PROD problem — nawigacja między stronami sklepu (pełny reload PrestaShop) resetuje czat. Stan rozmowy żył tylko w pamięci JS; każde przeładowanie montowało widget od zera. Niedopuszczalne (klient traci rozmowę przechodząc między produktami). Backend JUŻ trzymał historię po sessionId (startOrResume, closed_at IS NULL) — brakowało persystencji po stronie frontu + front-facing endpointu historii.
+
+**Decyzje:**
+- **145a — sessionId zapamiętany + historia odtwarzana z backendu.** Backend = źródło prawdy. Front zapamiętuje tylko sessionId (+timestamp), po remoncie widgetu pobiera historię z NOWEGO endpointu GET /api/chat/history (HMAC). Zero duplikacji treści w przeglądarce. Odrzucone 145b (cała historia w storage — rozjazd front/backend, treść w przeglądarce) i 145c (bez odtwarzania treści — nie spełnia wymogu).
+- **146b→147a — trwałość localStorage z TTL + przycisk „Nowa rozmowa".** Karol: największą frustracją była utrata rozmowy po zamknięciu przeglądarki → trwałość (localStorage), NIE sessionStorage. Ale z bezpiecznikami: TTL (rozmowa wygasa) + przycisk „Nowa rozmowa" (jawna kontrola) + graceful obsługa zamkniętej/wygasłej rozmowy w backendzie. Odrzucone 147b (bezterminowo — „wątek sprzed pół roku", pełna zależność od jawnego kończenia).
+- **TTL = 30 dni, KONFIGUROWALNY w panelu** (KEY_PERSIST_TTL_DAYS, walidacja 1-365). Pokrywa „wróciłem do tematu po dłuższej przerwie", domyka wygasanie.
+
+**Bezpieczeństwo (KRYTYCZNE):** endpoint history MUSI weryfikować właściciela rozmowy (ps_customer_id vs customerId z HMAC) — nie zwracać cudzej historii po podstawieniu sessionId. Dla gościa (customerId=0) sessionId pełni rolę sekretu dostępu (losowy, server-side, nieprzewidywalny).
+
+**Świadomie zaakceptowane (Karol):** trwałość = na współdzielonym komputerze następna osoba może zobaczyć poprzednią rozmowę. Dla sprzętu nurkowego niewrażliwe; przycisk „Nowa rozmowa" daje wyjście.
+
+**Deploy dwuczęściowy:** backend (endpoint history) CC wdraża sam; moduł PS (config TTL + boot + widget localStorage/odtwarzanie/przycisk) Karol wgrywa ręcznie (116b).
