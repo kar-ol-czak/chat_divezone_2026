@@ -14,6 +14,7 @@ use DiveChat\Controller\AdminRecommendationsController;
 use DiveChat\Shop\MysqlProductEnrichmentService;
 use DiveChat\Chat\ConversationStore;
 use DiveChat\Chat\SettingsStore;
+use DiveChat\Controller\AdminAnalyticsController;
 use DiveChat\Controller\AdminController;
 use DiveChat\Controller\AdminEditorialPicksController;
 use DiveChat\Controller\AdminPricingController;
@@ -92,16 +93,25 @@ return static function (
     $router->post('/api/admin/pricing', $pricingController->update(...));
 
     // Admin: Dashboard (TASK-055) – chronione przez AdminAuthMiddleware (basic auth + .htpasswd)
+    // CHAT-T-049 (decyzja 118b): analityka (cost/* + conversations/top) PRZEPIETA na
+    // nowy AdminAnalyticsController (kanal serwerowy, admin-only). Stary $adminController
+    // zostaje TYLKO dla conversations/{id} (decyzja 109a — NIE migrujemy, ginie z /admin).
     $htpasswdPath = dirname(__DIR__) . '/admin/.htpasswd';
     $adminAuth = new AdminAuthMiddleware($htpasswdPath);
     $costAnalytics = new CostAnalytics($db, $pricingService, $exchangeRateService);
     $conversationViewer = new ConversationViewer($db, $exchangeRateService);
     $adminController = new AdminController($adminAuth, $costAnalytics, $conversationViewer);
 
-    $router->get('/api/admin/cost/kpi', $adminController->kpi(...));
-    $router->get('/api/admin/cost/trend', $adminController->trend(...));
-    $router->get('/api/admin/cost/by-model', $adminController->byModel(...));
-    $router->get('/api/admin/conversations/top', $adminController->topConversations(...));
+    // CHAT-T-049 (Etap 2): Analityka na kanal serwerowy panelu PS, rola admin-only.
+    // Stary AdminController nietkniety (118b). UI Analityki = CHAT-T-050.
+    $adminAnalyticsController = new AdminAnalyticsController($costAnalytics, $serverVerifier, $db);
+    $router->get('/api/admin/cost/kpi', $adminAnalyticsController->kpi(...));
+    $router->get('/api/admin/cost/trend', $adminAnalyticsController->trend(...));
+    $router->get('/api/admin/cost/by-model', $adminAnalyticsController->byModel(...));
+    // Statyczna `conversations/top` MUSI byc PRZED parametryczna `conversations/{id}`
+    // (Router matchuje po kolejnosci). Top idzie na nowy kontroler (kanal serwerowy),
+    // {id} zostaje na starym (Basic Auth, decyzja 109a).
+    $router->get('/api/admin/conversations/top', $adminAnalyticsController->topConversations(...));
     $router->get('/api/admin/conversations/{id}', $adminController->conversationDetail(...));
 
     // Admin: Editorial Picks (T-008, ADR-054) — chronione przez AdminAuthMiddleware
