@@ -11,6 +11,7 @@ use DiveChat\Config;
 use DiveChat\Http\Request;
 use DiveChat\Http\Response;
 use DiveChat\Usage\CostGuard;
+use DiveChat\Usage\RateLimiter;
 
 /**
  * Endpoint czatu.
@@ -27,6 +28,7 @@ final class ChatController
         private readonly ChatService $chatService,
         private readonly ConversationStore $conversationStore,
         private readonly CostGuard $costGuard,
+        private readonly RateLimiter $rateLimiter,
     ) {}
 
     /**
@@ -34,6 +36,12 @@ final class ChatController
      * Tekst uzgodniony w CHAT-T-064 (decyzja 161/165b/166).
      */
     private const CAP_MESSAGE = 'Czat jest chwilowo niedostępny. Napisz na dive@divezone.pl lub zadzwoń 56 307 03 03 — chętnie pomożemy.';
+
+    /**
+     * Komunikat przy przekroczeniu rate-limitu (CHAT-T-066, ADR-064/082).
+     * Soft limit — wiadomosc bota, NIE blad sieci.
+     */
+    private const RATE_LIMIT_MESSAGE = 'Wysłałeś wiele wiadomości w krótkim czasie. Odczekaj chwilę albo napisz na dive@divezone.pl / 56 307 03 03.';
 
     /**
      * Sprawdza cap kosztow + ewentualnie wysyla alert. Idempotentnie.
@@ -74,6 +82,67 @@ final class ChatController
     private function maxInputChars(): int
     {
         return (int) (Config::get('DIVECHAT_MAX_INPUT_CHARS') ?? '2000');
+    }
+
+    /**
+     * Rate-limit per sessionId i per IP (CHAT-T-066). Inkrement PRZED LLM.
+     * Sprawdza OBA klucze (sess: i ip:); ktorykolwiek przekroczony -> true (odmowa).
+     * IP=null (np. niepoprawny REMOTE_ADDR) -> tylko per-session.
+     *
+     * Zwraca true jesli request ma byc ODRZUCONY.
+     */
+    private function rateLimitExceeded(string $sessionId, ?string $ip): bool
+    {
+        $sessMax = (int) (Config::get('DIVECHAT_RL_SESSION_MAX') ?? '10');
+        $sessWindow = (int) (Config::get('DIVECHAT_RL_SESSION_WINDOW') ?? '300');
+        $ipMax = (int) (Config::get('DIVECHAT_RL_IP_MAX') ?? '40');
+        $ipWindow = (int) (Config::get('DIVECHAT_RL_IP_WINDOW') ?? '300');
+
+        // KAZDY request inkrementuje OBA liczniki (atomowo). NIE robimy
+        // short-circuit po sess — chcemy widziec rzeczywiste obciazenie IP
+        // (napastnik moglby ratowac sie zmiana sessionId po wyczerpaniu sess
+        //  i wtedy ip: musi wykazac caly ruch, nie tylko czesc).
+        $sessOk = $this->rateLimiter->check('sess:' . $sessionId, $sessMax, $sessWindow);
+        $ipOk = $ip === null ? true : $this->rateLimiter->check('ip:' . $ip, $ipMax, $ipWindow);
+
+        return !$sessOk || !$ipOk;
+    }
+
+    /**
+     * Buduje payload odpowiedzi-przegrody (cap kosztow / rate-limit) ze wspolnym
+     * ksztaltem oczekiwanym przez front (transport.js onDone -> appendBotMessage).
+     */
+    private function gatePayload(string $message, string $sessionId, string $reasonKey): array
+    {
+        return [
+            'success' => false,
+            'response' => $message,
+            'session_id' => $sessionId,
+            'tools_used' => [],
+            'products' => [],
+            'usage' => null,
+            'conversation_cost' => null,
+            'diagnostics' => [$reasonKey => true],
+        ];
+    }
+
+    /**
+     * Emituje gate-response w trybie SSE (event done, NIE error — front pokaze
+     * jako wiadomosc bota, nie blad transportu).
+     */
+    private function emitSseGate(array $payload): never
+    {
+        Response::setCorsHeaders();
+        header('Content-Type: text/event-stream');
+        header('Cache-Control: no-cache');
+        header('Connection: keep-alive');
+        header('X-Accel-Buffering: no');
+        while (ob_get_level() > 0) {
+            ob_end_flush();
+        }
+        echo "event: done\ndata: " . json_encode($payload, JSON_UNESCAPED_UNICODE) . "\n\n";
+        flush();
+        exit;
     }
 
     public function handle(Request $request): void
@@ -118,16 +187,14 @@ final class ChatController
         // zwroc grzeczny komunikat jako wiadomosc bota (HTTP 200, success=false,
         // pole `response` z tekstem; front pokaze jako wiadomosc, nie blad sieci).
         if ($this->enforceCostGuard()) {
-            Response::json([
-                'success' => false,
-                'response' => self::CAP_MESSAGE,
-                'session_id' => $sessionId,
-                'tools_used' => [],
-                'products' => [],
-                'usage' => null,
-                'conversation_cost' => null,
-                'diagnostics' => ['cost_cap_reached' => true],
-            ]);
+            Response::json($this->gatePayload(self::CAP_MESSAGE, $sessionId, 'cost_cap_reached'));
+        }
+
+        // 2c. Rate-limit per sessionId + per IP (CHAT-T-066, warstwa 3 ochrony).
+        // Inkrement PRZED LLM (chcemy liczyc kazdy ruch, takze ten odrzucony — inaczej
+        // napastnik nie "kumuluje" sie w liczniku). Soft limit: 200 + komunikat bota.
+        if ($this->rateLimitExceeded($sessionId, $request->getClientIp())) {
+            Response::json($this->gatePayload(self::RATE_LIMIT_MESSAGE, $sessionId, 'rate_limited'));
         }
 
         // 3. Obsługa czatu
@@ -205,26 +272,13 @@ final class ChatController
         // (front transport.js: onDone(payload) -> appendBotMessage(payload.response)),
         // a nie blad transportu. Headery SSE musza pojsc PRZED echo.
         if ($this->enforceCostGuard()) {
-            Response::setCorsHeaders();
-            header('Content-Type: text/event-stream');
-            header('Cache-Control: no-cache');
-            header('Connection: keep-alive');
-            header('X-Accel-Buffering: no');
-            while (ob_get_level() > 0) {
-                ob_end_flush();
-            }
-            echo "event: done\ndata: " . json_encode([
-                'success' => false,
-                'response' => self::CAP_MESSAGE,
-                'session_id' => $sessionId,
-                'tools_used' => [],
-                'products' => [],
-                'usage' => null,
-                'conversation_cost' => null,
-                'diagnostics' => ['cost_cap_reached' => true],
-            ], JSON_UNESCAPED_UNICODE) . "\n\n";
-            flush();
-            exit;
+            $this->emitSseGate($this->gatePayload(self::CAP_MESSAGE, $sessionId, 'cost_cap_reached'));
+        }
+
+        // 2c. Rate-limit per sessionId + per IP (CHAT-T-066, warstwa 3 ochrony).
+        // Stream tez: event `done` (NIE `error`) — wiadomosc bota, nie blad sieci.
+        if ($this->rateLimitExceeded($sessionId, $request->getClientIp())) {
+            $this->emitSseGate($this->gatePayload(self::RATE_LIMIT_MESSAGE, $sessionId, 'rate_limited'));
         }
 
         // 3. Ustaw headery SSE + CORS

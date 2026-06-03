@@ -31,6 +31,7 @@ use DiveChat\Http\AdminAuthMiddleware;
 use DiveChat\Router;
 use DiveChat\Tools\OrderStatus;
 use DiveChat\Usage\CostGuard;
+use DiveChat\Usage\RateLimiter;
 
 /**
  * Definicje endpointów API.
@@ -54,10 +55,13 @@ return static function (
     // po HMAC customerId == ps_customer_id rozmowy).
     // CHAT-T-064: CostGuard — twardy dzienny cap kosztow + alert e-mail + limit
     // dlugosci inputu, sprawdzane PO HMAC, PRZED chatService (ochrona publiczna).
+    // CHAT-T-066: RateLimiter — sliding window per sessionId i per IP (token-bucket
+    // PG), PO cap/input, PRZED LLM. Wspolny PostgresConnection (singleton).
     $chatController = new ChatController(
         $chatService,
         new ConversationStore(),
         new CostGuard(PostgresConnection::getInstance()),
+        new RateLimiter(PostgresConnection::getInstance()),
     );
     $router->post('/api/chat', $chatController->handle(...));
     $router->post('/api/chat/stream', $chatController->stream(...));

@@ -82,6 +82,33 @@ final class Request
     }
 
     /**
+     * Realne IP klienta — NIESPOOFOWALNE (CHAT-T-066, ADR-064/082).
+     *
+     * Tylko REMOTE_ADDR. NIE czytamy X-Forwarded-For / X-Real-IP /
+     * CF-Connecting-IP, bo chat.divezone.pl NIE jest za zadnym zaufanym
+     * proxy (zdiagnozowane na PROD: HTTP_VIA brak, brak naglowkow CF-*
+     * w realnych requestach — wszystkie sa wstrzykiwalne przez klienta
+     * i da sie nimi obejsc limit per IP).
+     *
+     * Jesli kiedys backend zostanie postawiony za Cloudflarem lub innym
+     * zaufanym reverse proxy: ROZSZERZYC tu o whitelist zaufanych proxy
+     * (sprawdzic REMOTE_ADDR w zakresie sieci CF/innych) przed odczytem
+     * CF-Connecting-IP. Bez tej walidacji NIGDY nie ufac naglowkom XFF.
+     *
+     * filter_var FILTER_VALIDATE_IP: niepoprawne -> null. Caller wtedy
+     * pomija limit per IP, dziala wylacznie limit per sessionId.
+     */
+    public function getClientIp(): ?string
+    {
+        $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+        if (!is_string($ip) || $ip === '') {
+            return null;
+        }
+        $valid = filter_var($ip, FILTER_VALIDATE_IP);
+        return $valid === false ? null : $valid;
+    }
+
+    /**
      * Ustawia path params (wywoływane przez Router).
      */
     public function withParams(array $params): self
