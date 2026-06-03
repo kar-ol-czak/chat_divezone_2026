@@ -169,6 +169,24 @@ class AdminDivezoneChatController extends ModuleAdminController
         $css .= '.dz-status-reviewed{background:#5cb85c;}';
         $css .= '.dz-status-knowledge_created{background:#1a5e5a;}';
         $css .= '.dz-status-ignored{background:#999;}';
+        // CHAT-T-051: master-detail layout (113a) + pozycje listy + placeholder + formatowanie bubli.
+        $css .= '.dz-conv-layout{display:flex;gap:14px;align-items:flex-start;}';
+        $css .= '.dz-conv-list-col{width:340px;flex-shrink:0;max-height:75vh;overflow-y:auto;}';
+        $css .= '.dz-conv-detail-col{flex:1;min-width:0;max-height:75vh;overflow-y:auto;}';
+        $css .= '.dz-conv-list-col .dz-conv-filters{flex-direction:column;align-items:stretch;gap:8px;}';
+        $css .= '.dz-conv-list-col .dz-conv-filters > div{width:100%;}';
+        $css .= '.dz-conv-list-col .dz-conv-filters input[type=text],.dz-conv-list-col .dz-conv-filters select{width:100%;box-sizing:border-box;}';
+        $css .= '.dz-conv-items{list-style:none;padding:0;margin:8px 0;}';
+        $css .= '.dz-conv-items li{margin:0;padding:0;}';
+        $css .= '.dz-conv-item{display:block;padding:10px 12px;border-bottom:1px solid #eee;color:#333;text-decoration:none;}';
+        $css .= '.dz-conv-item:hover{background:#f5f5f5;color:#1a5e5a;text-decoration:none;}';
+        $css .= '.dz-conv-item.is-active{background:#e8f0fe;border-left:3px solid #1a5e5a;padding-left:9px;}';
+        $css .= '.dz-conv-item-msg{font-size:13px;font-weight:600;color:#222;margin-bottom:4px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.3;max-height:36px;}';
+        $css .= '.dz-conv-item-meta{font-size:11px;color:#777;margin-top:2px;display:flex;justify-content:space-between;gap:8px;align-items:center;}';
+        $css .= '.dz-conv-placeholder{background:#f7f9fa;border:1px dashed #ccc;padding:40px;text-align:center;color:#888;border-radius:6px;}';
+        $css .= '.dz-conv-bubble a{color:#1a5e5a;text-decoration:underline;word-break:break-all;}';
+        $css .= '.dz-conv-bubble a:hover{color:#155050;}';
+        $css .= '.dz-conv-bubble strong{font-weight:700;}';
         $css .= '</style>';
         return $css;
     }
@@ -636,16 +654,33 @@ class AdminDivezoneChatController extends ModuleAdminController
     // Render wiadomosci wg history.js: user/assistant -> babelki; tool_result pomijamy.
     // ============================================================================
 
+    /**
+     * CHAT-T-051 (113a): master-detail server-side. Jeden ekran, dwie kolumny.
+     * LEWA (waska, ~340px, wlasny scroll): lista rozmow (zawsze).
+     * PRAWA (elastyczna, wlasny scroll): wybrana rozmowa wg ?session_id
+     *   ALBO placeholder gdy brak ?session_id. Klik w pozycje listy = pelen reload
+     *   z nowym session_id (filtry/page zachowane w linku).
+     */
     private function renderConversationsSection($employeeId)
     {
         $sessionId = trim((string) Tools::getValue('session_id', ''));
+
+        $listHtml = $this->renderConversationsList($employeeId, $sessionId);
+
         if ($sessionId !== '') {
-            return $this->renderConversationDetail($employeeId, $sessionId);
+            $detailHtml = $this->renderConversationDetail($employeeId, $sessionId);
+        } else {
+            $detailHtml = $this->renderConvPlaceholder();
         }
-        return $this->renderConversationsList($employeeId);
+
+        $html  = '<div class="dz-conv-layout">';
+        $html .= '<aside class="dz-conv-list-col">' . $listHtml . '</aside>';
+        $html .= '<section class="dz-conv-detail-col">' . $detailHtml . '</section>';
+        $html .= '</div>';
+        return $html;
     }
 
-    private function renderConversationsList($employeeId)
+    private function renderConversationsList($employeeId, $activeSessionId = '')
     {
         $page         = max(1, (int) Tools::getValue('page', 1));
         $perPage      = (int) Tools::getValue('per_page', 20);
@@ -711,23 +746,13 @@ class AdminDivezoneChatController extends ModuleAdminController
             return $html;
         }
 
-        $html .= '<table class="table" style="margin:0;">';
-        $html .= '<thead><tr>';
-        $html .= '<th>' . $this->l('Rozpoczeto') . '</th>';
-        $html .= '<th>' . $this->l('Aktualizacja') . '</th>';
-        $html .= '<th>' . $this->l('Klient') . '</th>';
-        $html .= '<th style="width:60px;">' . $this->l('Wiad.') . '</th>';
-        $html .= '<th>' . $this->l('Model') . '</th>';
-        $html .= '<th style="width:90px;">' . $this->l('Koszt') . '</th>';
-        $html .= '<th>' . $this->l('Status') . '</th>';
-        $html .= '<th style="width:90px;"></th>';
-        $html .= '</tr></thead><tbody>';
-
+        // CHAT-T-051 (113a + spec listy): waska kolumna z pozycjami zamiast tabeli.
+        // Kazda pozycja: pierwsza wiadomosc (skrocona) + data + "Klient | Status".
+        $html .= '<ul class="dz-conv-items">';
         foreach ($convs as $conv) {
-            $html .= $this->renderConvRow($conv);
+            $html .= $this->renderConvListItem($conv, $activeSessionId);
         }
-
-        $html .= '</tbody></table>';
+        $html .= '</ul>';
 
         $html .= $this->renderConvPager($page, $perPage, $total, $filters);
 
@@ -766,40 +791,88 @@ class AdminDivezoneChatController extends ModuleAdminController
         return $html;
     }
 
-    private function renderConvRow($conv)
+    /**
+     * Pozycja listy (waska kolumna, CHAT-T-051) — DOKLADNIE 3 pola wg decyzji Karola:
+     *  1. Pierwsza wiadomosc (skrocona ~80 znakow + ellipsis; fallback "(brak tresci)").
+     *  2. Data rozpoczecia (formatConvDate Y-m-d H:i).
+     *  3. "Klient | Status (badge)" + opcjonalnie ikonka luki wiedzy.
+     * Klik = pelen reload zakladki z session_id (filtry/page zachowane w linku).
+     */
+    private function renderConvListItem($conv, $activeSessionId)
     {
-        $sessionId     = isset($conv['session_id']) ? (string) $conv['session_id'] : '';
-        $customerId    = isset($conv['customer_id']) ? (int) $conv['customer_id'] : 0;
-        $messageCount  = isset($conv['message_count']) ? (int) $conv['message_count'] : 0;
-        $model         = isset($conv['model_used']) ? (string) $conv['model_used'] : '';
-        $estimatedCost = isset($conv['estimated_cost']) ? (float) $conv['estimated_cost'] : 0.0;
-        $startedAt     = isset($conv['started_at']) ? (string) $conv['started_at'] : '';
-        $updatedAt     = isset($conv['updated_at']) ? (string) $conv['updated_at'] : '';
-        $knowledgeGap  = !empty($conv['knowledge_gap']);
-        $adminStatus   = (isset($conv['admin_status']) && $conv['admin_status'] !== null && $conv['admin_status'] !== '')
+        $sessionId    = isset($conv['session_id']) ? (string) $conv['session_id'] : '';
+        $customerId   = isset($conv['customer_id']) ? (int) $conv['customer_id'] : 0;
+        $startedAt    = isset($conv['started_at']) ? (string) $conv['started_at'] : '';
+        $firstMessage = isset($conv['first_message']) ? $conv['first_message'] : null;
+        $knowledgeGap = !empty($conv['knowledge_gap']);
+        $adminStatus  = (isset($conv['admin_status']) && $conv['admin_status'] !== null && $conv['admin_status'] !== '')
             ? (string) $conv['admin_status']
             : 'new';
 
-        $detailUrl = $this->context->link->getAdminLink('AdminDivezoneChat')
+        $url = $this->context->link->getAdminLink('AdminDivezoneChat')
             . '&tab=' . self::TAB_CONVERSATIONS
             . '&session_id=' . rawurlencode($sessionId);
 
-        $rowStyle = $knowledgeGap ? ' style="background:#fff8e1;"' : '';
+        // Zachowaj filtry i strone w linkach — klik nie zeruje kontekstu wyszukiwania.
+        foreach (array('page', 'per_page', 'search', 'admin_status', 'knowledge_gap') as $k) {
+            $v = Tools::getValue($k, '');
+            if ($v !== '' && $v !== null) {
+                $url .= '&' . $k . '=' . rawurlencode((string) $v);
+            }
+        }
 
-        $html  = '<tr' . $rowStyle . '>';
-        $html .= '<td>' . htmlspecialchars($this->formatConvDate($startedAt), ENT_QUOTES) . '</td>';
-        $html .= '<td>' . htmlspecialchars($this->formatConvDate($updatedAt), ENT_QUOTES) . '</td>';
-        $html .= '<td>' . ($customerId > 0 ? '#' . $customerId : '<em style="color:#999;">' . $this->l('gosc') . '</em>') . '</td>';
-        $html .= '<td>' . $messageCount . '</td>';
-        $html .= '<td><code style="font-size:11px;">' . htmlspecialchars($model, ENT_QUOTES) . '</code></td>';
-        $html .= '<td>$' . number_format($estimatedCost, 4, '.', '') . '</td>';
-        $html .= '<td>' . $this->renderStatusBadge($adminStatus);
+        $activeClass = ($sessionId !== '' && $sessionId === $activeSessionId) ? ' is-active' : '';
+        $msgPreview  = $this->truncateFirstMessage($firstMessage);
+
+        $html  = '<li><a href="' . htmlspecialchars($url, ENT_QUOTES) . '" class="dz-conv-item' . $activeClass . '">';
+        $html .= '<div class="dz-conv-item-msg">' . htmlspecialchars($msgPreview, ENT_QUOTES) . '</div>';
+        $html .= '<div class="dz-conv-item-meta"><span>' . htmlspecialchars($this->formatConvDate($startedAt), ENT_QUOTES) . '</span></div>';
+        $html .= '<div class="dz-conv-item-meta"><span>';
+        $html .= ($customerId > 0 ? '#' . $customerId : '<em>' . $this->l('gosc') . '</em>') . ' | ' . $this->renderStatusBadge($adminStatus);
         if ($knowledgeGap) {
             $html .= ' <span title="' . $this->l('luka wiedzy') . '" style="color:#d9534f;font-weight:bold;">&#9888;</span>';
         }
-        $html .= '</td>';
-        $html .= '<td><a href="' . htmlspecialchars($detailUrl, ENT_QUOTES) . '" class="btn btn-default btn-xs">' . $this->l('Otworz') . '</a></td>';
-        $html .= '</tr>';
+        $html .= '</span></div>';
+        $html .= '</a></li>';
+        return $html;
+    }
+
+    /**
+     * Skraca pierwsza wiadomosc do ~80 znakow + ellipsis (wzorzec admin-tables.js).
+     * Fallback "(brak tresci)" gdy puste/null (decyzja 115a). Multibyte-safe.
+     */
+    private function truncateFirstMessage($msg)
+    {
+        if ($msg === null) {
+            return $this->l('(brak tresci)');
+        }
+        $msg = trim((string) $msg);
+        if ($msg === '') {
+            return $this->l('(brak tresci)');
+        }
+        $maxLen = 80;
+        if (function_exists('mb_strlen')) {
+            if (mb_strlen($msg, 'UTF-8') > $maxLen) {
+                return mb_substr($msg, 0, $maxLen, 'UTF-8') . '…';
+            }
+        } else {
+            if (strlen($msg) > $maxLen) {
+                return substr($msg, 0, $maxLen) . '…';
+            }
+        }
+        return $msg;
+    }
+
+    /**
+     * Prawa kolumna gdy brak ?session_id (CHAT-T-051).
+     */
+    private function renderConvPlaceholder()
+    {
+        $html  = '<div class="panel" style="border-top-left-radius:0;">';
+        $html .= '<div class="panel-heading"><i class="icon-comment"></i> ' . $this->l('Rozmowa') . '</div>';
+        $html .= '<div style="padding:18px;">';
+        $html .= '<div class="dz-conv-placeholder">' . $this->l('Wybierz rozmowe z listy po lewej, aby zobaczyc szczegoly.') . '</div>';
+        $html .= '</div></div>';
         return $html;
     }
 
@@ -835,13 +908,11 @@ class AdminDivezoneChatController extends ModuleAdminController
         $endpoint = self::ENDPOINT_CONVERSATIONS . '/' . rawurlencode($sessionId);
         $resp     = $this->callBackend($endpoint, $employeeId);
 
-        $backUrl  = $this->context->link->getAdminLink('AdminDivezoneChat') . '&tab=' . self::TAB_CONVERSATIONS;
-
         $html  = '<div class="panel" style="border-top-left-radius:0;">';
         $html .= '<div class="panel-heading"><i class="icon-comment"></i> ' . $this->l('Rozmowa') . '</div>';
         $html .= '<div style="padding:18px;">';
 
-        $html .= '<p style="margin:0 0 12px;"><a href="' . htmlspecialchars($backUrl, ENT_QUOTES) . '">&laquo; ' . $this->l('wroc do listy') . '</a></p>';
+        // CHAT-T-051: brak "wroc do listy" — master-detail, lista jest stale widoczna po lewej.
 
         if ($this->convFlash !== '') {
             $html .= '<div class="dz-flash ' . htmlspecialchars($this->convFlashType, ENT_QUOTES) . '">'
@@ -977,18 +1048,52 @@ class AdminDivezoneChatController extends ModuleAdminController
             if ($role === 'user') {
                 $html .= '<div class="dz-conv-bubble dz-conv-bubble--user">';
                 $html .= '<div class="role">' . $this->l('Klient') . '</div>';
-                $html .= '<div>' . nl2br(htmlspecialchars($content, ENT_QUOTES)) . '</div>';
+                $html .= '<div>' . $this->formatConvBubbleText($content) . '</div>';
                 $html .= '</div>';
             } elseif ($role === 'assistant' && $content !== '') {
                 $html .= '<div class="dz-conv-bubble dz-conv-bubble--ai">';
                 $html .= '<div class="role">' . $this->l('AI') . '</div>';
-                $html .= '<div>' . nl2br(htmlspecialchars($content, ENT_QUOTES)) . '</div>';
+                $html .= '<div>' . $this->formatConvBubbleText($content) . '</div>';
                 $html .= '</div>';
             }
             // tool_result -> POMIJAMY (wzorzec history.js linie 195-196).
         }
         $html .= '</div>';
         return $html;
+    }
+
+    /**
+     * CHAT-T-051 (Problem B): bezpieczne formatowanie tresci bubla.
+     * KOLEJNOSC KRYTYCZNA dla bezpieczenstwa:
+     *  1. htmlspecialchars NAJPIERW — zero surowego HTML z tresci rozmowy.
+     *  2. **bold** -> <strong> (regex na sparowanych ** — htmlspecialchars
+     *     nie zmienia gwiazdek, wiec dziala na zescapowanym tekscie).
+     *  3. URL http(s) -> <a target=_blank rel="noopener noreferrer nofollow">.
+     *     Po escape & w URL jest juz &amp; — budujac href uzywamy tej formy
+     *     bez odwracania escape (odwracanie = wektor XSS).
+     *  4. nl2br NA KONCU — po wszystkich podstawieniach.
+     * Zakres minimalny: bold + linki. Bez markdown-parsera, obrazkow, list.
+     */
+    private function formatConvBubbleText($raw)
+    {
+        $escaped = htmlspecialchars((string) $raw, ENT_QUOTES, 'UTF-8');
+
+        // 2. **bold** — non-greedy, bez gwiazdek wewnatrz.
+        $escaped = preg_replace('/\*\*([^*]+?)\*\*/u', '<strong>$1</strong>', $escaped);
+
+        // 3. URL — konserwatywnie: trim konczacych znakow interpunkcyjnych ktore
+        //    zwykle nie sa czesc URL.
+        $escaped = preg_replace_callback(
+            '#\b(https?://[^\s<>"\']+)#i',
+            function ($m) {
+                $url = rtrim($m[1], '.,;:!?)]}>');
+                return '<a href="' . $url . '" target="_blank" rel="noopener noreferrer nofollow">' . $url . '</a>';
+            },
+            $escaped
+        );
+
+        // 4. nl2br — na koncu, po linkach (gdyby URL byl wewnatrz nowej linii).
+        return nl2br($escaped);
     }
 
     private function renderConvDiagnostics($resp)
