@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace DiveChat\Chat;
 
-use DiveChat\AI\AIProviderInterface;
+use DiveChat\AI\AIProviderFactory;
 use DiveChat\AI\AIResponse;
 use DiveChat\AI\ConversationCost;
 use DiveChat\AI\ToolCall;
@@ -24,7 +24,7 @@ final class ChatService
     private const MAX_HISTORY_MESSAGES = 10;
 
     public function __construct(
-        private readonly AIProviderInterface $aiProvider,
+        private readonly AIProviderFactory $providerFactory,
         private readonly ToolRegistry $toolRegistry,
         private readonly ConversationStore $conversationStore,
         private readonly SettingsStore $settingsStore,
@@ -98,17 +98,32 @@ final class ChatService
         $knowledgeGap = false;
         $timings = ['ai_ms' => 0.0, 'tool_ms' => 0.0, 'embedding_ms' => 0.0];
 
-        // Rozpoznaj aktualnego providera
-        $currentProvider = Config::get('AI_PROVIDER', str_starts_with(Config::get('ANTHROPIC_MODEL', ''), 'claude') ? 'claude' : 'openai');
+        // CHAT-T-068 (184a): provider wynika z modelu wybranego w panelu PS,
+        // NIE z .env. Panel = źródło prawdy. .env jest fallbackiem tylko gdy panel
+        // pusty (lub model spoza enuma — wtedy AIProviderFactory loguje warning).
+        $panelModelId = !empty($settings['model_primary']) ? $settings['model_primary'] : null;
+        $primaryModel = $panelModelId !== null ? AIModel::tryFrom($panelModelId) : null;
+
+        if ($primaryModel !== null) {
+            $currentProvider = $primaryModel->provider();
+        } else {
+            // Panel pusty albo model spoza enuma → fallback .env (zachowanie sprzed CHAT-T-068).
+            $currentProvider = Config::get(
+                'AI_PROVIDER',
+                str_starts_with(Config::get('ANTHROPIC_MODEL', ''), 'claude') ? 'claude' : 'openai',
+            );
+        }
+
+        // Instancja providera dopasowana do modelu z panelu (lub fallback .env).
+        // Bez tego request np. dla Claude poszedłby do API OpenAI (rozjazd warstwy 1).
+        $aiProvider = $this->providerFactory->createForModel($panelModelId);
 
         // Opcje AI: model override + temperature/effort wg flag wybranego modelu.
+        // Po naprawie warstwy 2 $currentProvider zawsze zgadza się z $primaryModel->provider(),
+        // więc model_override przejdzie zawsze gdy panel ustawił rozpoznawalny model.
         $aiOptions = [];
-        $primaryModel = null;
-        if (!empty($settings['model_primary'])) {
-            $primaryModel = AIModel::tryFrom($settings['model_primary']);
-            if ($primaryModel !== null && $primaryModel->provider() === $currentProvider) {
-                $aiOptions['model_override'] = $settings['model_primary'];
-            }
+        if ($primaryModel !== null && $primaryModel->provider() === $currentProvider) {
+            $aiOptions['model_override'] = $primaryModel->value;
         }
 
         if ($primaryModel !== null) {
@@ -133,7 +148,7 @@ final class ChatService
             }
 
             $aiStart = microtime(true);
-            $response = $this->aiProvider->chat($messages, $toolDefinitions, $aiOptions);
+            $response = $aiProvider->chat($messages, $toolDefinitions, $aiOptions);
             $iterLatencyMs = (int) ((microtime(true) - $aiStart) * 1000);
             $timings['ai_ms'] += $iterLatencyMs;
 

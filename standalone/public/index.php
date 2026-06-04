@@ -31,8 +31,12 @@ Response::handlePreflight();
 // Załaduj .env
 Config::load(dirname(__DIR__));
 
-// Inicjalizuj serwisy
-$aiProvider = AIProviderFactory::create();
+// Inicjalizuj serwisy.
+// CHAT-T-068 (184a): ChatService dostaje fabrykę zamiast jednej instancji providera —
+// instancja jest tworzona per-request na podstawie modelu wybranego w panelu PS
+// (ClaudeProvider dla claude-*, OpenAIProvider dla gpt-*). Bez tego .env AI_PROVIDER
+// przebijał panel.
+$providerFactory = new AIProviderFactory();
 $embeddingService = new EmbeddingService();
 
 $registerTools = require dirname(__DIR__) . '/config/tools.php';
@@ -44,7 +48,7 @@ $exchangeRateService = new ExchangeRateService($db);
 $usageLogger = new UsageLogger($db, $pricingService, $exchangeRateService);
 
 $chatService = new ChatService(
-    $aiProvider,
+    $providerFactory,
     $toolRegistry,
     new ConversationStore(),
     new SettingsStore(),
