@@ -386,6 +386,41 @@ button { cursor: pointer; }
   padding: 4px 8px;
 }
 
+/* CHAT-T-075: markdown w dymkach (renderMarkdown).
+   <p>: zeruj margines pierwszego/ostatniego w dymku, by nie psul odstepow.
+   <a>: kontrast + podkreslenie + tappable (min-height 24px), break-all dla
+        dlugich URL-i (RWD). Link w bubble-user (teal tlo) jasny zeby
+        kontrastowal; w assistant ciemny teal.
+   <ul>/<li>: lekkie wciecie i odstepy.
+   <strong>: pelne pogrubienie. */
+.bubble p {
+  margin: 0 0 8px;
+}
+.bubble p:last-child { margin-bottom: 0; }
+
+.bubble strong { font-weight: 700; }
+
+.bubble a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.bubble-user a { color: #e6f3f3; }
+.bubble-assistant a { color: var(--teal-dark); }
+.bubble a:hover, .bubble a:focus-visible { text-decoration-thickness: 2px; }
+
+.bubble ul {
+  margin: 6px 0 8px;
+  padding-left: 22px;
+}
+.bubble li {
+  margin: 2px 0;
+  line-height: 1.45;
+}
+.bubble ul:last-child { margin-bottom: 0; }
+
 .status-form {
   background: var(--surface);
   padding: 14px 14px calc(14px + env(safe-area-inset-bottom));

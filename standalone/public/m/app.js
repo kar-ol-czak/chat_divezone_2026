@@ -48,6 +48,59 @@
       .replace(/'/g, '&#39;');
   }
 
+  /* renderMarkdown: bold / linki / listy / paragrafy.
+     1:1 z produkcyjnym widgetem (modules/divezone_chat/views/js/widget-bundle.js
+     linie 264-321). KOLEJNOSC KRYTYCZNA: najpierw escape (XSS-safe), potem
+     dokladanie tagow przez replace. Linki tylko http(s)/mailto. */
+  function renderMarkdown(text) {
+    if (text === null || text === undefined || text === '') return '';
+    var safe = escHtml(text);
+
+    // links: [label](url) — tylko http(s) i mailto
+    safe = safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,
+      function (_, label, href) {
+        return '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
+      });
+
+    // bold **...**
+    safe = safe.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+
+    // listy: linie zaczynajace sie od "- " lub "• " grupowane w <ul>
+    var lines = safe.split(/\n/);
+    var out = [];
+    var listBuf = [];
+    function flushList() {
+      if (listBuf.length) {
+        out.push('<ul>' + listBuf.map(function (it) { return '<li>' + it + '</li>'; }).join('') + '</ul>');
+        listBuf = [];
+      }
+    }
+    var paraBuf = [];
+    function flushPara() {
+      if (paraBuf.length) {
+        out.push('<p>' + paraBuf.join('<br>') + '</p>');
+        paraBuf = [];
+      }
+    }
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var m = line.match(/^\s*(?:-|•)\s+(.*)$/);
+      if (m) {
+        flushPara();
+        listBuf.push(m[1]);
+      } else if (line.trim() === '') {
+        flushList();
+        flushPara();
+      } else {
+        flushList();
+        paraBuf.push(line);
+      }
+    }
+    flushList();
+    flushPara();
+    return out.join('');
+  }
+
   function showView(name) {
     Object.keys(views).forEach(function (k) {
       views[k].hidden = (k !== name);
@@ -420,7 +473,12 @@
       var content = stringifyContent(m.content);
       if (!content) return '';
       var cls = m.role === 'user' ? 'bubble bubble-user' : 'bubble bubble-assistant';
-      return '<div class="' + cls + '">' + escHtml(content) + '</div>';
+      // CHAT-T-075: renderMarkdown 1:1 z widget produkcyjnym — bold/linki/listy/
+      // paragrafy. Sam escape (escHtml) za malo: assistant zwraca **bold** i
+      // [label](url), klient widziel surowy tekst. renderMarkdown escape'uje
+      // PRZED dokladaniem tagow — XSS-safe. Stosujemy dla obu rol (user/assistant)
+      // — escape chroni przed wstrzyknieciem nawet jesli user wkleil <script>.
+      return '<div class="' + cls + '">' + renderMarkdown(content) + '</div>';
     }).join('');
 
     if (!rendered) {
