@@ -6,6 +6,17 @@
 <meta name="theme-color" content="#1e6363">
 <meta name="robots" content="noindex, nofollow">
 <title>DiveZone — rozmowy</title>
+
+<!-- CHAT-T-073: PWA — instalacja na ekran główny (Android + iPhone).
+     Ścieżki relatywne (manifest, icons/) — scope /m/ ten sam co cookie Path=/m. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+<!-- iOS PWA meta (Safari: standalone, status bar, nazwa na ekranie głównym) -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DiveZone">
+
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>

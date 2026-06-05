@@ -594,6 +594,7 @@
     bindLogin();
     bindList();
     bindDetail();
+    registerServiceWorker();
 
     api('GET', '/whoami').then(function (r) {
       if (r.ok && r.data && r.data.employee_id) {
@@ -606,6 +607,21 @@
     }).catch(function () {
       showView('login');
     });
+  }
+
+  /* CHAT-T-073: rejestracja SW. Scope /m/ spojny z cookie Path=/m
+     i start_url manifestu. Failure → cicho (PWA opcjonalna, app dziala
+     normalnie w przegladarce). */
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost') return;
+    try {
+      navigator.serviceWorker.register('sw.js', { scope: '/m/' }).catch(function (err) {
+        if (window.console && console.warn) console.warn('SW register failed:', err);
+      });
+    } catch (e) {
+      // SW nieobslugiwany / blad — ignoruj.
+    }
   }
 
   if (document.readyState === 'loading') {
