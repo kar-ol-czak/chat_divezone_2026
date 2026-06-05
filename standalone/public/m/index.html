@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e6363">
+<meta name="robots" content="noindex, nofollow">
+<title>DiveZone — rozmowy</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app" class="app">
+
+  <!-- ===== VIEW: LOGIN ===== -->
+  <section id="view-login" class="view view-login" hidden>
+    <div class="login-card">
+      <h1 class="login-title">DiveZone</h1>
+      <p class="login-subtitle">Zaloguj się danymi pracownika sklepu.</p>
+
+      <form id="login-form" class="login-form" novalidate>
+        <label class="field">
+          <span class="field-label">E-mail</span>
+          <input type="email" id="login-email" class="field-input"
+                 autocomplete="username" inputmode="email"
+                 spellcheck="false" autocapitalize="none" required>
+        </label>
+
+        <label class="field">
+          <span class="field-label">Hasło</span>
+          <input type="password" id="login-password" class="field-input"
+                 autocomplete="current-password" required>
+        </label>
+
+        <button type="submit" id="login-submit" class="btn btn-primary btn-block">
+          Zaloguj
+        </button>
+
+        <p id="login-error" class="form-error" hidden></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ===== VIEW: LIST ===== -->
+  <section id="view-list" class="view view-list" hidden>
+    <header class="top-bar">
+      <h2 class="top-bar-title">Rozmowy</h2>
+      <div class="top-bar-actions">
+        <button type="button" id="btn-refresh" class="icon-btn" aria-label="Odśwież listę">
+          <span class="icon-refresh" aria-hidden="true">⟳</span>
+        </button>
+        <button type="button" id="btn-logout" class="icon-btn" aria-label="Wyloguj">
+          <span class="icon-logout" aria-hidden="true">⎋</span>
+        </button>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist" aria-label="Filtr rozmów">
+      <button type="button" class="tab" role="tab" data-filter="todo" aria-selected="true">Do obsługi</button>
+      <button type="button" class="tab" role="tab" data-filter="gap" aria-selected="false">Luki wiedzy</button>
+      <button type="button" class="tab" role="tab" data-filter="all" aria-selected="false">Wszystkie</button>
+    </nav>
+
+    <div class="search-row">
+      <input type="search" id="list-search" class="search-input"
+             placeholder="Szukaj w treści…" inputmode="search"
+             autocapitalize="none" autocomplete="off" spellcheck="false">
+    </div>
+
+    <div id="ptr-indicator" class="ptr-indicator" aria-hidden="true">
+      <span class="ptr-spinner"></span>
+      <span class="ptr-label">Pociągnij, aby odświeżyć</span>
+    </div>
+
+    <div id="list-items" class="list-items" role="list" aria-live="polite"></div>
+
+    <div id="list-status" class="list-status" aria-live="polite"></div>
+
+    <div class="list-footer">
+      <button type="button" id="btn-load-more" class="btn btn-secondary btn-block" hidden>
+        Załaduj więcej
+      </button>
+    </div>
+  </section>
+
+  <!-- ===== VIEW: DETAIL ===== -->
+  <section id="view-detail" class="view view-detail" hidden>
+    <header class="top-bar">
+      <button type="button" id="btn-back" class="icon-btn" aria-label="Wróć do listy">
+        <span aria-hidden="true">←</span>
+      </button>
+      <h2 class="top-bar-title">Rozmowa</h2>
+      <div class="top-bar-actions" aria-hidden="true"></div>
+    </header>
+
+    <div id="detail-meta" class="detail-meta"></div>
+
+    <div id="detail-messages" class="detail-messages" role="log" aria-live="polite"></div>
+
+    <form id="status-form" class="status-form" novalidate>
+      <h3 class="status-title">Reagowanie</h3>
+
+      <div class="status-segmented" role="radiogroup" aria-label="Status rozmowy">
+        <label class="seg"><input type="radio" name="status" value="new"><span>Nowa</span></label>
+        <label class="seg"><input type="radio" name="status" value="reviewed"><span>Przejrzana</span></label>
+        <label class="seg"><input type="radio" name="status" value="knowledge_created"><span>Dodano wiedzę</span></label>
+        <label class="seg"><input type="radio" name="status" value="ignored"><span>Pominięta</span></label>
+      </div>
+
+      <label class="field">
+        <span class="field-label">Notatka (opcjonalna)</span>
+        <textarea id="status-notes" class="field-input field-textarea" rows="3"
+                  placeholder="Co warto zapamiętać?"></textarea>
+      </label>
+
+      <button type="submit" id="btn-save-status" class="btn btn-primary btn-block">
+        Zapisz
+      </button>
+
+      <p id="status-feedback" class="form-feedback" hidden></p>
+    </form>
+  </section>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>
