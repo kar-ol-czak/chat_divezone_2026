@@ -29,6 +29,9 @@ node_modules/
 cache/
 *.log
 
+# Standalone PHP error log (lokalny debug, NIGDY w git)
+standalone/public/error_log
+
 # MCP config (zawiera hasła)
 .mcp.json
 
