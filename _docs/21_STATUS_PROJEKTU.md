@@ -151,6 +151,7 @@ Handoff gotowy: `_docs/23_handoff_widget_produkcyjny.md`. Research panelu (3 pli
 | CHAT-008 | alias map statusow BARTEK/LESZEK w OrderStatus.php (defense in depth; dane pracownikow LOKALNE poza gitem) | P1 |
 | renumeracja | `_docs/` ma zdublowane numery (23, 24 x2-3 z roznych sesji) — uporzadkowac przy okazji | P3 |
 | PRICE_FLOOR_RATIO | przeniesc z const do shop_config (z T-015) | P3 |
+| CHAT-T-070-dług | get_shop_schedule: dodać sformatowane pola `date_pl`/`weekday_pl` (PL) do tool result, prompt cytuje gotowy string zamiast parsować YYYY-MM-DD (ADR-085 / Q208a). Domyka deterministycznie regułę CYTOWANIA DATY (obecnie mitygacja promptowa, zdała smoke #55931 ale probabilistyczna). Backend formatuje, model przepisuje. | P2 |
 
 ### Decyzje czekające na Karola
 
