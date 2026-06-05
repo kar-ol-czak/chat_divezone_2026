@@ -79,3 +79,29 @@ Sklep ma logo/favicon: ~/public_html/newtmp2/img/favicon128x128.png oraz logo-di
 - Raport: _instances/frontend/handoff/CHAT-T-073_done.md.
 - Status: dopisać CHAT-T-073 do _docs/21_STATUS_PROJEKTU.md (+ odnotować: mobile admin MVP KOMPLETNY T-071/072/073/074/075; push = faza 2 osobno).
 - Git: git status; git add per ścieżka (public/m/manifest.webmanifest, public/m/sw.js, public/m/icons/*, public/m/index.html, public/m/app.js jeśli zmieniony, task, handoff); commit wg konwencji; push origin main. Osobny "docs:" dla statusu.
+
+---
+
+## ANEKS A (Q223a) — poprawka Content-Type manifestu
+
+**Problem (zweryfikowany z zewnątrz):** GET /m/manifest.webmanifest → 200, ale Content-Type = `application/octet-stream` (nie `application/manifest+json`). Chrome/Android to toleruje (instalacja działa), ale Safari/iOS potrafi ZIGNOROWAĆ manifest z błędnym MIME → ryzyko dla iPhone (wspólniczka, połowa odbiorców). Usuwamy ryzyko PRZED smoke iPhone (K4), nie po.
+
+**Zakres:** dodać `public/m/.htaccess` z poprawnym MIME dla .webmanifest. TYLKO to. ZERO innych zmian.
+
+Zawartość public/m/.htaccess:
+```
+AddType application/manifest+json .webmanifest
+```
+(opcjonalnie też: `AddType image/png .png` — zwykle zbędne, serwer już zwraca image/png; nie dodawać jeśli niepotrzebne.)
+
+**KRYTYCZNE — nie zepsuć routingu:**
+- Główny webroot .htaccess ma DirectoryIndex + rewrite (nie-plik/nie-katalog → index.php API). `.htaccess` w public/m/ z samym AddType jest NIEKONFLIKTOWY (nie dotyka RewriteEngine), ale POTWIERDZIĆ po wdrożeniu, że /m/ nadal serwuje statykę i NIE przechwytuje go router PHP.
+- Jeśli AllowOverride wyłączone dla public/m/ (AddType nie zadziała) → fallback: rename manifestu na manifest.json + aktualizacja <link rel="manifest" href="manifest.json"> (manifest.json częściej ma poprawny MIME serwerowy). Wybrać .htaccess jako pierwsze podejście (główny .htaccess działa w tym webroot, więc override włączony).
+
+**Kryteria akceptacji aneksu:**
+A1. GET /m/manifest.webmanifest → Content-Type `application/manifest+json` (nie octet-stream).
+A2. GET /m/ → 200, statyka (HTML), router NIE przechwycił (brak regresji T-072).
+A3. GET /m/api/whoami → 401 (API nietknięte).
+A4. (iPhone, gdy wspólniczka dostępna) K4: "Dodaj do ekranu głównego" łapie ikonę DiveZone + nazwę, uruchamia standalone.
+
+**Deploy + git:** scp public/m/.htaccess (+ ew. rename manifestu) na PROD. Smoke A1-A3 (A4 ad hoc iPhone). git add public/m/.htaccess (+ ew. manifest.json, index.html); commit wg konwencji; push. Osobny "docs:" jeśli status aktualizowany.
