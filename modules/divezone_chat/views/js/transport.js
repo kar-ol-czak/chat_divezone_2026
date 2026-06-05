@@ -1,26 +1,96 @@
 /*!
  * DiveZone Chat — transport (auth + streaming) — WYMIENIALNA WARSTWA
- * CHAT-T-037 etap 1, ADR-069 (etap 1 = HMAC, wymiana na JWT = etap 2/3
- * przez podmiane tego JEDNEGO pliku, reszta widgetu bez zmian).
+ * CHAT-T-037 (etap 1, HMAC) + CHAT-T-069 (odswiezanie tokenu).
+ * ADR-069: wymiana warstwy = podmiana TEGO JEDNEGO pliku (np. JWT w etapie 2/3),
+ *          reszta widgetu bez zmian.
  *
  * Eksponuje globalnie: window.DivezoneChatTransport
  *
  * sendMessage(message, sessionId, callbacks) -> AbortController
  *   callbacks: { onStatus(text), onDone(payload), onError(msg) }
  *
- * Token + customerId + time + backendUrl czyta z window.DIVEZONE_CHAT_BOOT
- * (ustawione przez shim PHP w hookDisplayFooter). NOTA: token ma anti-replay
- * 1 h na backendzie (HmacVerifier::maxAgeSec=3600, CHAT-T-057 — wczesniej 5 min).
- * Etap 1 emituje JEDEN token na stronie — sesja > 1 h zwroci 401. Persystencja
- * miedzy stronami (CHAT-T-059) odswieza token przy kazdym reload PS, wiec
- * problem dotyczy tylko sesji bez nawigacji powyzej godziny.
- * Pelne odswiezanie tokenu z transportu = ADR-064 (przyszle).
+ * Token + customerId + time + backendUrl + tokenUrl czyta z window.DIVEZONE_CHAT_BOOT
+ * (ustawione przez shim PHP w hookDisplayFooter).
+ *
+ * Odswiezanie tokenu (ADR-084):
+ *  - PROAKTYWNE: przed kazdym requestem sprawdzamy wiek BOOT.time; jesli starszy
+ *    niz PROACTIVE_REFRESH_SEC, pobieramy nowy z BOOT.tokenUrl (endpoint modulu PS
+ *    na tym samym originie, credentials:'include' = ciastko sesji PS). Bez timerow w tle.
+ *  - REAKTYWNE: kazda z 3 funkcji (sendMessage, checkOrderStatus, fetchHistory)
+ *    przy odpowiedzi HTTP 401 wola refreshToken() i ponawia request RAZ
+ *    (anti-petla: max 1 retry per wywolanie). Drugi 401 -> normalny komunikat bledu.
+ *  - Refresh aktualizuje wspoldzielony BOOT.token/time/customerId, wiec kolejne
+ *    wywolania zaraz po refreshu korzystaja z nowego tokenu.
+ *
+ * TTL backendu: HmacVerifier::maxAgeSec (skracany osobnym krokiem backendu po
+ * weryfikacji refreshu na PROD — CHAT-T-069 krok warunkowy).
  */
 (function () {
   'use strict';
 
   var BOOT = window.DIVEZONE_CHAT_BOOT;
   if (!BOOT) return;
+
+  // Prog wieku tokenu, powyzej ktorego refreshujemy PROAKTYWNIE przed requestem.
+  // 600s = bezpiecznie ponizej docelowego TTL backendu (900s, ADR-084 191c) i
+  // dziala rowniez przy aktualnym TTL 3600s (ADR-079) zanim zostanie skrocony.
+  var PROACTIVE_REFRESH_SEC = 600;
+
+  // Anti-burst: pojedynczy in-flight refresh; rownolegle wywolania czekaja na ten sam fetch.
+  var refreshInFlight = false;
+  var refreshQueue = [];
+
+  function tokenAgeSec() {
+    var t = parseInt(BOOT.time, 10);
+    if (!t) return 0;
+    return Math.floor(Date.now() / 1000) - t;
+  }
+
+  function refreshToken(callback) {
+    callback = callback || function () {};
+    if (!BOOT.tokenUrl) { callback(false); return; }
+
+    refreshQueue.push(callback);
+    if (refreshInFlight) return;
+    refreshInFlight = true;
+
+    function settle(ok) {
+      refreshInFlight = false;
+      var queue = refreshQueue;
+      refreshQueue = [];
+      for (var i = 0; i < queue.length; i++) {
+        try { queue[i](ok); } catch (e) { /* nie psujemy reszty kolejki */ }
+      }
+    }
+
+    fetch(BOOT.tokenUrl, {
+      method: 'GET',
+      // Ten sam origin co strona sklepu (divezone.pl). credentials:'include'
+      // zapewnia, ze ciastko sesji PS idzie z requestem -> isLogged() rozpoznaje
+      // zalogowanego klienta, customerId = realne id (a nie 0 jak dla goscia).
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' }
+    }).then(function (response) {
+      if (!response.ok) { settle(false); return; }
+      return response.json().then(function (payload) {
+        if (!payload || !payload.token) { settle(false); return; }
+        BOOT.token      = payload.token;
+        BOOT.time       = String(payload.time);
+        BOOT.customerId = String(payload.customerId);
+        settle(true);
+      }).catch(function () { settle(false); });
+    }).catch(function () { settle(false); });
+  }
+
+  function ensureFreshToken(callback) {
+    if (!BOOT.tokenUrl || tokenAgeSec() <= PROACTIVE_REFRESH_SEC) {
+      callback();
+      return;
+    }
+    // Niezaleznie od wyniku proaktywnego refreshu — kontynuuj (reaktywny retry zlapie 401).
+    refreshToken(function () { callback(); });
+  }
 
   /**
    * Parser SSE strumienia z ReadableStream.
@@ -61,32 +131,31 @@
 
     var body = { message: message };
     if (sessionId) body.session_id = sessionId;
+    var bodyJson = JSON.stringify(body);
 
-    fetch(url, {
-      method: 'POST',
-      mode: 'cors',
-      credentials: 'omit',
-      cache: 'no-cache',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'text/event-stream',
-        'X-DiveChat-Token': BOOT.token,
-        'X-DiveChat-Customer': BOOT.customerId,
-        'X-DiveChat-Time': BOOT.time
-      },
-      body: JSON.stringify(body)
-    }).then(function (response) {
-      if (!response.ok) {
-        return response.text().then(function (txt) {
-          onError('HTTP ' + response.status + ': ' + (txt || response.statusText));
-        });
-      }
+    function makeRequest() {
+      return fetch(url, {
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        cache: 'no-cache',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+          'X-DiveChat-Token': BOOT.token,
+          'X-DiveChat-Customer': BOOT.customerId,
+          'X-DiveChat-Time': BOOT.time
+        },
+        body: bodyJson
+      });
+    }
+
+    function streamResponse(response) {
       if (!response.body || !response.body.getReader) {
         onError('Twoja przegladarka nie wspiera streamingu.');
         return;
       }
-
       var reader = response.body.getReader();
       var decoder = new TextDecoder('utf-8');
       var buffer = '';
@@ -96,7 +165,6 @@
       function pump() {
         return reader.read().then(function (chunk) {
           if (chunk.done) {
-            // Strumien zamkniety. Jesli nie bylo "done", to error/timeout.
             if (!sawDone) {
               onError('Polaczenie zostalo zamkniete przed odpowiedzia.');
             }
@@ -125,11 +193,45 @@
           if (!done) return pump();
         });
       }
-
       return pump();
-    }).catch(function (err) {
-      if (err && err.name === 'AbortError') return; // zaplanowane przerwanie
-      onError((err && err.message) || 'Blad sieci.');
+    }
+
+    function emitHttpError(response) {
+      return response.text().then(function (txt) {
+        onError('HTTP ' + response.status + ': ' + (txt || response.statusText));
+      });
+    }
+
+    function handle(response, alreadyRetried) {
+      // Reaktywny retry-on-401: refresh + jedno ponowienie. SSE: 401 przychodzi
+      // jako !response.ok PRZED otwarciem strumienia, wiec mozemy spokojnie ponowic.
+      if (response.status === 401 && !alreadyRetried) {
+        return new Promise(function (resolve) {
+          refreshToken(function (ok) {
+            if (!ok) { emitHttpError(response).then(resolve, resolve); return; }
+            makeRequest().then(function (resp2) {
+              handle(resp2, true).then(resolve, resolve);
+            }, function (err) {
+              if (err && err.name === 'AbortError') { resolve(); return; }
+              onError((err && err.message) || 'Blad sieci.');
+              resolve();
+            });
+          });
+        });
+      }
+      if (!response.ok) {
+        return emitHttpError(response);
+      }
+      return streamResponse(response);
+    }
+
+    ensureFreshToken(function () {
+      makeRequest().then(function (response) {
+        return handle(response, false);
+      }).catch(function (err) {
+        if (err && err.name === 'AbortError') return; // zaplanowane przerwanie
+        onError((err && err.message) || 'Blad sieci.');
+      });
     });
 
     return controller;
@@ -155,25 +257,27 @@
 
     var controller = new AbortController();
     var url = BOOT.backendUrl + '/api/order/status';
+    var bodyJson = JSON.stringify({ order_reference: reference, email: email });
 
-    fetch(url, {
-      method: 'POST',
-      mode: 'cors',
-      credentials: 'omit',
-      cache: 'no-cache',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'X-DiveChat-Token': BOOT.token,
-        'X-DiveChat-Customer': BOOT.customerId,
-        'X-DiveChat-Time': BOOT.time
-      },
-      body: JSON.stringify({
-        order_reference: reference,
-        email: email
-      })
-    }).then(function (response) {
+    function makeRequest() {
+      return fetch(url, {
+        method: 'POST',
+        mode: 'cors',
+        credentials: 'omit',
+        cache: 'no-cache',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-DiveChat-Token': BOOT.token,
+          'X-DiveChat-Customer': BOOT.customerId,
+          'X-DiveChat-Time': BOOT.time
+        },
+        body: bodyJson
+      });
+    }
+
+    function mapAndCallback(response) {
       var status = response.status;
       return response.json().catch(function () { return null; }).then(function (payload) {
         if (status === 200 && payload && payload.success && payload.order) {
@@ -185,8 +289,8 @@
         if (status === 400) {
           msg = (payload && payload.error) || 'Uzupelnij oba pola.';
         } else if (status === 401) {
-          // Token HMAC zyje 1 h od zaladowania strony (BOOT, CHAT-T-057).
-          // Etap 1 nie refreshuje — instrukcja dla klienta.
+          // Token nie odswiezyl sie nawet po retry (lub refresh zwrocil 403/500).
+          // Fallback dla uzytkownika: pojedyncza informacja zamiast pustego ekranu.
           msg = 'Sesja wygasla. Odswiez strone i sprobuj ponownie.';
         } else if (status === 404) {
           msg = (payload && payload.error) || 'Nie znaleziono zamowienia. Sprawdz dane.';
@@ -197,9 +301,33 @@
         }
         onError(msg, status);
       });
-    }).catch(function (err) {
-      if (err && err.name === 'AbortError') return;
-      onError('Brak polaczenia. Sprawdz internet i sprobuj ponownie.', 0);
+    }
+
+    function handle(response, alreadyRetried) {
+      if (response.status === 401 && !alreadyRetried) {
+        return new Promise(function (resolve) {
+          refreshToken(function (ok) {
+            if (!ok) { mapAndCallback(response).then(resolve, resolve); return; }
+            makeRequest().then(function (resp2) {
+              handle(resp2, true).then(resolve, resolve);
+            }, function (err) {
+              if (err && err.name === 'AbortError') { resolve(); return; }
+              onError('Brak polaczenia. Sprawdz internet i sprobuj ponownie.', 0);
+              resolve();
+            });
+          });
+        });
+      }
+      return mapAndCallback(response);
+    }
+
+    ensureFreshToken(function () {
+      makeRequest().then(function (response) {
+        return handle(response, false);
+      }).catch(function (err) {
+        if (err && err.name === 'AbortError') return;
+        onError('Brak polaczenia. Sprawdz internet i sprobuj ponownie.', 0);
+      });
     });
 
     return controller;
@@ -230,19 +358,23 @@
     var path = (BOOT.persist && BOOT.persist.historyPath) || '/api/chat/history';
     var url = BOOT.backendUrl + path + '?sid=' + encodeURIComponent(sessionId);
 
-    fetch(url, {
-      method: 'GET',
-      mode: 'cors',
-      credentials: 'omit',
-      cache: 'no-cache',
-      signal: controller.signal,
-      headers: {
-        'Accept': 'application/json',
-        'X-DiveChat-Token': BOOT.token,
-        'X-DiveChat-Customer': BOOT.customerId,
-        'X-DiveChat-Time': BOOT.time
-      }
-    }).then(function (response) {
+    function makeRequest() {
+      return fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        cache: 'no-cache',
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json',
+          'X-DiveChat-Token': BOOT.token,
+          'X-DiveChat-Customer': BOOT.customerId,
+          'X-DiveChat-Time': BOOT.time
+        }
+      });
+    }
+
+    function consume(response) {
       var status = response.status;
       return response.json().catch(function () { return null; }).then(function (payload) {
         if (status === 200 && payload && typeof payload.exists === 'boolean') {
@@ -253,12 +385,37 @@
           });
           return;
         }
-        // 401/500/etc — gracefully traktuj jako "brak historii", front startuje swiezo.
+        // 401 po retry / inny blad — gracefully traktuj jako "brak historii",
+        // wolajacy startuje swiezo (zachowanie z CHAT-T-059).
         onError('HTTP ' + status);
       });
-    }).catch(function (err) {
-      if (err && err.name === 'AbortError') return;
-      onError((err && err.message) || 'Blad sieci.');
+    }
+
+    function handle(response, alreadyRetried) {
+      if (response.status === 401 && !alreadyRetried) {
+        return new Promise(function (resolve) {
+          refreshToken(function (ok) {
+            if (!ok) { consume(response).then(resolve, resolve); return; }
+            makeRequest().then(function (resp2) {
+              handle(resp2, true).then(resolve, resolve);
+            }, function (err) {
+              if (err && err.name === 'AbortError') { resolve(); return; }
+              onError((err && err.message) || 'Blad sieci.');
+              resolve();
+            });
+          });
+        });
+      }
+      return consume(response);
+    }
+
+    ensureFreshToken(function () {
+      makeRequest().then(function (response) {
+        return handle(response, false);
+      }).catch(function (err) {
+        if (err && err.name === 'AbortError') return;
+        onError((err && err.message) || 'Blad sieci.');
+      });
     });
 
     return controller;

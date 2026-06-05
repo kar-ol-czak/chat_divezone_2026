@@ -549,6 +549,11 @@ class Divezone_Chat extends Module
             'time'         => (string)$timestamp,
             'backendUrl'   => rtrim($backendUrl, '/'),
             'streamPath'   => '/api/chat/stream',
+            // CHAT-T-069 / ADR-084: URL endpointu modulu wydajacego swieze tokeny.
+            // Front-controller na tym samym originie co sklep (divezone.pl) — transport
+            // wola go z credentials:'include', odbiera {token,customerId,time,expires_in}
+            // i aktualizuje wspoldzielony BOOT. Logika tokenu IDENTYCZNA z hookiem.
+            'tokenUrl'     => $this->context->link->getModuleLink('divezone_chat', 'token', array(), true),
             'sessionId'    => null,
             'assets'       => array(
                 'bundle'    => $bundleUrl,
@@ -630,6 +635,18 @@ class Divezone_Chat extends Module
     // Bezpieczny default: wszystkie grupy OFF i lista IP pusta -> NIEWIDOCZNY.
     // Grupy/IP odczytane lazy z Configuration::get (brak klucza = ''  = OFF).
     // ============================================================================
+
+    /**
+     * Publiczny wrapper gating widgetu — uzywany przez front-controller `token`
+     * (CHAT-T-069, ADR-084 188a), zeby nie odslaniac wszystkich helperow
+     * (isLoggedCustomer/resolveVisitorIp/isFromPoland/...). Endpoint tokenu
+     * dziedziczy drabine ekspozycji: zwraca token TYLKO gdy widget ma prawo
+     * sie pokazac (spojnie z hookDisplayFooter).
+     */
+    public function canIssueToken()
+    {
+        return $this->shouldShowWidget();
+    }
 
     private function shouldShowWidget()
     {
