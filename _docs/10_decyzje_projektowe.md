@@ -2509,3 +2509,39 @@ Wniosek: model NIE może liczyć ŻADNEJ daty (ani dnia tygodnia, ani roku, ani 
 **Konsekwencje:** opis parametru w getParametersSchema musi jasno mówić modelowi: "Dla dat względnych UŻYJ relative (NIE licz daty sam). date tylko dla konkretnej daty kalendarzowej." Few-shoty schedule w SystemPrompt zaktualizować: "Pracujecie jutro?" → relative=tomorrow (nie date=...).
 
 **Odrzucone:** 200a (model liczy jutro — to był root cause), 204a (clamp roku — gubi uprawniony przełom roku), 205-pierwotne (zakładać przyszły piątek — zakładanie intencji = błąd), 206b (usunąć date — gubi konkretne daty kalendarzowe), 207b/c (jeden zestaw dni — chowa this/next, zmusza model do arytmetyki ISO).
+
+
+---
+
+### ADR-086: Mobilny widok obsługi rozmów (mobile admin) — lekki front poza panelem PS (CHAT-T-071+)
+**Data:** 2026-06-04 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-046/048 (ConversationsController, kanał serwerowy), ADR-068 (ServerHmacVerifier, employee_id w podpisie), CHAT-T-051 (list + first_message)
+
+**Kontekst (zweryfikowany na PROD):** Podgląd rozmów + reagowanie (zmiana statusu) SĄ już zbudowane: API `/api/conversations` (list z paginacją/search/filtry knowledge_gap+admin_status), `/api/conversations/{session_id}` (pełna rozmowa + messages + admin_notes), `/api/conversations/{session_id}/status` (updateAdminStatus). Auth = ServerHmacVerifier (HMAC employee_id:timestamp, DIVECHAT_SERVER_SECRET, ±300s), role w `divechat_admin_roles` (6 prac.: 3 admin, 3 operator). PROBLEM: cały ten UI żyje WEWNĄTRZ desktopowego panelu PrestaShop (AdminDivezoneChatController, zakładka "Rozmowy") — panel PS 1.7.6 jest niemobilny. Karol pracuje z telefonu (Android) + wspólniczka (iPhone), wchodzą w desktopowy panel = nieużywalne. Backend ma gotowe MysqlConnection::getInstance() (read-only do MySQL PS) — odczyt pr_employee w zasięgu.
+
+**Decyzje:**
+- **209b — lekki samodzielny widok mobilny POZA panelem PS** (nie responsywny CSS na zakładce PS). Powód: ból = uwięzienie funkcji w panelu PS, nie brak funkcji. Responsywny CSS zostawia użytkownika w ciężkim chromie Presty. Lekki widok = narzędzie zaprojektowane pod telefon. API gotowe → front cienki, główna praca to auth poza kontekstem PS.
+- **211a — postawić przy backendzie chat.divezone.pl** (np. ścieżka `/m` lub `/admin/m`), serwowany z PHP, vanilla JS + lekki CSS, TEN SAM origin co API (zero CORS), współdzieli role/sekrety serwerowe wewnętrznie. Bez frameworka — 3 ekrany (lista / rozmowa / status). Instancja: backend + frontend.
+- **212a — logowanie hasłem PrestaShop (pr_employee).** Pracownik loguje się tym samym loginem (email) i hasłem co do panelu PS. Backend weryfikuje względem pr_employee. UWAGA BEZPIECZEŃSTWA: PS 1.7 ma DWA formaty hasła — (1) bcrypt (password_verify, konta nowe), (2) legacy md5(_COOKIE_KEY_.password) (konta sprzed migracji 1.6→1.7). Weryfikacja MUSI obsłużyć OBA (inaczej starzy pracownicy się nie zalogują). _COOKIE_KEY_ czytany z konfiguracji PS. Po sukcesie: employee_id → sprawdzenie roli w divechat_admin_roles (brak roli = brak dostępu, nawet jeśli hasło OK). Reużywa zarządzane hasła PS (zero nowej bazy haseł, natychmiastowa spójność przy odejściu — wyłączenie w PS = brak dostępu). Odrzucone: osobna baza haseł w PG (druga baza sekretów, ryzyko martwych kont), wspólny sekret zespołowy (brak rozliczalności, RODO).
+- **213a — sesja = cookie HttpOnly + Secure + SameSite=Lax**, server-side (PG), TTL ~12h z odświeżaniem. Odporne na XSS (JS nie czyta), łatwe do unieważnienia (zgubiony telefon). Sekret serwerowy NIGDY nie trafia do przeglądarki — podpisywanie żądań do własnego API robi backend wewnętrznie (widok mobilny woła własne endpointy z sesją cookie; backend dokłada podpis serwerowy do ConversationStore wewnętrznie ALBO woła store bezpośrednio). Odrzucone: JWT w localStorage (XSS, rewokacja).
+- **214c — zakres MVP: odczyt + reagowanie + filtr "wymagające uwagi".** (1) lista rozmów, (2) pełna rozmowa, (3) zmiana admin_status + admin_notes (reagowanie — API gotowe), (4) DOMYŚLNY ekran startowy filtruje na knowledge_gap=true LUB admin_status=new (od razu widać na co reagować, nie przewijasz wszystkiego). To różnica między "przeglądarką logów" a "narzędziem do reagowania".
+- **216a — odświeżanie RĘCZNE (pull-to-refresh + przycisk), ZERO automatu w MVP.** Obawa Karola: automat co 30s wkurza / przeładowuje. MVP: pełna kontrola, nowe rozmowy po pociągnięciu w dół. (Cichy polling rozważany — odłożony; gdyby był potrzebny: tylko na ekranie listy, NIGDY w otwartej rozmowie, lista NIE przeskakuje sama, tylko pasek "N nowych".)
+- **217c — (gdy/jeśli wejdzie polling) konfigurowalny interwał + przełącznik "tryb cichy".** Domyślnie ~60s, jeden przełącznik usypia. Nie w MVP (216a), zapis na przyszłość.
+- **218b — oba systemy: Android (Karol) + iPhone (wspólniczka).** MVP (widok + PWA) działa na obu bez różnicy. Różnica tylko przy push (faza 2): iOS wymaga PWA dodanej do ekranu głównego (iOS 16.4+) i zgody w reakcji na dotknięcie; Android bez ograniczeń. Test MVP na OBU.
+- **211a+PWA — PWA manifest + "dodaj do ekranu głównego" w MVP.** Instalowalna ikona, tryb standalone. To także fundament pod push fazy 2 (push na iOS działa TYLKO z PWA na ekranie głównym) — późniejsze dołożenie pushy = dodanie warstwy wysyłki, NIE przebudowa.
+- **219a — push = FAZA 2, NIE w MVP.** Przy 2-4 rozmowach/dzień ręczne odświeżanie wystarcza (Karol: "ogarnę bez problemu"). Push (web push: VAPID keys + zapis subskrypcji urządzeń w PG + serwis wysyłki) to osobna warstwa — budowana świadomie, gdy wolumen urośnie lub pojawi się realna potrzeba bycia wołanym. Wtedy SELEKTYWNIE (knowledge_gap/eskalacja, nie każda rozmowa — inaczej szum). Konfigurowalne per pracownik. PWA z MVP zapewnia fundament.
+
+**Kontrakt API (gotowy, do reużycia):**
+- GET /api/conversations?page&per_page&search&knowledge_gap&admin_status → {conversations:[{id, session_id, customer_id, message_count, model_used, admin_status, knowledge_gap, updated_at, first_message, estimated_cost,...}], total, page, per_page}
+- GET /api/conversations/{session_id} → {session_id, customer_id, messages:[...], admin_status, admin_notes, knowledge_gap, started_at, updated_at, closed_at,...}
+- POST /api/conversations/{session_id}/status → updateAdminStatus(status, notes)
+- Auth obecnie: nagłówki serwerowe (X-DiveChat-Server-Token/-Employee/-Time). Mobilny widok: sesja cookie → backend mapuje na employee_id → autoryzacja jak dotąd (requireAnyRole). NIE duplikujemy logiki uprawnień.
+
+**Podział na taski (kolejność):**
+1. CHAT-T-071 (backend): auth mobilny — weryfikacja pr_employee (bcrypt + legacy md5), mapowanie roli z divechat_admin_roles, sesja cookie HttpOnly server-side, endpointy login/logout/whoami-mobile. Most do istniejącego ConversationsController (sesja cookie → employee_id). NAJWRAŻLIWSZY (hasło PS) — test na realnym koncie bcrypt I legacy przed PROD.
+2. CHAT-T-072 (frontend): 3 ekrany mobilne (lista z filtrem "wymagające uwagi" / rozmowa / status+notatka), pull-to-refresh, logowanie, serwowane z backendu (vanilla, same-origin).
+3. CHAT-T-073 (frontend): PWA manifest + ikony + "dodaj do ekranu głównego", test instalacji Android + iPhone.
+4. (FAZA 2, później) push: VAPID + subskrypcje + serwis wysyłki, selektywny, konfigurowalny.
+
+**Granice:** read-only do MySQL PS (tylko odczyt pr_employee — NIGDY zapis). Sekrety serwerowe nie wychodzą do przeglądarki. Uprawnienia: reużyć requireAnyRole z ConversationsController, nie pisać drugiej ścieżki autoryzacji. Dane klientów w rozmowach = RODO: sesja cookie, brak danych w URL, HTTPS only.
+
+**Odrzucone:** 209a (responsywny CSS w panelu PS — leczy objaw), 210b/c (osobna baza haseł / wspólny sekret), 213b (JWT localStorage), 215/216 automat w MVP, 219b/c (push w MVP / push dla każdej rozmowy).
