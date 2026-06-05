@@ -7,6 +7,9 @@ use DiveChat\AI\PricingService;
 use DiveChat\AI\UsageLogger;
 use DiveChat\Admin\ConversationViewer;
 use DiveChat\Admin\CostAnalytics;
+use DiveChat\Auth\MobileAuthenticator;
+use DiveChat\Auth\MobileSessionStore;
+use DiveChat\Auth\PsCookieKeyReader;
 use DiveChat\Auth\ServerHmacVerifier;
 use DiveChat\Config;
 use DiveChat\Chat\ChatService;
@@ -22,9 +25,12 @@ use DiveChat\Controller\AdminWhoamiController;
 use DiveChat\Controller\ChatController;
 use DiveChat\Controller\ConversationsController;
 use DiveChat\Controller\HealthController;
+use DiveChat\Controller\MobileAuthController;
+use DiveChat\Controller\MobileConversationsController;
 use DiveChat\Controller\OrderStatusController;
 use DiveChat\Controller\SettingsController;
 use DiveChat\Controller\TestTokenController;
+use DiveChat\Database\MysqlConnection;
 use DiveChat\Database\PostgresConnection;
 use DiveChat\Editorial\EditorialPicksService;
 use DiveChat\Http\AdminAuthMiddleware;
@@ -163,6 +169,37 @@ return static function (
     // $serverVerifier juz utworzony wyzej (CHAT-T-044 — wspoldzielony z Settings/Pricing).
     $whoamiController = new AdminWhoamiController($serverVerifier, $db);
     $router->get('/api/admin/whoami', $whoamiController->handle(...));
+
+    // Mobilny panel admina (CHAT-T-071, ADR-086). Kanal cookie HttpOnly /m/api/*.
+    // Reuse: ConversationStore + UsageLogger (te same metody co panel PS),
+    // RateLimiter (anti brute-force login). PsCookieKeyReader sluzy WYLACZNIE
+    // legacy md5 fallbackowi (defensywne — dzis zero takich kont w sklepie).
+    $projectRoot = dirname(dirname(__DIR__)); // dirname(standalone/) = projekt root
+    $psParamsExplicit = Config::get('PS_PARAMETERS_PATH') ?: null;
+    $mobileAuthenticator = new MobileAuthenticator(
+        MysqlConnection::getInstance(),
+        $db,
+        new PsCookieKeyReader($psParamsExplicit, $projectRoot),
+    );
+    $mobileSessionStore = new MobileSessionStore($db);
+    $mobileRateLimiter = new RateLimiter($db);
+    $mobileAuthController = new MobileAuthController(
+        $mobileAuthenticator,
+        $mobileSessionStore,
+        $mobileRateLimiter,
+    );
+    $router->post('/m/api/login', $mobileAuthController->login(...));
+    $router->post('/m/api/logout', $mobileAuthController->logout(...));
+    $router->get('/m/api/whoami', $mobileAuthController->whoami(...));
+
+    $mobileConvController = new MobileConversationsController(
+        $mobileAuthController,
+        new ConversationStore(),
+        $usageLogger,
+    );
+    $router->get('/m/api/conversations', $mobileConvController->list(...));
+    $router->get('/m/api/conversations/{session_id}', $mobileConvController->detail(...));
+    $router->post('/m/api/conversations/{session_id}/status', $mobileConvController->updateStatus(...));
 
     // T-035 CZESC B: sekcja read-only kuratorowanych rekomendacji w panelu PS.
     // Drugi endpoint kanalu serwerowego — pierwszy REALNY odczyt danych (po
