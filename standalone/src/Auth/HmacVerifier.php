@@ -11,7 +11,7 @@ final readonly class HmacVerifier
 {
     public function __construct(
         private string $secret,
-        private int $maxAgeSec = 3600, // 1 h (CHAT-T-057; bylo 5 min — za krotkie dla realnych sesji; odswiezanie tokenu w ADR-064)
+        private int $maxAgeSec = 900, // 15 min (CHAT-T-076; po wdrozeniu odswiezania tokenu T-069 dlugie okno zbedne; domyka okno replay ADR-079; spojne z expires_in:900 endpointu)
     ) {}
 
     /**
