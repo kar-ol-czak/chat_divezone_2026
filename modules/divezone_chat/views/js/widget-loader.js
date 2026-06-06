@@ -1,13 +1,16 @@
 /*!
  * DiveZone Chat — widget loader (stub fasady)
  * CHAT-T-037 etap 1 (ADR-060 strategia ladowania, ADR-061 Shadow DOM).
+ * CHAT-T-078 / ADR-087: gating w runtime — loader pobiera token z endpointu PRZED
+ * rysowaniem launchera. HTML strony jest cache-safe (BOOT bez tokenu, identyczny
+ * dla wszystkich), gating decyduje endpoint /token (eligible:true/false).
  *
- * Stub: rysuje TYLKO launcher na requestIdleCallback (cel <20KB).
+ * Stub: rysuje TYLKO launcher po fetch /token (cel <20KB).
  * Po pierwszym klikniecu launchera dociaga widget-bundle.js + widget.css
  * + transport.js, ktore montuja okno czatu w tym samym shadow root.
  *
  * Wymaga: window.DIVEZONE_CHAT_BOOT ustawione przez shim PHP (hookDisplayFooter)
- * przed odpaleniem tego skryptu. Brak BOOT = no-op.
+ * z poprawnym BOOT.tokenUrl. Brak BOOT lub eligible:false z endpointu = no-op.
  */
 (function () {
   'use strict';
@@ -28,6 +31,49 @@
   // Powod: pr_configuration w PS uzywa utf8 (3-bajt), 4-bajtowy 🤿 ginie jako "????".
   // Plik MUSI byc zapisany w UTF-8.
   var NUDGE_EMOJI = '🤿';
+
+  /* ──────────────── CHAT-T-078 / ADR-087: gating w runtime ────────────────
+   * Loader fetchuje BOOT.tokenUrl PRZED rysowaniem launchera. Endpoint zwraca:
+   *   {eligible:false}                                            -> no-op (zero DOM, brak launchera)
+   *   {eligible:true, token, customerId, time, expires_in}        -> piszemy do BOOT, montujemy
+   * Brak BOOT.tokenUrl / fetch fail / nieprawidlowy payload       -> no-op (cichy fallback)
+   *
+   * Transport.js (po mount przez bundle) dalej czyta BOOT.token — juz ustawiony
+   * przez tego fetcha. credentials:'include' bo endpoint jest same-origin (sklep)
+   * i potrzebuje ciastka sesji PS by rozpoznac zalogowanego klienta.
+   * Cel ADR-087: HTML strony cache-safe (zaden token w zrodle), gating jednoetapowy
+   * w runtime — eliminuje kolizje warunkowego renderu z LiteSpeed cache.
+   */
+  function fetchEligibility(cb) {
+    if (!BOOT.tokenUrl) { cb(false); return; }
+    var done = false;
+    function settle(ok) { if (done) return; done = true; cb(ok); }
+    try {
+      fetch(BOOT.tokenUrl, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Accept': 'application/json' }
+      })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('http ' + r.status)); })
+        .then(function (payload) {
+          if (!payload || payload.eligible !== true) { settle(false); return; }
+          if (!payload.token) { settle(false); return; }
+          BOOT.token      = payload.token;
+          BOOT.customerId = String(payload.customerId);
+          BOOT.time       = String(payload.time);
+          settle(true);
+        })
+        .catch(function () { settle(false); });
+    } catch (_) { settle(false); }
+  }
+
+  /* ───────── mountAll: rysuje shadow host + launcher + planuje nudge/bundle.
+   * Wolany TYLKO po eligible:true (ADR-087). Wczesniej zostawal global side-effect
+   * `__divezoneChatMounted=true` ustawiony na poczatku IIFE — gwarancja idempotencji
+   * nawet gdy fetch jest pending a kolejna kopia loadera zostanie wstrzyknieta.
+   */
+  function mountAll() {
 
   /* ───────────────────────── Shadow host ───────────────────────── */
 
@@ -339,4 +385,10 @@
   // ADR-060: nie konkurowac z LCP. requestIdleCallback z timeoutem 4s.
   var schedule = window.requestIdleCallback || function (cb) { return setTimeout(cb, 1500); };
   schedule(function () { bootBundle(); }, { timeout: 4000 });
+
+  } /* /mountAll */
+
+  // ADR-087: gating w runtime. Eligible:true (token zapisany w BOOT) -> mount;
+  // false / fetch fail / brak tokenUrl -> no-op (zero DOM, brak launchera).
+  fetchEligibility(function (ok) { if (ok) mountAll(); });
 })();

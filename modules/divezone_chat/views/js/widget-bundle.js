@@ -18,17 +18,18 @@
 
   /* ───────────────────────── Constants ───────────────────────── */
 
+  // CHAT-T-078: nowa tresc otwarcia + usunieto chip "Kompatybilność sprzętu".
   var WELCOME_HTML =
     '<p><strong>Cześć! Jestem doradcą nurkowym DIVEZONE.PL.</strong></p>' +
-    '<p>Pomogę dobrać sprzęt, sprawdzić rozmiar pianki lub suchego skafandra, ' +
-    'zweryfikować kompatybilność automatu z komputerem — albo odpowiem na ' +
-    'pytania o zamówienie.</p>' +
+    '<p>Pomogę dobrać sprzęt do nurkowania: np. maskę, płetwy, automat, ' +
+    'komputer i inne.</p>' +
+    '<p>Mogę też sprawdzić rozmiar pianki lub suchego skafandra albo ' +
+    'odpowiem na pytania o zamówienie.</p>' +
     '<p><span class="dz-callout">Od czego zaczynamy?</span></p>';
 
   var CHIPS_DESKTOP = [
     'Pomóż dobrać sprzęt',
     'Dobierz rozmiar',
-    'Kompatybilność sprzętu',
     'Dostępność i wysyłka',
     'Status zamówienia',
     'Serwis sprzętu'

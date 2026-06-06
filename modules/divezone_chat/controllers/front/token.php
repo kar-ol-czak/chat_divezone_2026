@@ -89,11 +89,16 @@ class Divezone_ChatTokenModuleFrontController extends ModuleFrontController
             exit;
         }
 
-        // Gating spojny z hookDisplayFooter: tylko gdy widget ma prawo sie pokazac.
+        // ADR-087 (CHAT-T-078): gating drabiny ekspozycji przeniesiony z hooka
+        // tutaj — endpoint jest jedynym miejscem decydujacym, kto widzi widget.
+        // Loader (cache-safe BOOT) najpierw wola ten endpoint i rysuje launcher
+        // tylko przy eligible:true. Non-eligible zwracamy jako 200 (NIE 403) —
+        // to nie blad protokolu, to legitymna odpowiedz "ten odwiedzajacy nie
+        // dostaje widgetu". 403 mogloby tez psuc transport.js (refresh-on-401):
+        // brak token w odpowiedzi → settle(false) → cichy fail (graceful).
         $module = Module::getInstanceByName('divezone_chat');
         if (!$module || !method_exists($module, 'canIssueToken') || !$module->canIssueToken()) {
-            http_response_code(403);
-            echo json_encode(array('error' => 'not_allowed'));
+            echo json_encode(array('eligible' => false));
             exit;
         }
 
@@ -106,10 +111,12 @@ class Divezone_ChatTokenModuleFrontController extends ModuleFrontController
         $timestamp = time();
         $token = hash_hmac('sha256', $customerId . ':' . $timestamp, $clientSecret);
 
-        // Klucze IDENTYCZNE z BOOT z hooka (token/customerId/time jako stringi
-        // — transport wysyla je w naglowkach HTTP). expires_in to hint dla
-        // proaktywnego refreshu po stronie frontu (191c: docelowy TTL backendu 900s).
+        // ADR-087 (CHAT-T-078): pole `eligible:true` na poczatku — loader sprawdza
+        // je przed rysowaniem launchera. token/customerId/time/expires_in jak dotad
+        // (transport wysyla je w naglowkach HTTP; expires_in hint dla proaktywnego
+        // refreshu, 191c: docelowy TTL backendu 900s).
         echo json_encode(array(
+            'eligible'   => true,
             'token'      => $token,
             'customerId' => (string)$customerId,
             'time'       => (string)$timestamp,

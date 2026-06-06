@@ -489,37 +489,41 @@ class Divezone_Chat extends Module
     /**
      * Hook displayFooter — emisja stub fasady widgetu czatu (CHAT-T-037, ADR-069).
      *
-     * Gating: CHAT-T-047 drabina ekspozycji — shouldShowWidget() laczy 3 grupy
-     * (OR: klienci/PL/wszyscy) + liste IP (rownolegla "zawsze pokaz") + filtr botow.
-     * Bezpieczny default (wszystko OFF + lista pusta) -> niewidoczny. NIGDY nie
-     * loguje sekretow ani IP w response — tylko emisja JS bootstrappingu.
+     * ADR-087 (CHAT-T-078): hook wstrzykuje BEZWARUNKOWO loader + minimalny BOOT
+     * (backendUrl, tokenUrl, assets, nudge, persist) — BEZ tokenu, BEZ gatingu.
+     * HTML identyczny dla WSZYSTKICH odwiedzajacych -> cache'owalny spojnie przez
+     * LiteSpeed. Gating (drabina ekspozycji + filtr botow) przeniesiony do
+     * front-controllera /token: loader najpierw fetchuje endpoint, otrzymuje
+     * {eligible:true, token, ...} i dopiero wtedy rysuje launcher. Token NIGDY
+     * w cache'owanym HTML — wyciek tozsamosci miedzy odwiedzajacymi (ADR-087 Q234c).
      *
      * Backend weryfikuje HMAC niezaleznie od tego, kto zobaczy launcher (UX gating
      * != security). Ochrona publiczna (rate-limit/Turnstile) to ADR-064 — JESZCZE
      * NIE wdrozona; UI panelu modulu pokazuje ostrzezenie przy PL/Wszyscy.
+     *
+     * shouldShowWidget()/helpers POZOSTAJA — uzywane teraz przez canIssueToken()
+     * w front-controllerze /token (logika identyczna, tylko miejsce inne).
      */
     public function hookDisplayFooter($params)
     {
         $clientSecret = (string)Configuration::get(self::KEY_CLIENT_SECRET);
         $backendUrl   = (string)Configuration::get(self::KEY_BACKEND_URL);
 
+        // Brak konfiguracji = nic nie wstrzykujemy. To gating konfiguracyjny
+        // (admin nie wpisal sekretu), NIE per-odwiedzajacy — wynik identyczny
+        // dla wszystkich w danym sklepie, wiec cache-safe.
         if ($clientSecret === '' || $backendUrl === '') {
             return '';
         }
 
-        if (!$this->shouldShowWidget()) {
-            return '';
-        }
+        // ADR-087: tokenu nie generujemy w hooku (w cache'owanym HTML = wyciek).
+        // Front-controller /token wydaje token tylko gdy widget ma prawo sie pokazac
+        // (canIssueToken -> shouldShowWidget) + na zywo (niecache'owany endpoint).
 
-        // CustomerId: zalogowany -> id_customer, gosc -> 0 (ADR-069 payload 0:timestamp).
-        $customerId = $this->isLoggedCustomer() ? (int)$this->context->customer->id : 0;
-
-        $timestamp = time();
-        $token     = hash_hmac('sha256', $customerId . ':' . $timestamp, $clientSecret);
-
-        // CHAT-T-061 (decyzja 148a): cache-busting ?v=md5_8 per asset. Liczone PO
-        // shouldShowWidget — hash (md5_file I/O) tylko gdy widget faktycznie idzie
-        // do uzytkownika (nie placimy hashowania dla botow/grup wykluczonych).
+        // CHAT-T-061 (decyzja 148a): cache-busting ?v=md5_8 per asset. Po ADR-087
+        // hash (md5_file I/O) liczy sie dla KAZDEJ wizyty z poprawnym configiem —
+        // koszt znikomy (4 male pliki na FS sklepu), a HTML identyczny dla wszystkich
+        // = cache LiteSpeed serwuje raz, md5_file pada raz na TTL strony.
         $loaderUrl    = $this->assetUrl('views/js/widget-loader.js');
         $bundleUrl    = $this->assetUrl('views/js/widget-bundle.js');
         $cssUrl       = $this->assetUrl('views/css/widget.css');
@@ -544,15 +548,17 @@ class Divezone_Chat extends Module
         }
 
         $boot = array(
-            'token'        => $token,
-            'customerId'   => (string)$customerId,
-            'time'         => (string)$timestamp,
+            // ADR-087 (CHAT-T-078): BRAK token/customerId/time w cache'owanym HTML.
+            // Loader pobiera je z BOOT.tokenUrl (niecache'owany endpoint) w runtime.
             'backendUrl'   => rtrim($backendUrl, '/'),
             'streamPath'   => '/api/chat/stream',
             // CHAT-T-069 / ADR-084: URL endpointu modulu wydajacego swieze tokeny.
+            // ADR-087 (CHAT-T-078): endpoint zwraca {eligible:bool, token?, customerId?,
+            // time?, expires_in?}. Loader sprawdza eligible -> rysuje launcher lub no-op.
             // Front-controller na tym samym originie co sklep (divezone.pl) — transport
             // wola go z credentials:'include', odbiera {token,customerId,time,expires_in}
-            // i aktualizuje wspoldzielony BOOT. Logika tokenu IDENTYCZNA z hookiem.
+            // i aktualizuje wspoldzielony BOOT. Logika tokenu IDENTYCZNA z hookiem
+            // (a w ADR-087 — to jedyne miejsce wydajace token w ogole).
             'tokenUrl'     => $this->context->link->getModuleLink('divezone_chat', 'token', array(), true),
             'sessionId'    => null,
             'assets'       => array(
