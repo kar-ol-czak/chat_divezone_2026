@@ -2234,6 +2234,7 @@ Gdy klient wchodzi przez chip (nie wpisuje tekstu), chip MA wstrzykiwac czytelny
 
 ### Konsekwencje / kolejnosc budowy
 1. Sesja zespolu nad artefaktem (pptx): osie podzialu Level 2/3 dla kategorii bez rekomendacji, tresc "Serwis sprzetu", granice chip<->AI. — PO STRONIE KAROLA.
+   - WYTYCZNA do tej sesji (Q231a, 2026-06-05): "fakty operacyjne" (zwroty, dostawa, godziny otwarcia, procedura serwisu, kontakt) projektowac jako warstwe CZYSTO DETERMINISTYCZNA — chip zwraca gotowy, zatwierdzony tekst, ZERO LLM. Uzasadnienie: stala odpowiedz, wysoki koszt bledu (klient dostaje zla informacje operacyjna), zero potrzeby kreatywnosci/doboru. To dokladnie klasa, ktora chip tree mial odciazyc od LLM. Godziny otwarcia juz sa deterministyczne (get_shop_schedule, T-070); zwroty/dostawa/serwis to ta sama klasa. LLM wkracza dopiero przy doborze sprzetu / pytaniach otwartych. Kontekst: defekt z rozmowy 0b0eefe4 (bot zaniżyl zwroty do 14 dni zamiast 30) + hotfix promptowy T-077 to mitygacja TERAZ; chip deterministyczny = docelowa gwarancja dla sciezki "klient kliknal chip". Prompt (T-077) zostaje bezpiecznikiem dla sciezki "klient WPISAL pytanie" (brak chipa = swobodny tekst lapie LLM). Hybryda dopuszczalna dla dopytan (chip deterministyczny rdzen + LLM rozwiniecie), ale rdzen faktu zawsze deterministyczny.
 2. Schemat PG drzewa (tabela wezlow: id, tekst, przyciski[], typ_akcji, context_hint, model_poziom) + endpoint GET dla widgetu + seed poziomu 1.
 3. Silnik drzewa w widgecie (renderowanie wezlow, obsluga akcji curated/static/modal/ai).
 4. Panel edycji drzewa dla pracownikow (zakladka PS).
@@ -2545,3 +2546,24 @@ Wniosek: model NIE może liczyć ŻADNEJ daty (ani dnia tygodnia, ani roku, ani 
 **Granice:** read-only do MySQL PS (tylko odczyt pr_employee — NIGDY zapis). Sekrety serwerowe nie wychodzą do przeglądarki. Uprawnienia: reużyć requireAnyRole z ConversationsController, nie pisać drugiej ścieżki autoryzacji. Dane klientów w rozmowach = RODO: sesja cookie, brak danych w URL, HTTPS only.
 
 **Odrzucone:** 209a (responsywny CSS w panelu PS — leczy objaw), 210b/c (osobna baza haseł / wspólny sekret), 213b (JWT localStorage), 215/216 automat w MVP, 219b/c (push w MVP / push dla każdej rozmowy).
+
+
+---
+
+### ADR-087: Ekspozycja widgetu odporna na cache — gating w runtime (endpoint), nie w renderze PHP (CHAT-T-078)
+**Data:** 2026-06-05 | **Status:** PRZYJĘTA | **Powiązane:** ADR-069 (widget/HMAC), ADR-084 (endpoint token T-069), drabina ekspozycji (SHOW_CUSTOMERS/POLAND/ALL/IP/FILTER_BOTS)
+
+**Problem (zdiagnozowany na PROD):** Widget znikał ze sklepu losowo, strona po stronie (home/kategoria bez, kontakt z). Root cause = KONFLIKT: `hookDisplayFooter` renderuje widget WARUNKOWO per-odwiedzający (`shouldShowWidget()`: PL/bot/zalogowany/IP — gdy false zwraca '' = nic nie wstrzykuje), ale LiteSpeed cache'uje CAŁY HTML strony i serwuje współdzielony wszystkim. Jeśli cache zapełnił render BEZ widgetu (np. pierwszy odwiedzający to bot, FILTER_BOTS=1), ta wersja jest "zamrożona" dla wszystkich w oknie TTL — łącznie z PL-userami, którzy powinni go widzieć. Potwierdzenie: po ręcznym wyczyszczeniu lscache widget wrócił (Q232d). To NIE regresja kodu — to wcześniej istniejący konflikt warunkowy-render vs cache, ujawniony po wgraniu T-069 (przebudowa cache). Czyszczenie ręczne (d) NIE jest naprawą — problem wraca losowo.
+
+**Decyzja (Q233a + Q234c + Q235a): przenieść gating z renderu PHP do runtime (JS + endpoint).**
+- **Hook wstrzykuje BEZWARUNKOWO** loader + minimalny BOOT (config: backendUrl, tokenUrl, assets, nudge — BEZ tokenu, BEZ gatingu). HTML identyczny dla WSZYSTKICH → cache'owalny spójnie, zero utraty wydajności. `shouldShowWidget()` NIE jest już wołane w hooku.
+- **Token NIE w HTML** (Q234c, krytyczne bezpieczeństwo): token HMAC w cache'owanym współdzielonym HTML = wyciek (ten sam token wszystkim w oknie TTL + token zalogowanego klienta serwowany innym = wyciek tożsamości). Zamiast tego: loader pobiera token z endpointu /token (T-069, niecache'owany) w runtime.
+- **Gating przeniesiony do endpointu /token** (Q234c): endpoint zwraca `eligible: true/false` wg drabiny ekspozycji (PL/bot/zalogowany/IP) PLUS token gdy eligible. Logika `shouldShowWidget()` (i helpery) PRZENOSI SIĘ z hooka do front-controllera token (to samo miejsce, niecache'owane, zna kontekst PS). Jedno wywołanie: loader startuje → woła /token → `{token, eligible:true}` rysuje launcher, `{eligible:false}` no-op.
+- **Boty/SEO (Q235a):** render HTML identyczny dla wszystkich (też botów) — gating botów w endpoincie (eligible:false dla bota). Loader w źródle dla bota nieszkodliwy (nie wykona się bez JS; jak wykona — endpoint odetnie). Warunkowy render po UA odrzucony (psułby cache — sedno problemu).
+
+**Konsekwencje:**
+- Koszt UX: launcher pojawia się po pierwszym fetchu /token (ułamek s później niż dziś, gdy był w HTML). Niezauważalne (loader i tak na requestIdleCallback). Akceptowalne za niezawodność z cache.
+- `shouldShowWidget()` + helpery (isFromPoland/isBot/resolveVisitorIp/isLoggedCustomer/isOnAllowedIpList) używane teraz przez front-controller token, nie hook. canIssueToken() (T-069 wrapper) staje się właściwym gatem: token wydawany TYLKO gdy eligible — spójne z dotychczasowym "endpoint dziedziczy shouldShowWidget".
+- Endpoint /token rozszerzony: zwraca `eligible` zawsze; token tylko gdy eligible. Gdy nie eligible → `{eligible:false}` (bez tokenu, bez wydawania).
+
+**Odrzucone:** Q234a (token w cache'owanym HTML — wyciek), Q233b (Vary cache po kraju — kruche, zależne od LiteSpeed/CF config), Q233c (wykluczyć z cache — zabija wydajność), Q233d/Q232d (ręczne czyszczenie — obejście, problem wraca).

@@ -158,6 +158,7 @@ Handoff gotowy: `_docs/23_handoff_widget_produkcyjny.md`. Research panelu (3 pli
 | renumeracja | `_docs/` ma zdublowane numery (23, 24 x2-3 z roznych sesji) — uporzadkowac przy okazji | P3 |
 | PRICE_FLOOR_RATIO | przeniesc z const do shop_config (z T-015) | P3 |
 | CHAT-T-070-dług | get_shop_schedule: dodać sformatowane pola `date_pl`/`weekday_pl` (PL) do tool result, prompt cytuje gotowy string zamiast parsować YYYY-MM-DD (ADR-085 / Q208a). Domyka deterministycznie regułę CYTOWANIA DATY (obecnie mitygacja promptowa, zdała smoke #55931 ale probabilistyczna). Backend formatuje, model przepisuje. | P2 |
+| Struktura półek cenowych (Q229) | Fix docelowy defektu "średnia półka" (rozmowa 0b0eefe4): bot nie ma deterministycznego sygnału o pozycji cenowej produktu w PEŁNYM asortymencie; liczenie z 3 curated daje fałsz (środek próbki ≠ średnia półka). Hotfix T-077 (228a) tylko każe botowi nie udawać + dopytać o budżet. DOCELOWO opcje: (a) etykieta półki per produkt def. przez zespół, (b) osobne kategorie curated per półka, (c) progi cenowe per kategoria liczone na pełnej bazie. Wymaga decyzji projektowej (dane + pipeline curated + UX wyrażania półki). Wstępnie a/c nad b (b mnoży pracę kuratorską). TEMAT DO OSOBNEJ DECYZJI. | P2 |
 
 ### Decyzje czekające na Karola
 
