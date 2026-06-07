@@ -2567,3 +2567,75 @@ Wniosek: model NIE może liczyć ŻADNEJ daty (ani dnia tygodnia, ani roku, ani 
 - Endpoint /token rozszerzony: zwraca `eligible` zawsze; token tylko gdy eligible. Gdy nie eligible → `{eligible:false}` (bez tokenu, bez wydawania).
 
 **Odrzucone:** Q234a (token w cache'owanym HTML — wyciek), Q233b (Vary cache po kraju — kruche, zależne od LiteSpeed/CF config), Q233c (wykluczyć z cache — zabija wydajność), Q233d/Q232d (ręczne czyszczenie — obejście, problem wraca).
+
+
+
+---
+
+### ADR-088: Rotacja hasła DB = jedna wartość w trzech miejscach naraz (incydent 1045, ~18h niedostępności produktów w czacie)
+**Data:** 2026-06-07 | **Status:** PRZYJĘTA | **Powiązane:** ADR-048 (pgvector statyczne + MySQL runtime przez enrichWithMySQLData), search_products
+
+**Incydent (zdiagnozowany na PROD):** Od 2026-06-06 ~16:25 UTC do 2026-06-07 rano czat na KAŻDE pytanie produktowe odpowiadał komunikatem zastępczym ("chwilowy problem z dostępem do bazy produktów" + kontakt mail/telefon). Dotykało wszystkich zapytań wymagających MySQL (maski, kaptury, kompatybilność — niezależnie od tematu). Zgłoszenie Karola: bot "twierdzi że nie ma dostępu do produktów".
+
+**Root cause (OSTATECZNY, potwierdzony odtworzeniem realnego Config::load na PROD):** NIE błąd AI, NIE złe hasło, NIE rozjazd plików. Model zachowywał się poprawnie — wołał narzędzia (w sesji o maskach trafnie sięgnął też do get_expert_knowledge, dostał 5 wyników z pgvector), ale `search_products` zwracał `tool_result` z błędem `SQLSTATE[HY000] [1045] Access denied for user 'divezone_sklep_tmp2'@'localhost'`. Zgodnie z regułą "zero zmyślania cen/stanów" model komunikował niedostępność zamiast halucynować.
+
+PRAWDZIWA przyczyna `1045`: **phpdotenv (`Config::load` → `Dotenv::createImmutable()->safeLoad()`) UCINAŁ hasło na znaku `#`.** Hasło `2@#lTkg21NP1iE^ht*9F&MA%` (znak `#` na 3. pozycji) było w `.env` czatu zapisane BEZ cudzysłowów: `DB_PASSWORD=2@#lTkg...`. Dotenv traktuje `#` jako początek komentarza inline → wczytywał tylko `2@` (len=2). MysqlConnection (czyta `$_ENV['DB_PASSWORD']`) dostawał 2-znakowe hasło → 1045. Dowód: realny `Config::load()` na serwerze dał `Config::get('DB_PASSWORD')` len=2, podczas gdy plik miał len=24.
+
+Dlaczego tak długo myliło: KAŻDY test czytający plik BEZPOŚREDNIO (ręczny parser, `mysql` CLI, PDO z ręcznie sparsowanym hasłem) widział pełne 24-znakowe hasło i ŁĄCZYŁ SIĘ OK — bo omijał regułę `#` dotenv. Sklep też działa, bo czyta hasło z `parameters.php` jako string PHP (nie przez dotenv). TYLKO realna ścieżka aplikacji (phpdotenv) okaleczała hasło. Diagnoza wymagała odtworzenia dokładnie `Config::load()` aplikacji, nie testu na pliku.
+
+**Naprawa (Karol, edycja `.env` czatu linia 31):** ująć wartość w POJEDYNCZE cudzysłowy: `DB_PASSWORD='2@#lTkg21NP1iE^ht*9F&MA%'`. Single quotes = dotenv czyta dosłownie, nie interpretuje `#`/`$`. Po poprawce: `Config::get('DB_PASSWORD')` len=24, PDO jak backend (host=localhost) = OK (pr_product=2734). Backend per-request → działa od następnego zapytania, bez restartu. Pozostałe sekrety w `.env` sprawdzone (DATABASE_URL, klucze API, DIVECHAT_*) — NIE ucięte (brak `#` w wartościach).
+
+**WCZEŚNIEJSZE BŁĘDNE TROPY (zapisane, by ich nie powtarzać):** (1) "rozjazd hasła `.env` ↔ `parameters.php`" — NIEPRAWDA, sha1 były zgodne; (2) "host mismatch socket vs TCP / grant konta" — NIEPRAWDA, wszystkie drogi (localhost/127.0.0.1/socket/TCP) działały z pełnym hasłem; (3) "różne odczyty sha1 pliku = plik się zmienia / cache" — to był artefakt KRUCHEGO parsowania w `sed`/`tr` (znaki `^ * & %` + potłuczony pipe liczyły hash uciętego ciągu), plik był stabilny (mtime 10:55). Wniosek metodologiczny: testuj REALNĄ ścieżką aplikacji (Config::load), nie zastępczym odczytem pliku — inaczej diagnozujesz inną rzecz niż to, co robi produkcja.
+
+**Kluczowe rozróżnienia z diagnozy (żeby nie powtórzyć błędnych tropów):**
+- **pgvector żył, MySQL nie.** get_expert_knowledge i get_shipping_info działały (Railway PG + dane statyczne). Padała wyłącznie ścieżka enrichWithMySQLData → MySQL PS (ceny/stany runtime, ADR-048). Diagnoza "czat nie ma dostępu do bazy" była za szeroka — precyzyjnie: brak dostępu do MySQL PS, nie do PG.
+- **`mysql -h localhost` z CLI hostingu zwracał `1045` MYLNIE** nawet dla poprawnego hasła (specyfika klienta CLI / domyślnego socketu na tym hoście). To fałszywy trop — NIE dowód, że konto/hasło złe. Świadomie NIE zmieniono hasła konta MySQL "w ciemno" (zmiana położyłaby działający sklep).
+- **Weryfikacja MUSI iść realną ścieżką aplikacji** (`Config::load()` → `$_ENV` → PDO), NIE testem na pliku. Test na pliku (ręczny parser/CLI/PDO z ręcznym hasłem) omija parser dotenv i pokazuje fałszywe OK. Dopiero odtworzenie `Config::load()` ujawniło, że `$_ENV['DB_PASSWORD']` ma len=2.
+- Backend czatu jest **PHP per-request** (brak daemonów/systemd/php-fpm long-running, brak cache kontenera DI z wbitym hasłem) → poprawiony `.env` obowiązuje natychmiast, BEZ restartu.
+
+**Decyzja / zasada na przyszłość:** Rotacja hasła użytkownika DB sklepu to operacja na TRZECH miejscach wykonywana razem, jako jedna czynność:
+1. Konto MySQL (`ALTER USER ... IDENTIFIED BY ...`) — dla WSZYSTKICH istniejących wpisów host (`@'localhost'` i ew. `@'%'`/`@'127.0.0.1'`), potem FLUSH PRIVILEGES.
+2. `app/config/parameters.php` sklepu PS (`database_password`).
+3. `.env` backendu czatu (`DB_PASSWORD`) na `/home/divezone/public_html/chat.divezone.pl/.env`.
+
+Checklista weryfikacji po rotacji: (a) sklep otwiera się / panel działa, (b) **realny `Config::load()` na serwerze daje `Config::get('DB_PASSWORD')` o pełnej długości** (NIE test na pliku, NIE `mysql -h localhost` CLI — oba mylą, bo omijają parser dotenv), (c) PDO tym hasłem z `$_ENV` łączy się OK, (d) brak nowych `1045` w `chat.divezone.pl/error_log`, (e) żywy czat zwraca produkt na pytanie typu "jakie maski polecasz". **KRYTYCZNE — format `.env`:** sekrety zawierające `#`, `$`, spację lub inne znaki specjalne (hasło DB ma `@ # ^ * & %`) MUSZĄ być w `.env` ujęte w POJEDYNCZE cudzysłowy: `DB_PASSWORD='...'`. Bez cudzysłowów phpdotenv ucina wartość na `#` (komentarz inline) — to był root cause tej awarii. Pojedyncze (nie podwójne) cudzysłowy: dotenv czyta dosłownie, nie interpoluje `$`.
+
+**Dług/następstwa (osobne taski, nie pod presją awarii):**
+- **Alert na błąd połączenia DB** — ta awaria trwała ~18h niezauważona. search_products zwracający błąd połączenia (1045/2002/timeout) powinien wywołać alert (mail/log monitorowany). Wraca temat z dyskusji o fallbacku (rozważany fallback do pgvector bez ceny/stanu z jawnym zastrzeżeniem — do osobnej decyzji). Priorytet diagnozy = wykrycie, że MySQL padł, w minutach a nie godzinach.
+- **Dedykowany user DB dla czatu** — `divezone_sklep_tmp2` (nazwa "tmp") to konto współdzielone ze sklepem; czat powinien mieć osobnego usera read-only z grantem tylko na tabele potrzebne do search_products. Osobny task.
+- **Osobny błąd z error_log (06-06 08:24-08:25) — WYJAŚNIONY, fałszywy alarm:** `SQLSTATE[42703] column "concept_key" does not exist`. Wystąpił 7x w oknie 28 sekund, próbując po kolei trzech nazw tabel (`divechat_knowledge`, `divechat_encyclopedia`, znów `divechat_knowledge`) — wzorzec RĘCZNEGO zgadywania nazwy tabeli przez `php -r`/inline (stack: "Command line code", nie plik). To ślad jednorazowej sesji diagnostycznej (sprzed awarii hasła o 16:25, niepowiązane), zakończonej trafieniem na właściwą tabelę. NIE bug w żadnym wdrożonym skrypcie, NIC do naprawy. Żywy czat bezpieczny: `get_expert_knowledge` (`src/Tools/ExpertKnowledge.php`) czyta `FROM encyclopedia_chunks` (kolumny: concept_key, chunk_type, content, name_pl, embedding, metadata) — potwierdzone w kodzie lokalnym i serwerowym. `concept_key` w całym kodzie występuje WYŁĄCZNIE w ExpertKnowledge.php, zawsze wobec encyclopedia_chunks.
+- **Porządek danych (drobny dług):** `divechat_knowledge` istnieje w PG (oryginalny schemat ADR-001..018, `sql/001_create_tables.sql`: id/chunk_type/question/content/category/embedding/...), ale NIE jest już używana przez kod — wiedza ekspercka żyje w `encyclopedia_chunks` (105 konceptów, pgvector). To martwa/zdublowana tabela, pozostałość po pierwotnym projekcie wiedzy. Niegroźna, ale myląca (to przez nią poszło ręczne zgadywanie nazwy). Kandydat do archiwizacji/usunięcia po potwierdzeniu, że żaden aktywny pipeline jej nie pisze.
+
+**Odrzucone:** zmiana hasła konta MySQL "w ciemno" na podstawie błędu CLI `1045` (położyłaby działający sklep — sklep łączy się socketem poprawnie); diagnoza przez klienta `mysql -h localhost` jako rozstrzygająca (myli na tym hoście).
+
+---
+
+### ADR-089: Deploy standalone (chat.divezone.pl) — rsync z backupem do czasu przejścia na git; korekta błędnego "CC wdraża samo"
+**Data:** 2026-06-07 | **Status:** PRZYJĘTA (procedura przejściowa) | **Powiązane:** ADR-088 (root cause „alert nie istniał"), CHAT-T-079 (kod alertu), CHAT-T-080 (deploy CHAT-T-079 + ten ADR), 116b (granica „CC wdraża samo" dotyczy wyłącznie standalone — `newtmp2`/PrestaShop bez zmian)
+
+**Kontekst (audyt 2026-06-07):** Serwer `chat.divezone.pl` (docroot `/home/divezone/public_html/chat.divezone.pl/`) NIE jest repo git. Założenie z konwencji 116b „backend standalone — CC wdraża samo" było interpretowane jako „`git push origin main` = deploy" — to BŁĄD: pliki zostawały w GitHubie, na serwerze nic się nie zmieniało. Konsekwencja praktyczna: CHAT-T-079 zaraportowano DONE 2026-06-07 (commit 9bf04d9), ale alert DB nie zadziałał, kiedy zdarzył się realny 1045 — bo na serwerze brakowało `src/Usage/DbHealthAlert.php` i zmodyfikowanych `public/index.php` + `src/Chat/ChatService.php`. Audyt md5 wszystkich 71 plików PHP standalone repo↔serwer: dokładnie 3 pliki rozjeżdżały się — wszystkie z CHAT-T-079. Reszta identyczna. Tabela `divechat_db_alerts` na Railway była utworzona (migracja przeszła w CHAT-T-079 KROK 6), ale skoro w boju nie pojawił się ani jeden wpis i ani jednego `[DB-DOWN]` w error_log — kod alertu po prostu nie żył w produkcji.
+
+**Decyzja (procedura przejściowa, obowiązuje TERAZ):** Każdy task backendu standalone kończący się zmianą plików ma w speccie osobny krok „DEPLOY" wykonujący rsync z weryfikacją:
+1. **Backup zmienianych plików** na serwerze do `_deploy_bak/<task-id>/<plik>.bak` PRZED rsyncem (rollback jednym ruchem przy regresji).
+2. **Rsync per ścieżka** (NIE `--delete`, NIE rekursywnie cały `standalone/`): osobne wywołanie rsync dla każdego pliku, BEZ wciągania `.env` / `vendor/` / `public/error_log`. Port SSH 5739, klucz `~/.ssh/id_ed25519`, user `divezone`.
+3. **Weryfikacja po deploy**: md5 match repo↔serwer dla wszystkich plików w pakiecie + `php -l` przez `/opt/cpanel/ea-php84/root/usr/bin/php` + smoke `curl https://chat.divezone.pl/api/health` → HTTP 200.
+4. **STOP-point**: CC pokazuje DOKŁADNĄ komendę rsync architektowi (Karolowi) i czeka na zgodę przed wykonaniem. Architekt kontroluje moment deployu (nie automatyczne).
+5. **Rollback przy regresji**: kopia z `_deploy_bak/<task>/*.bak` z powrotem, usunięcie nowych plików (jeśli były), drugi smoke. NIE „naprawiamy" w boju.
+6. **Zmiany dotykające `.env` / auth / migracji DB** → dodatkowy explicit STOP i wyraźna zgoda Karola (NIE „w pakiecie" z rsync).
+
+**Wycinek granicy 116b (bez zmiany):** Ta procedura dotyczy WYŁĄCZNIE `chat.divezone.pl` (standalone backend). `newtmp2/` (żywy PrestaShop docroot sklepu) ma osobną granicę z 116b — CC GO NIE DOTYKA bez explicit zgody Karola dla każdego pliku osobno. Procedura rsync z ADR-089 NIE rozszerza zakresu „CC wdraża samo" na `newtmp2`.
+
+**Alternatywy rozważane:**
+- **„CC robi git push i serwer sam się aktualizuje"** — odrzucone, bo serwer nie jest repo. Wymagałoby skonfigurowania Deploy Key na GitHub + sparse-checkout standalone/ + cron `git pull` lub webhook → osobny projekt, nie pod presją błędu z CHAT-T-079.
+- **„Wszystkie deploye przez Karola ręcznie, CC tylko commit + push"** — odrzucone, bo tracimy automatyzację, którą daje CC z bezpośrednim dostępem SSH. STOP-point wystarczy.
+- **Cały folder rsync z `--delete`** — odrzucone, bo `_deploy_bak/`, `error_log`, ewentualne sieroty z poprzedniej epoki (patrz dług niżej) zostałyby zniszczone. Sweet spot = rsync per plik konkretnej zmiany.
+
+**Konsekwencje:**
+- **Pozytywne**: 100% korelacja DONE w repo ↔ DONE w boju. Brak złudzenia „bo CC zacommitował, to wdrożone". Audytowalność (md5 match jako acceptance criterion). Backup jako natychmiastowy rollback.
+- **Negatywne**: każdy backendowy task ma 1–2 dodatkowe kroki (backup + rsync + verify) — więcej tokenów na sesję. STOP-point wymaga Karola w pętli (nie 100% autonomicznie). To rozwiązanie przejściowe, nie docelowe.
+
+**Cel docelowy (osobny task, gdy Karol doda Deploy Key na GitHub):** serwer staje się git (sparse-checkout `standalone/` + `composer install`), deploy = `git pull` przez SSH, weryfikacja `git rev-parse HEAD` repo == serwer (zamiast md5 per plik). Wtedy STOP-point można rozważyć cofnąć dla typowych deployów (bez ryzyka cichego rozjazdu). Plik tracking: `BACKLOG` lub osobny CHAT-T-NNN „Deploy Key + git on chat.divezone.pl".
+
+**Dług powiązany (osobny task, NIE w tym ADR):** 6 sierot na serwerze (`scripts/t015_smoke.php`, `t017_smoke.php`, `t020_smoke.php`, `t022_cache_probe.php`, `t022_smoke_provider.php`, `cron_editorial_picks_expire.php`) — pliki obecne na serwerze, brak odpowiednika w repo. Wykryte podczas audytu md5 71 plików. Do przeglądu: każdy z osobna — albo dodać do repo (jeśli żywy), albo usunąć z serwera (jeśli martwy). Aktualnie zignorowane przez procedurę rsync (`--delete` świadomie nieużywane), żeby przypadkiem nie skasować czegoś, co może mieć wartość.
+
+**Smoke wykonania ADR-089 (CHAT-T-080, 2026-06-07):** rsync 3 plików CHAT-T-079 → md5 match 3/3 → `php -l` clean 3/3 → `/api/health` HTTP 200 / 0.45s / 99B. Backup `_deploy_bak/CHAT-T-080/index.php.bak` + `ChatService.php.bak` na serwerze (DbHealthAlert.php był nowym plikiem, brak backupu = OK). Test alertu w boju (rotacja `.env` na ~2 min) zaplanowany jako KROK 6 CHAT-T-080 — wykonuje Karol z architektem, nie autonomicznie.
