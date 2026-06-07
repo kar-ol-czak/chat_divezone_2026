@@ -24,6 +24,7 @@ use DiveChat\Database\PostgresConnection;
 use DiveChat\Http\Request;
 use DiveChat\Http\Response;
 use DiveChat\Router;
+use DiveChat\Usage\DbHealthAlert;
 
 // Obsługa preflight CORS
 Response::handlePreflight();
@@ -47,12 +48,18 @@ $pricingService = new PricingService($db);
 $exchangeRateService = new ExchangeRateService($db);
 $usageLogger = new UsageLogger($db, $pricingService, $exchangeRateService);
 
+// CHAT-T-079 (ADR-088): alert na awarie polaczenia DB w ChatService::executeTool.
+// SettingsStore -> klucz protect_cost_alert_email (reuse CostGuard, decyzja 248a);
+// fallback .env DIVECHAT_COST_ALERT_EMAIL.
+$dbHealthAlert = new DbHealthAlert($db, new SettingsStore());
+
 $chatService = new ChatService(
     $providerFactory,
     $toolRegistry,
     new ConversationStore(),
     new SettingsStore(),
     $usageLogger,
+    $dbHealthAlert,
 );
 
 // Inicjalizuj router i zarejestruj routes

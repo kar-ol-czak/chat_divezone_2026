@@ -12,6 +12,7 @@ use DiveChat\AI\UsageLogger;
 use DiveChat\Config;
 use DiveChat\Enum\AIModel;
 use DiveChat\Tools\ToolRegistry;
+use DiveChat\Usage\DbHealthAlert;
 
 /**
  * Orkiestrator czatu.
@@ -29,6 +30,7 @@ final class ChatService
         private readonly ConversationStore $conversationStore,
         private readonly SettingsStore $settingsStore,
         private readonly UsageLogger $usageLogger,
+        private readonly DbHealthAlert $dbHealthAlert,
     ) {}
 
     /**
@@ -457,6 +459,12 @@ final class ChatService
 
     /**
      * Wykonuje narzędzie, obsługuje błędy.
+     *
+     * CHAT-T-079 (ADR-088): w catch wolamy DbHealthAlert::maybeAlert — gdy blad
+     * to awaria polaczenia DB (MySQL 1045/2002/..., PG klasa 08 / 57P0[13]),
+     * idzie alert e-mail (dedup 30 min/baza) + log [DB-DOWN]. Best-effort: alert
+     * NIGDY nie rzuca, NIE zmienia zachowania czatu — dalej zwracamy
+     * ['error' => ...] do tool_result tak jak przed CHAT-T-079.
      */
     private function executeTool(string $name, array $arguments): array
     {
@@ -467,6 +475,11 @@ final class ChatService
 
             return $this->toolRegistry->get($name)->execute($arguments);
         } catch (\Throwable $e) {
+            try {
+                $this->dbHealthAlert->maybeAlert($e, $name);
+            } catch (\Throwable $ignore) {
+                error_log('[ChatService] dbHealthAlert path failed: ' . $ignore->getMessage());
+            }
             return ['error' => "Błąd narzędzia {$name}: {$e->getMessage()}"];
         }
     }
