@@ -5,6 +5,7 @@ Chunking 105 haseł × 5 typów → 525 chunków → text-embedding-3-large → 
 """
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -177,20 +178,34 @@ CHUNK_BUILDERS = {
 }
 
 
+def compute_source_hash(entry):
+    """Kanoniczny sha256 z treści hasła (sort_keys, bez ASCII-escape, kompaktowy).
+    Odporne na zmianę wcięć/kolejności kluczy w raw JSON."""
+    canonical = json.dumps(entry, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def load_entries(concept_key=None):
-    """Wczytuje hasła z raw JSON-ów."""
+    """Wczytuje hasła z raw JSON-ów.
+    concept_key:
+      - None  → wszystkie pliki (glob)
+      - str   → jedno hasło
+      - list  → wybrane hasła
+    """
+    if concept_key is None:
+        paths = sorted(RAW_DIR.glob("*.json"))
+    elif isinstance(concept_key, str):
+        paths = [RAW_DIR / f"{concept_key}.json"]
+    else:
+        paths = [RAW_DIR / f"{k}.json" for k in concept_key]
+
     entries = []
-    if concept_key:
-        path = RAW_DIR / f"{concept_key}.json"
+    for path in paths:
         if not path.exists():
             print(f"[BŁĄD] Nie znaleziono: {path}")
             sys.exit(1)
         with open(path, "r", encoding="utf-8") as f:
             entries.append(json.load(f))
-    else:
-        for path in sorted(RAW_DIR.glob("*.json")):
-            with open(path, "r", encoding="utf-8") as f:
-                entries.append(json.load(f))
     print(f"[OK] Wczytano {len(entries)} haseł.")
     return entries
 
@@ -206,6 +221,7 @@ def build_chunks(entries):
             "name_en": entry.get("name_en"),
             "related_keys": entry.get("related_concept_keys", []),
             "pipeline_version": "v2",
+            "source_hash": compute_source_hash(entry),
         }
         for chunk_type in CHUNK_TYPES:
             content = CHUNK_BUILDERS[chunk_type](entry)
@@ -296,6 +312,122 @@ def verify(conn):
     return total
 
 
+def check_status(conn):
+    """Porównanie plik↔baza po source_hash. Zero zapisu, zero API.
+    Zwraca dict z listami: new/changed/current/orphans/anomalies.
+    """
+    file_hashes = {}
+    for path in sorted(RAW_DIR.glob("*.json")):
+        with open(path, "r", encoding="utf-8") as f:
+            entry = json.load(f)
+        ck = entry["concept_key"]
+        if ck in file_hashes:
+            print(f"[BŁĄD] Duplikat concept_key w plikach raw: {ck}")
+            sys.exit(1)
+        file_hashes[ck] = compute_source_hash(entry)
+
+    db_state = {}  # concept_key -> list[(hash, count)]
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT concept_key, metadata->>'source_hash' AS h, COUNT(*) AS n
+            FROM encyclopedia_chunks
+            GROUP BY concept_key, metadata->>'source_hash'
+            ORDER BY concept_key
+        """)
+        for ck, h, n in cur.fetchall():
+            db_state.setdefault(ck, []).append((h, n))
+
+    new_keys, changed_keys, current_keys = [], [], []
+    legacy_no_hash_keys = []  # podzbiór changed: brak source_hash w bazie (pre-TASK-ENC-013)
+    orphan_keys, anomalies = [], []
+
+    for ck, fh in sorted(file_hashes.items()):
+        if ck not in db_state:
+            new_keys.append(ck)
+            continue
+        rows = db_state[ck]
+        hashes = {h for h, _ in rows}
+        non_null = hashes - {None}
+        has_null = None in hashes
+        total_chunks = sum(n for _, n in rows)
+
+        if total_chunks != len(CHUNK_TYPES):
+            anomalies.append((ck, f"liczba chunków={total_chunks} (oczekiwano {len(CHUNK_TYPES)})"))
+
+        if not non_null:
+            # Wszystkie chunki bez source_hash → legacy (DB sprzed TASK-ENC-013), do re-embedu, NIE anomalia.
+            legacy_no_hash_keys.append(ck)
+            changed_keys.append(ck)
+            continue
+        if has_null:
+            anomalies.append((ck, f"częściowy source_hash (część chunków bez hash): {rows}"))
+            changed_keys.append(ck)
+            continue
+        if len(non_null) > 1:
+            anomalies.append((ck, f"niespójne hashe między chunkami: {rows}"))
+            changed_keys.append(ck)
+            continue
+
+        db_hash = next(iter(non_null))
+        if db_hash == fh:
+            current_keys.append(ck)
+        else:
+            changed_keys.append(ck)
+
+    for ck in sorted(db_state):
+        if ck not in file_hashes:
+            orphan_keys.append(ck)
+
+    return {
+        "new": new_keys,
+        "changed": changed_keys,
+        "legacy_no_hash": legacy_no_hash_keys,
+        "current": current_keys,
+        "orphans": orphan_keys,
+        "anomalies": anomalies,
+        "file_count": len(file_hashes),
+        "db_concept_count": len(db_state),
+    }
+
+
+def print_check_report(status):
+    """Czytelny raport dla --mode check."""
+    print("\n=== Raport spójności plik ↔ baza (encyclopedia_chunks) ===")
+    print(f"  Pliki raw: {status['file_count']} haseł")
+    print(f"  Baza: {status['db_concept_count']} concept_keys")
+    print()
+    print(f"  AKTUALNE: {len(status['current'])}")
+    print(f"  NOWE (plik bez bazy): {len(status['new'])}")
+    for ck in status["new"]:
+        print(f"    + {ck}")
+    changed_real = [ck for ck in status["changed"] if ck not in status["legacy_no_hash"]]
+    print(f"  ZMIENIONE: {len(status['changed'])}")
+    if status["legacy_no_hash"]:
+        print(f"    z tego LEGACY bez source_hash (pre-TASK-ENC-013, jednorazowa migracja): "
+              f"{len(status['legacy_no_hash'])}")
+    if changed_real:
+        print(f"    z tego ZMIENIONE TREŚCI: {len(changed_real)}")
+        for ck in changed_real:
+            print(f"      ~ {ck}")
+    print(f"  SIEROTY (baza bez pliku): {len(status['orphans'])}")
+    for ck in status["orphans"]:
+        print(f"    ! {ck}  (NIE usuwam — tylko raport)")
+    if status["anomalies"]:
+        print(f"  ANOMALIE: {len(status['anomalies'])}")
+        for ck, msg in status["anomalies"]:
+            print(f"    ? {ck}: {msg}")
+    print()
+    if not status["new"] and not status["changed"] and not status["anomalies"]:
+        print("[OK] Wszystko AKTUALNE. Baza zgodna z plikami raw.")
+    elif status["legacy_no_hash"] and not changed_real and not status["new"] and not status["anomalies"]:
+        print(f"[INFO] Baza jest legacy (TASK-ENC-012 sprzed source_hash). "
+              f"Pierwszy `--mode changed` lub `--mode full` re-embeduje "
+              f"{len(status['legacy_no_hash'])} haseł i zapisze hashe. "
+              f"Kolejne checki będą szybkie.")
+    else:
+        print("[INFO] Są rozbieżności — uruchom `--mode changed` żeby embedować NOWE/ZMIENIONE.")
+
+
 def test_query(conn, client, query, top_n=5):
     """Test semantic search."""
     resp = client.embeddings.create(model=EMBEDDING_MODEL, input=[query], dimensions=EMBEDDING_DIM)
@@ -351,7 +483,13 @@ def write_report(total_chunks, total_tokens, cost, elapsed, test_results):
 
 def main():
     parser = argparse.ArgumentParser(description="Embed encyclopedia to pgvector")
-    parser.add_argument("--mode", choices=["full", "single", "test-query"], default="full")
+    parser.add_argument(
+        "--mode",
+        choices=["full", "single", "changed", "check", "test-query"],
+        default="full",
+        help="full=wszystko, single=jedno (--concept), changed=tylko NOWE/ZMIENIONE (auto), "
+             "check=read-only raport rozjazdu plik↔baza, test-query=semantic search test",
+    )
     parser.add_argument("--concept", help="Concept key dla trybu single")
     parser.add_argument("--query", help="Query dla trybu test-query")
     args = parser.parse_args()
@@ -363,6 +501,54 @@ def main():
         conn = get_db_connection()
         client = get_openai_client()
         test_query(conn, client, args.query, top_n=10)
+        conn.close()
+        return
+
+    if args.mode == "check":
+        conn = get_db_connection()
+        status = check_status(conn)
+        conn.close()
+        print_check_report(status)
+        # exit code: 0 = wszystko AKTUALNE, 2 = są zmiany/anomalie do obsłużenia
+        if status["new"] or status["changed"] or status["anomalies"]:
+            sys.exit(2)
+        sys.exit(0)
+
+    if args.mode == "changed":
+        conn = get_db_connection()
+        status = check_status(conn)
+        keys_to_embed = status["new"] + status["changed"]
+        if not keys_to_embed:
+            print("[OK] Brak zmian, baza aktualna.")
+            if status["orphans"]:
+                print(f"[WARN] SIEROTY w bazie (brak pliku raw): {status['orphans']}")
+            conn.close()
+            return
+        print(f"[INFO] Do embedu: {len(keys_to_embed)} haseł")
+        if status["new"]:
+            print(f"  NOWE ({len(status['new'])}): {', '.join(status['new'])}")
+        if status["changed"]:
+            print(f"  ZMIENIONE ({len(status['changed'])}): {', '.join(status['changed'])}")
+        if status["orphans"]:
+            print(f"[WARN] SIEROTY w bazie (brak pliku raw): {status['orphans']}")
+        if status["anomalies"]:
+            for ck, msg in status["anomalies"]:
+                print(f"[WARN] {ck}: {msg}")
+
+        client = get_openai_client()
+        entries = load_entries(keys_to_embed)
+        chunks = build_chunks(entries)
+        embed_chunks(client, chunks)
+        upsert_chunks(conn, chunks)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(DISTINCT concept_key), MAX(updated_at) "
+                "FROM encyclopedia_chunks WHERE concept_key = ANY(%s)",
+                (keys_to_embed,),
+            )
+            updated_keys, max_upd = cur.fetchone()
+        print(f"[OK] Zaktualizowano {updated_keys} haseł, MAX(updated_at) = {max_upd}")
         conn.close()
         return
 
