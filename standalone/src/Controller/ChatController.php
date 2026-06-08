@@ -225,7 +225,12 @@ final class ChatController
         // 2. Walidacja body
         $body = $request->getJsonBody();
         $message = trim($body['message'] ?? '');
-        $sessionId = $body['session_id'] ?? $this->generateSessionId();
+        // CHAT-T-082 (sekcja 3 spec): front podaje UUID v4 generowany przy
+        // nudge_shown. Backend waliduje format i przyjmuje TYLKO zaufane
+        // ksztalty (UUID v4 lub legacy 32-hex z CHAT-T-059); cokolwiek innego
+        // -> generujemy server-side UUID v4 (defensywa anty-podszycie).
+        // Ownership mismatch obsluguje ConversationStore::startOrResume.
+        $sessionId = $this->resolveSessionId($body['session_id'] ?? null);
 
         if ($message === '') {
             Response::error('Pole "message" jest wymagane i nie może być puste', 400);
@@ -308,7 +313,9 @@ final class ChatController
         // 2. Walidacja body
         $body = $request->getJsonBody();
         $message = trim($body['message'] ?? '');
-        $sessionId = $body['session_id'] ?? $this->generateSessionId();
+        // CHAT-T-082 (sekcja 3 spec): client-supplied sessionId (UUID v4)
+        // akceptowany z walidacja formatu + ownership check w startOrResume.
+        $sessionId = $this->resolveSessionId($body['session_id'] ?? null);
 
         if ($message === '') {
             Response::error('Pole "message" jest wymagane i nie może być puste', 400);
@@ -451,8 +458,70 @@ final class ChatController
         ]);
     }
 
+    /**
+     * Zwroc bezpieczny sessionId do uzycia w petli czatu (CHAT-T-082).
+     *
+     * - null/pusty -> generujemy UUID v4 (nowa sesja, server-side).
+     * - poprawny UUID v4 (z frontu po CHAT-T-083) -> przepuszczamy.
+     * - legacy 32-hex (server-generated sprzed CHAT-T-082, persystowany w
+     *   localStorage CHAT-T-059) -> przepuszczamy dla zgodnosci wstecz.
+     * - cokolwiek innego (smieci, proba SQL injection format-leveled, etc.)
+     *   -> generujemy fresh UUID v4 (defensywa anty-podszycie).
+     *
+     * Ownership check (czy sessionId nalezy do customerId z HMAC) wykonuje
+     * ConversationStore::startOrResume — tu tylko format.
+     */
+    private function resolveSessionId(mixed $clientSessionId): string
+    {
+        if (!is_string($clientSessionId)) {
+            return $this->generateSessionId();
+        }
+        $trimmed = trim($clientSessionId);
+        if ($trimmed === '') {
+            return $this->generateSessionId();
+        }
+        if (self::isValidSessionIdFormat($trimmed)) {
+            return $trimmed;
+        }
+        return $this->generateSessionId();
+    }
+
+    /**
+     * Akceptujemy UUID v4 (nowy front, CHAT-T-083) ALBO legacy 32-hex
+     * (server-generated sprzed CHAT-T-082, zachowany dla CHAT-T-059
+     * persystencji localStorage).
+     */
+    private static function isValidSessionIdFormat(string $sessionId): bool
+    {
+        // UUID v4: 8-4-4-4-12 z '4' w pozycji 13 i [89ab] w pozycji 17.
+        if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $sessionId) === 1) {
+            return true;
+        }
+        // Legacy: bin2hex(random_bytes(16)) = 32 znaki lowercase hex.
+        if (preg_match('/^[0-9a-f]{32}$/', $sessionId) === 1) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Generuje sessionId server-side jako UUID v4 (CHAT-T-082 — spojnosc
+     * formatu z crypto.randomUUID() na froncie). Wczesniej bylo 32-hex
+     * (random_bytes(16)); resolveSessionId nadal honoruje stare ID z
+     * localStorage CHAT-T-059.
+     */
     private function generateSessionId(): string
     {
-        return bin2hex(random_bytes(16));
+        $bytes = random_bytes(16);
+        $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+        $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+        $hex = bin2hex($bytes);
+        return sprintf('%s-%s-%s-%s-%s',
+            substr($hex, 0, 8),
+            substr($hex, 8, 4),
+            substr($hex, 12, 4),
+            substr($hex, 16, 4),
+            substr($hex, 20, 12),
+        );
     }
 }

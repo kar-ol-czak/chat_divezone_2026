@@ -50,9 +50,12 @@ final class ChatService
         $settings = $this->loadSettings();
 
         // 1. Wczytaj lub utwórz sesję (PEŁNA historia + id rekordu).
+        // CHAT-T-082: startOrResume moze podmienic sessionId przy ownership
+        // mismatch (sekcja 3 spec) — przyjmujemy EFEKTYWNY id z wyniku.
         $session = $this->conversationStore->startOrResume($sessionId, $customerId);
         $conversationId = $session['id'];
         $fullHistory = $session['history'];
+        $sessionId = $session['session_id'];
 
         // Rehydratuj ToolCall objects z historii (JSON zwraca tablice)
         foreach ($fullHistory as &$msg) {

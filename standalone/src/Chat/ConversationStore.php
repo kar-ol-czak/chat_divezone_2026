@@ -21,23 +21,56 @@ final class ConversationStore
     /**
      * Wznawia lub tworzy nową sesję.
      *
-     * @return array{id: int, history: array} `id` = klucz PK z divechat_conversations,
-     *   potrzebny dla UsageLogger (FK divechat_message_usage.conversation_id).
+     * CHAT-T-082 (sekcja 3 spec): front podaje sessionId (UUID v4) JUZ przy
+     * ekspozycji nudge i przekazuje przy pierwszej wiadomosci. Backend
+     * akceptuje client-supplied sessionId, ALE z modelem wlasnosci po HMAC:
+     *  - sessionId istnieje + ps_customer_id pasuje do $customerId -> resume.
+     *  - sessionId istnieje + ps_customer_id JEST CUDZE -> NIE resume,
+     *    generujemy NOWY server-side sessionId i tworzymy nowa rozmowe
+     *    (zapobiega podszyciu pod cudzy wpis). Klient dostanie zwrotnie
+     *    nowy sessionId w odpowiedzi.
+     *  - sessionId nie istnieje -> INSERT z TYM sessionId + $customerId
+     *    (NOWE: akceptujemy client-supplied, NIE generujemy wlasnego).
+     *
+     * Format sessionId waliduje caller (ChatController) — store ufa wejsciu.
+     *
+     * Goscie (customerId=null/0): porownujemy 0==0. Sesje gosci sa
+     * wzajemnie nieodroznialne po customerId; sessionId pelni role sekretu
+     * (decyzja 145a, /api/chat/history). Spojnie z findActiveBySessionId.
+     *
+     * @return array{id: int, history: array, session_id: string} `id` =
+     *   klucz PK z divechat_conversations (FK divechat_message_usage).
+     *   `session_id` = EFEKTYWNY sessionId (moze sie roznic od wejsciowego
+     *   przy ownership mismatch — caller MUSI uzyc tego pola dalej).
      */
     public function startOrResume(string $sessionId, ?int $customerId): array
     {
         $row = $this->db->fetchOne(
-            'SELECT id, messages FROM divechat_conversations
+            'SELECT id, ps_customer_id, messages FROM divechat_conversations
              WHERE session_id = ? AND closed_at IS NULL
              ORDER BY started_at DESC LIMIT 1',
             [$sessionId],
         );
 
+        $effectiveSessionId = $sessionId;
+
         if ($row) {
-            return [
-                'id' => (int) $row['id'],
-                'history' => json_decode($row['messages'], true) ?: [],
-            ];
+            $existingOwner = $row['ps_customer_id'] !== null ? (int) $row['ps_customer_id'] : 0;
+            $requestOwner = $customerId ?? 0;
+
+            if ($existingOwner === $requestOwner) {
+                return [
+                    'id' => (int) $row['id'],
+                    'history' => json_decode($row['messages'], true) ?: [],
+                    'session_id' => $effectiveSessionId,
+                ];
+            }
+
+            // Ownership mismatch -> NIE resume, NIE nadpisuj cudzej rozmowy.
+            // Generujemy nowy server-side UUID v4 (zachowanie spojne ze
+            // {exists:false} w /api/chat/history). Klient dostanie nowy
+            // sessionId w odpowiedzi (caller propaguje).
+            $effectiveSessionId = self::generateServerSessionId();
         }
 
         // Nowa sesja – RETURNING id w jednym roundtripie.
@@ -45,13 +78,36 @@ final class ConversationStore
             'INSERT INTO divechat_conversations (session_id, ps_customer_id, messages)
              VALUES (?, ?, ?::jsonb)
              RETURNING id',
-            [$sessionId, $customerId, '[]'],
+            [$effectiveSessionId, $customerId, '[]'],
         );
 
         return [
             'id' => (int) ($newRow['id'] ?? 0),
             'history' => [],
+            'session_id' => $effectiveSessionId,
         ];
+    }
+
+    /**
+     * UUID v4 generowany server-side (fallback przy ownership mismatch,
+     * lub gdy ChatController dostaje malformed sessionId).
+     *
+     * Format spojny z crypto.randomUUID() na froncie (CHAT-T-083).
+     */
+    private static function generateServerSessionId(): string
+    {
+        $bytes = random_bytes(16);
+        // RFC 4122 v4: ustaw wersje (4) i wariant (10xx).
+        $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+        $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+        $hex = bin2hex($bytes);
+        return sprintf('%s-%s-%s-%s-%s',
+            substr($hex, 0, 8),
+            substr($hex, 8, 4),
+            substr($hex, 12, 4),
+            substr($hex, 16, 4),
+            substr($hex, 20, 12),
+        );
     }
 
     /**

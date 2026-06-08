@@ -30,6 +30,7 @@ use DiveChat\Controller\MobileConversationsController;
 use DiveChat\Controller\OrderStatusController;
 use DiveChat\Controller\SettingsController;
 use DiveChat\Controller\TestTokenController;
+use DiveChat\Controller\WidgetEventController;
 use DiveChat\Database\MysqlConnection;
 use DiveChat\Database\PostgresConnection;
 use DiveChat\Editorial\EditorialPicksService;
@@ -37,6 +38,7 @@ use DiveChat\Http\AdminAuthMiddleware;
 use DiveChat\Router;
 use DiveChat\Tools\OrderStatus;
 use DiveChat\Usage\CostGuard;
+use DiveChat\Usage\NudgeEventStore;
 use DiveChat\Usage\RateLimiter;
 
 /**
@@ -79,6 +81,17 @@ return static function (
     // Order status (modal "Status zamówienia", CHAT-T-042 / ADR-063 — bez LLM, lookup MySQL).
     $orderStatusController = new OrderStatusController(new OrderStatus());
     $router->post('/api/order/status', $orderStatusController->handle(...));
+
+    // CHAT-T-082 (ADR-090 faza 2): publiczny endpoint zdarzen widgetu (CTR nudge).
+    // BEZ HMAC klienckiego (beacon nie niesie naglowkow auth), BEZ CostGuard,
+    // BEZ admina. Ochrona: whitelist (event_type, bucket, sessionId UUID v4) +
+    // RateLimiter per IP (reuse, luzny limit). Zawsze 204 — beacon ignoruje body.
+    // Sklep -> chat.divezone.pl cross-origin (CORS w Response::setCorsHeaders).
+    $widgetEventController = new WidgetEventController(
+        new NudgeEventStore(PostgresConnection::getInstance()),
+        new RateLimiter(PostgresConnection::getInstance()),
+    );
+    $router->post('/api/widget/event', $widgetEventController->handle(...));
 
     // CHAT-T-044/046: kanal serwerowy panelu PS (ADR-068, sekret DIVECHAT_SERVER_SECRET).
     // Tworzony wczesnie zeby wszyscy admini ponizej (Conversations/Settings/Pricing/
