@@ -20,6 +20,7 @@ use DiveChat\Chat\SettingsStore;
 use DiveChat\Controller\AdminAnalyticsController;
 use DiveChat\Controller\AdminController;
 use DiveChat\Controller\AdminEditorialPicksController;
+use DiveChat\Controller\AdminNudgeCtrController;
 use DiveChat\Controller\AdminPricingController;
 use DiveChat\Controller\AdminWhoamiController;
 use DiveChat\Controller\ChatController;
@@ -150,6 +151,13 @@ return static function (
     // {id} zostaje na starym (Basic Auth, decyzja 109a).
     $router->get('/api/admin/conversations/top', $adminAnalyticsController->topConversations(...));
     $router->get('/api/admin/conversations/{id}', $adminController->conversationDetail(...));
+
+    // CHAT-T-084 (ADR-090 faza 2 krok 3/3): raport CTR nudge dla panelu PS.
+    // Kanal serwerowy + rola admin-only (analogicznie do AdminAnalyticsController).
+    // Konsumuje 3 typy zdarzen z divechat_nudge_events (CHAT-T-082 + CHAT-T-086
+    // dla nudge_dismiss) + atrybucje conversations.nudge_sid (CHAT-T-085/ADR-092).
+    $adminNudgeCtrController = new AdminNudgeCtrController($serverVerifier, $db);
+    $router->get('/api/admin/nudge-ctr', $adminNudgeCtrController->handle(...));
 
     // Admin: Editorial Picks (T-008, ADR-054).
     // CHAT-T-054 Etap 3 (127b/128a): przepiete z Basic Auth na kanal serwerowy

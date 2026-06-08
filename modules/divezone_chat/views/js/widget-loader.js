@@ -525,8 +525,12 @@
     });
 
     // Klik × — zamknij + flag, NIE otwiera czatu (stopPropagation, by nie bublowac do kontenera).
+    // CHAT-T-086 (256b/257a): beacon nudge_dismiss PRZED hideNudge — fire-and-forget,
+    // bledy beacona nie blokuja zamkniecia (sendNudgeEvent ma try/catch). Guard
+    // !nudgeShownSid w sendNudgeEvent chroni przed wyslaniem bez ekspozycji.
     closeBtn.addEventListener('click', function (e) {
       e.stopPropagation();
+      sendNudgeEvent('nudge_dismiss');
       ssSet('dz_nudge_dismissed', '1');
       hideNudge();
     });
@@ -669,9 +673,11 @@
       }
     });
 
-    /* X — zamknij + flag w sesji, NIE otwiera czatu. */
+    /* X — zamknij + flag w sesji, NIE otwiera czatu.
+     * CHAT-T-086: beacon nudge_dismiss PRZED hideNudge (analogicznie do v1 powyzej). */
     closeBtn.addEventListener('click', function (e) {
       e.stopPropagation();
+      sendNudgeEvent('nudge_dismiss');
       ssSet('dz_nudge_dismissed', '1');
       hideNudge();
     });

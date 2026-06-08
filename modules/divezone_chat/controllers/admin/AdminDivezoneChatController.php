@@ -42,6 +42,8 @@ class AdminDivezoneChatController extends ModuleAdminController
     const ENDPOINT_COST_TREND        = '/api/admin/cost/trend';
     const ENDPOINT_COST_BY_MODEL     = '/api/admin/cost/by-model';
     const ENDPOINT_CONVERSATIONS_TOP = '/api/admin/conversations/top';
+    // CHAT-T-084 (ADR-090 faza 2): raport CTR nudge (admin-only).
+    const ENDPOINT_NUDGE_CTR         = '/api/admin/nudge-ctr';
     // Chart.js z CDN — graceful degradation gdy CSP/siec blokuje (typeof Chart guard).
     const CHARTJS_CDN = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
     // CHAT-T-055: Editorial Picks (any-role, CHAT-T-054 backend, ADR-076).
@@ -63,6 +65,10 @@ class AdminDivezoneChatController extends ModuleAdminController
     const TAB_ANALYTICS       = 'analytics';
     // CHAT-T-055: editorial picks (any-role, 127b).
     const TAB_EDITORIAL       = 'editorial';
+    // CHAT-T-084 (ADR-090 faza 2 krok 3/3): raport CTR nudge (admin-only).
+    const TAB_NUDGE_CTR       = 'nudge_ctr';
+    // CHAT-T-084: prog "za mala proba" dla flagi w UI (sekcja 7 spec).
+    const NUDGE_CTR_MIN_SAMPLE = 100;
 
     /** @var string komunikat flashowy do wyswietlenia na gorze ekranu Modele */
     private $modelsFlash = '';
@@ -97,7 +103,7 @@ class AdminDivezoneChatController extends ModuleAdminController
 
         // 1. Aktywna zakladka — z querystring lub form submit, default Rozmowy (CHAT-T-048, 106a).
         $activeTab = (string) Tools::getValue('tab', self::TAB_CONVERSATIONS);
-        if (!in_array($activeTab, array(self::TAB_CONVERSATIONS, self::TAB_RECOMMENDATIONS, self::TAB_MODELS, self::TAB_CONFIG, self::TAB_ANALYTICS, self::TAB_EDITORIAL), true)) {
+        if (!in_array($activeTab, array(self::TAB_CONVERSATIONS, self::TAB_RECOMMENDATIONS, self::TAB_MODELS, self::TAB_CONFIG, self::TAB_ANALYTICS, self::TAB_EDITORIAL, self::TAB_NUDGE_CTR), true)) {
             $activeTab = self::TAB_CONVERSATIONS;
         }
 
@@ -159,6 +165,10 @@ class AdminDivezoneChatController extends ModuleAdminController
             $tabContent = $this->renderConfigSection($employeeId, $role);
         } elseif ($activeTab === self::TAB_ANALYTICS) {
             $tabContent = $this->renderAnalyticsSection($employeeId);
+        } elseif ($activeTab === self::TAB_NUDGE_CTR) {
+            // CHAT-T-084: raport CTR nudge (admin-only — endpoint zwroci 403
+            // dla nie-admina; UI maskuje link w renderTabsNav dla nie-admina).
+            $tabContent = $this->renderNudgeCtrSection($employeeId);
         } elseif ($activeTab === self::TAB_EDITORIAL) {
             $tabContent = $this->renderEditorialSection($employeeId);
         } else {
@@ -332,6 +342,7 @@ class AdminDivezoneChatController extends ModuleAdminController
         $conv = $baseUrl . '&tab=' . self::TAB_CONVERSATIONS;
         $rec  = $baseUrl . '&tab=' . self::TAB_RECOMMENDATIONS;
         $ana  = $baseUrl . '&tab=' . self::TAB_ANALYTICS;
+        $ctr  = $baseUrl . '&tab=' . self::TAB_NUDGE_CTR;
         $edi  = $baseUrl . '&tab=' . self::TAB_EDITORIAL;
         $mod  = $baseUrl . '&tab=' . self::TAB_MODELS;
         $cfg  = $baseUrl . '&tab=' . self::TAB_CONFIG;
@@ -339,6 +350,7 @@ class AdminDivezoneChatController extends ModuleAdminController
         $clsConv = $activeTab === self::TAB_CONVERSATIONS   ? ' is-active' : '';
         $clsRec  = $activeTab === self::TAB_RECOMMENDATIONS ? ' is-active' : '';
         $clsAna  = $activeTab === self::TAB_ANALYTICS       ? ' is-active' : '';
+        $clsCtr  = $activeTab === self::TAB_NUDGE_CTR       ? ' is-active' : '';
         $clsEdi  = $activeTab === self::TAB_EDITORIAL       ? ' is-active' : '';
         $clsMod  = $activeTab === self::TAB_MODELS          ? ' is-active' : '';
         $clsCfg  = $activeTab === self::TAB_CONFIG          ? ' is-active' : '';
@@ -350,6 +362,9 @@ class AdminDivezoneChatController extends ModuleAdminController
         $html .= '<a href="' . htmlspecialchars($rec, ENT_QUOTES) . '" class="dz-tab-link' . $clsRec . '" role="tab">' . $this->l('Rekomendacje') . '</a>';
         if ($isAdmin) {
             $html .= '<a href="' . htmlspecialchars($ana, ENT_QUOTES) . '" class="dz-tab-link' . $clsAna . '" role="tab">' . $this->l('Analityka') . '</a>';
+            // CHAT-T-084 (ADR-090 faza 2): raport CTR nudge — admin-only (endpoint
+            // wymaga roli admin; UI ukrywamy link dla nie-admina spojnie z Analityka).
+            $html .= '<a href="' . htmlspecialchars($ctr, ENT_QUOTES) . '" class="dz-tab-link' . $clsCtr . '" role="tab">' . $this->l('CTR zachety') . '</a>';
         }
         $html .= '<a href="' . htmlspecialchars($edi, ENT_QUOTES) . '" class="dz-tab-link' . $clsEdi . '" role="tab">' . $this->l('Editorial') . '</a>';
         $html .= '<a href="' . htmlspecialchars($mod, ENT_QUOTES) . '" class="dz-tab-link' . $clsMod . '" role="tab">' . $this->l('Modele') . '</a>';
@@ -1681,6 +1696,158 @@ class AdminDivezoneChatController extends ModuleAdminController
 
         $html .= '</div></div>';
         return $html;
+    }
+
+    // ============================================================================
+    // SEKCJA: CTR zachety (CHAT-T-084, ADR-090 faza 2 krok 3/3, admin-only)
+    // ============================================================================
+    // Tabela v1/v2 z 4 metrykami (kliki/zamkniecia/zignorowane/konwersja) +
+    // flaga "za mala proba" dla shown<NUDGE_CTR_MIN_SAMPLE.
+    // Endpoint: GET /api/admin/nudge-ctr (AdminNudgeCtrController), kanal serwerowy.
+    // Konsumuje 3 typy zdarzen z divechat_nudge_events (CHAT-T-082 + CHAT-T-086)
+    // + atrybucje conversations.nudge_sid (CHAT-T-085/ADR-092).
+    private function renderNudgeCtrSection($employeeId)
+    {
+        $days = (int) Tools::getValue('days', 30);
+        if (!in_array($days, array(7, 30, 90), true)) {
+            $days = 30;
+        }
+
+        $response = $this->callBackend(self::ENDPOINT_NUDGE_CTR . '?days=' . $days, $employeeId);
+
+        $html  = '<div class="panel" style="border-top-left-radius:0;">';
+        $html .= '<div class="panel-heading"><i class="icon-bar-chart"></i> ' . $this->l('CTR zachety') . ' (' . $days . ' ' . $this->l('dni') . ')</div>';
+        $html .= '<div style="padding:18px;">';
+
+        // 403 admin-only — spojnie z Analityka.
+        if ($this->anyResponseIs403(array($response))) {
+            $html .= '<div class="dz-analytics-forbidden"><strong>' . $this->l('Brak uprawnien.') . '</strong> ';
+            $html .= $this->l('Raport CTR zachety dostepny tylko dla administratorow. Twoje konto ma role operatora lub nie ma roli w divechat_admin_roles.');
+            $html .= '</div>';
+            $html .= '</div></div>';
+            return $html;
+        }
+
+        // Bledy infrastruktury (timeout, brak backendu, niepoprawny JSON).
+        if (isset($response['error'])) {
+            $html .= '<p style="color:#8a6d3b;background:#fcf8e3;padding:10px;border:1px solid #faebcc;border-radius:3px;">';
+            $html .= '<strong>' . $this->l('Brak danych:') . '</strong> ' . htmlspecialchars((string) $response['error'], ENT_QUOTES);
+            $html .= '</p>';
+            $html .= '</div></div>';
+            return $html;
+        }
+
+        // Filtr okresu (7/30/90 dni) — taki sam wzor jak Analityka.
+        $html .= $this->renderNudgeCtrFilters($days);
+
+        // Opis metryk nad tabela (sekcja 7 spec).
+        $html .= '<div style="margin:14px 0;padding:12px 14px;background:#f7f9fa;border:1px solid #e2e6e8;border-radius:4px;font-size:12px;color:#555;line-height:1.55;">';
+        $html .= '<strong>' . $this->l('Co liczy raport:') . '</strong><br>';
+        $html .= '<strong>CTR</strong> = klik CTA &divide; ekspozycja (czy zacheta sklania do kliknieca). ';
+        $html .= '<strong>' . $this->l('Zamkniecia') . '</strong> = klik X &divide; ekspozycja (swiadome odrzucenie). ';
+        $html .= '<strong>' . $this->l('Zignorowane') . '</strong> = reszta (brak reakcji w sesji — NIE twardy sygnal odrzucenia, mogli przewinac/wyjsc). ';
+        $html .= '<strong>' . $this->l('Konwersja') . '</strong> = rozmowa z &ge;1 wiadomoscia uzytkownika &divide; ekspozycja.<br>';
+        $html .= '<em>' . $this->l('Uwaga:') . '</em> ' . $this->l('Stare rozmowy sprzed CHAT-T-085 maja nudge_sid=NULL (konwersja liczona od wdrozenia). Zamkniecia liczone od wdrozenia CHAT-T-086.');
+        $html .= '</div>';
+
+        // Tabela.
+        $rows = isset($response['rows']) && is_array($response['rows']) ? $response['rows'] : array();
+        $html .= $this->renderNudgeCtrTable($rows);
+
+        $html .= '</div></div>';
+        return $html;
+    }
+
+    private function renderNudgeCtrFilters($days)
+    {
+        $token = Tools::getAdminTokenLite('AdminDivezoneChat');
+
+        $html  = '<form method="get" class="dz-analytics-filters" action="">';
+        $html .= '<input type="hidden" name="controller" value="AdminDivezoneChat">';
+        $html .= '<input type="hidden" name="token" value="' . htmlspecialchars($token, ENT_QUOTES) . '">';
+        $html .= '<input type="hidden" name="tab" value="' . self::TAB_NUDGE_CTR . '">';
+
+        $html .= '<div><label for="dz-ctr-days">' . $this->l('Okres (dni)') . '</label>';
+        $html .= '<select id="dz-ctr-days" name="days" onchange="this.form.submit()">';
+        foreach (array(7, 30, 90) as $d) {
+            $sel = $d === $days ? ' selected' : '';
+            $html .= '<option value="' . $d . '"' . $sel . '>' . $d . '</option>';
+        }
+        $html .= '</select></div>';
+
+        $html .= '<noscript><button type="submit" style="padding:6px 14px;">' . $this->l('Zastosuj') . '</button></noscript>';
+        $html .= '</form>';
+        return $html;
+    }
+
+    private function renderNudgeCtrTable(array $rows)
+    {
+        if (empty($rows)) {
+            return '<p style="padding:14px;background:#f7f9fa;border:1px solid #e2e6e8;border-radius:4px;color:#777;">'
+                 . $this->l('Brak danych z wybranego okresu. Sprobuj wydluzyc okres lub poczekaj na ruch.')
+                 . '</p>';
+        }
+
+        $html  = '<table class="table" style="margin-top:8px;">';
+        $html .= '<thead><tr>';
+        $html .= '<th>' . $this->l('Wariant') . '</th>';
+        $html .= '<th>' . $this->l('Tryb') . '</th>';
+        $html .= '<th style="text-align:right;">' . $this->l('Ekspozycje') . '</th>';
+        $html .= '<th style="text-align:right;">' . $this->l('Kliki (CTA)') . '</th>';
+        $html .= '<th style="text-align:right;">' . $this->l('CTR %') . '</th>';
+        $html .= '<th style="text-align:right;">' . $this->l('Zamkniecia (X)') . '</th>';
+        $html .= '<th style="text-align:right;">' . $this->l('Zamkniecia %') . '</th>';
+        $html .= '<th style="text-align:right;">' . $this->l('Zignorowane') . '</th>';
+        $html .= '<th style="text-align:right;">' . $this->l('Rozmowy') . '</th>';
+        $html .= '<th style="text-align:right;">' . $this->l('Konwersja %') . '</th>';
+        $html .= '</tr></thead><tbody>';
+
+        foreach ($rows as $r) {
+            $bucket    = isset($r['bucket'])    ? (string) $r['bucket']    : '?';
+            $abActive  = !empty($r['ab_active']);
+            $shown     = isset($r['shown'])     ? (int) $r['shown']        : 0;
+            $clicks    = isset($r['clicks'])    ? (int) $r['clicks']       : 0;
+            $dismiss   = isset($r['dismissals']) ? (int) $r['dismissals']  : 0;
+            $ignored   = isset($r['ignored'])   ? (int) $r['ignored']      : 0;
+            $convs     = isset($r['conversations']) ? (int) $r['conversations'] : 0;
+            $ctr       = isset($r['ctr'])             ? $r['ctr']             : null;
+            $dismRate  = isset($r['dismiss_rate'])    ? $r['dismiss_rate']    : null;
+            $convRate  = isset($r['conversion_rate']) ? $r['conversion_rate'] : null;
+
+            $smallSample = $shown < self::NUDGE_CTR_MIN_SAMPLE;
+            $rowStyle = $smallSample ? ' style="background:#fffbea;"' : '';
+            $smallFlag = $smallSample ? ' <span title="' . $this->l('Za mala proba na wnioski (mniej niz 100 ekspozycji)') . '" style="color:#b48a00;font-weight:600;">&#9888;</span>' : '';
+
+            $html .= '<tr' . $rowStyle . '>';
+            $html .= '<td><strong>' . htmlspecialchars($bucket, ENT_QUOTES) . '</strong>' . $smallFlag . '</td>';
+            $html .= '<td>' . ($abActive ? $this->l('A/B') : $this->l('baseline')) . '</td>';
+            $html .= '<td style="text-align:right;">' . $shown . '</td>';
+            $html .= '<td style="text-align:right;">' . $clicks . '</td>';
+            $html .= '<td style="text-align:right;">' . $this->fmtPercent($ctr) . '</td>';
+            $html .= '<td style="text-align:right;">' . $dismiss . '</td>';
+            $html .= '<td style="text-align:right;">' . $this->fmtPercent($dismRate) . '</td>';
+            $html .= '<td style="text-align:right;">' . $ignored . '</td>';
+            $html .= '<td style="text-align:right;">' . $convs . '</td>';
+            $html .= '<td style="text-align:right;">' . $this->fmtPercent($convRate) . '</td>';
+            $html .= '</tr>';
+        }
+
+        $html .= '</tbody></table>';
+
+        // Adnotacja: sanity clicks+dismissals+ignored=shown (z definicji, clampowane backend).
+        $html .= '<p style="margin-top:10px;color:#888;font-size:11px;">';
+        $html .= $this->l('Z definicji: ekspozycje = kliki + zamkniecia + zignorowane. Zignorowane policzane jako reszta (clamp >= 0 w backendzie).');
+        $html .= '</p>';
+
+        return $html;
+    }
+
+    private function fmtPercent($rate)
+    {
+        if ($rate === null) {
+            return '&mdash;';
+        }
+        return number_format((float) $rate * 100, 1, '.', '') . '%';
     }
 
     private function anyResponseIs403($responses)

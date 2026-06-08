@@ -13,7 +13,8 @@ use DiveChat\Usage\RateLimiter;
  * Publiczny endpoint zdarzen widgetu (CHAT-T-082, ADR-090 faza 2).
  *
  * POST /api/widget/event — przyjmuje beacony 'nudge_shown' / 'nudge_cta_click'
- * z frontu (sklep divezone.pl → chat.divezone.pl cross-origin). Body JSON
+ * / 'nudge_dismiss' (CHAT-T-086 dodal trzeci typ — klik X) z frontu (sklep
+ * divezone.pl → chat.divezone.pl cross-origin). Body JSON
  * {session_id, event_type, bucket, ab_active}.
  *
  * Ochrona lekka (zdarzenia fire-and-forget, NIE LLM):
@@ -38,7 +39,11 @@ final class WidgetEventController
     // odsiac smieci (sessionId='1', 'test', zwykly losowy ciag).
     private const UUID_V4_REGEX = '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i';
 
-    private const VALID_EVENT_TYPES = ['nudge_shown', 'nudge_cta_click'];
+    // CHAT-T-086 (decyzje 256b/257a): dodany 'nudge_dismiss' (klik X) jako
+    // trzeci typ ekspozycji. Migracja 027 rozszerzyla CHECK constraint na
+    // wszystkie trzy wartosci. UNIQUE (session_id, event_type) zostaje —
+    // dedup na poziomie kombinacji typ+sesja dziala dla wszystkich typow.
+    private const VALID_EVENT_TYPES = ['nudge_shown', 'nudge_cta_click', 'nudge_dismiss'];
     private const VALID_BUCKETS = ['v1', 'v2'];
 
     // Luzny limit: dwa beacony per sesja x kilka uzytkownikow z tego samego
