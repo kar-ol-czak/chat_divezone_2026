@@ -2719,8 +2719,9 @@ Bot zacytował błędną fizykę wyporu (suchy skafander rzekomo wymaga większe
 
 ---
 
-### ADR-091: Rozdzielenie sessionId rozmowy od identyfikatora atrybucji nudge (fix korelacji CTR konwersji)
+### ADR-092: Rozdzielenie sessionId rozmowy od identyfikatora atrybucji nudge (fix korelacji CTR konwersji)
 **Data:** 2026-06-08 | **Status:** PRZYJĘTA | **Powiązane:** ADR-090 (faza 2), CHAT-T-083 (telemetria — ujawniła bug), CHAT-T-059 (persystencja sesji = źródło konfliktu), CHAT-T-082 (client-supplied sessionId). Realizacja: CHAT-T-085. Decyzje 253a, 254a.
+**Uwaga numeracji:** pierwotnie zapisana jako ADR-091, renumerowana na ADR-092 z powodu kolizji z ADR-091 (TASK-ENC-014, errata wyporność). Commit CHAT-T-085 (7e437e7) i kod odwołują się do "ADR-091" — chodzi o TĘ decyzję (ADR-092).
 
 **Problem (zdiagnozowany w kodzie, potwierdzony empirycznie na PROD):**
 CHAT-T-083 założył, że jeden sessionId obsłuży całą ścieżkę ekspozycja nudge → klik → rozmowa (decyzja 247a). Weryfikacja korelacji (skrypt `verify_nudge_correlation.php`, smoke Karola 2026-06-08 ~13:33) wykazała rozjazd: beacon `nudge_cta_click` miał sid `9de1a748…`, a rozmowa z tej samej interakcji zapisała się pod `566c618f…`. Konwersja w panelu byłaby zawsze 0%.

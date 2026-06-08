@@ -16,7 +16,7 @@ Czat AI ze wyszukiwaniem semantycznym dla sklepu nurkowego divezone.pl (PrestaSh
 - [x] Testy: Claude Sonnet 4 + GPT-5.2, tool loop z pgvector działa
 
 ### W toku
-- [ ] **Migracja bazy z Aiven → Railway** (ADR-019, port 14368 czeka na odblokowanie)
+- [x] **Migracja bazy z Aiven → Railway** (ADR-019) — ZAKOŃCZONA. PROD czatu łączy się z Railway (zweryfikowane 2026-06-07: realny Config::load → DATABASE_URL = switchback.proxy.rlwy.net:14368/railway, dzisiejsze rozmowy w tej bazie). **Aiven = MARTWY, NIE używać** (zakomentowany w .env jako "STARE"). Wszystkie migracje SQL i połączenia → Railway.
 - [ ] **Review kodu TASK-006b** (ChatService, Providers, Tools, SystemPrompt)
 - [ ] TASK-006c: Cienki moduł PrestaShop (~100 linii PHP 7.2)
 
@@ -38,8 +38,8 @@ SSL: nie wymagane (TCP proxy)
 pgvector: 0.8.1 | PG: 18.2
 Connection string: postgresql://postgres:<RAILWAY_PASSWORD_REDACTED>@switchback.proxy.rlwy.net:14368/railway
 ```
-**Status:** Baza aktywna, pgvector zainstalowany. Port 14368 CZEKA na odblokowanie na VPS (firewall wychodzący).
-**Poprzednio:** Aiven (IP 159.223.235.232 zablokowane przez hosting z powodu blacklisty AbuseIPDB).
+**Status:** AKTYWNA i UŻYWANA NA PROD (zweryfikowane 2026-06-07). To JEDYNA baza PG czatu — wszystkie migracje i połączenia tutaj.
+**Aiven:** MARTWY, porzucony (IP 159.223.235.232 blacklista AbuseIPDB). W .env zakomentowany jako "STARE, nie używać". NIE uruchamiać na nim migracji.
 
 ### Standalone API (chat.divezone.pl, PHP 8.4)
 ```
@@ -101,3 +101,4 @@ Chat_dla_klientow_2026/
 - Python: PEP 8, type hints
 - SQL: PostgreSQL prefix divechat_, MySQL prefix pr_
 - Komentarze: po polsku. Zmienne/funkcje: po angielsku
+- **Numeracja ADR (profilaktyka kolizji):** przed utworzeniem nowego ADR ZAWSZE sprawdź ostatni użyty numer w `_docs/10_decyzje_projektowe.md` (np. `grep '^### ADR-' _docs/10_decyzje_projektowe.md | tail`) i nadaj kolejny wolny. Plik jest współdzielony przez równoległe linie prac (czat CHAT-T-*, encyklopedia TASK-ENC-*) — dwa zadania pisane w zbliżonym czasie mogą sięgnąć po ten sam numer. Kolizja zdarzyła się raz (dwa ADR-091: TASK-ENC-014 wyporność + CHAT-T-085 nudge → renumerowane na ADR-092). Jeśli numer już zajęty: weź następny wolny i dopisz w nagłówku adnotację o renumeracji (commit/kod mogą wskazywać stary numer).

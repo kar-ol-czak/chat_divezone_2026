@@ -2,6 +2,7 @@
 
 **Status:** SPEC | **Data:** 2026-06-08 | **Powiązane:** ADR-090, CHAT-T-081 (faza 1 DONE), decyzje 240b/241a/242c/243a/245a/246a/247a/248a
 **Realizacja:** CHAT-T-082 (backend), CHAT-T-083 (frontend), CHAT-T-084 (panel). Kolejność: 082 → 083 → 084.
+**Uzupełnienia po wdrożeniu:** CHAT-T-085/ADR-092 (fix korelacji — osobny nudge_sid). CHAT-T-086 (3. zdarzenie nudge_dismiss = klik X; decyzje 256b/257a). CHAT-T-084 rozszerzony o 4 metryki (ekspozycje/kliki/zamknięcia/zignorowane).
 **Warunek startu:** v2 zaakceptowany wizualnie na PROD (sanity-check CHAT-T-081). Faza 2 NIE rusza, dopóki v2 nie jest "dobry wizualnie".
 
 ---
@@ -11,6 +12,8 @@
 Zmierzyć skuteczność wariantów zachęty (v1 dymek vs v2 karta) dwoma wskaźnikami per wariant (decyzja 242c):
 - **CTR ekranu** = `nudge_cta_click` ÷ `nudge_shown` (czy karta/dymek skłania do kliknięcia).
 - **Konwersja do rozmowy** = liczba `session_id` z ≥1 wiadomością użytkownika ÷ `nudge_shown` (czy skłania do realnej rozmowy).
+- **Zamknięcia (X)** = `nudge_dismiss` ÷ `nudge_shown` (świadome odrzucenie; CHAT-T-086, 256b/257a).
+- **Zignorowane** = `shown − clicks − dismissals` (reszta: brak reakcji w sesji; wyliczane, NIE osobne zdarzenie). Rozróżnienie "odrzucił" vs "zignorował" daje diagnozę: wysokie X + niski CTR = treść odpycha; niskie X + niski CTR + wysokie zignorowane = widget niezauważany.
 
 Oba liczone per bucket (`v1`|`v2`). Panel pokazuje także liczności (mianowniki), żeby nie wyciągać wniosków z małej próby.
 
@@ -34,17 +37,17 @@ Oba liczone per bucket (`v1`|`v2`). Panel pokazuje także liczności (mianowniki
 `divechat_nudge_events`:
 - `id` BIGSERIAL PK
 - `session_id` TEXT NOT NULL (UUID z frontu; klucz korelacji z rozmową)
-- `event_type` TEXT NOT NULL CHECK (`nudge_shown` | `nudge_cta_click`)
+- `event_type` TEXT NOT NULL CHECK (`nudge_shown` | `nudge_cta_click` | `nudge_dismiss`) — trzecia wartość dodana przez CHAT-T-086 (migracja 027, DROP+ADD constraint).
 - `bucket` TEXT NOT NULL (`v1` | `v2`)
 - `ab_active` BOOLEAN NOT NULL (czy A/B był włączony w momencie zdarzenia — rozdziela ruch testowy od baseline)
 - `created_at` TIMESTAMPTZ NOT NULL DEFAULT NOW()
 - Indeksy: `(bucket, event_type, created_at)` (agregacje panelu), `(session_id)` (JOIN konwersji).
-- Dedup: jedno `nudge_shown` i jedno `nudge_cta_click` per session_id (front gwarantuje raz/sesję; backend defensywnie ON CONFLICT DO NOTHING na `(session_id, event_type)` — UNIQUE constraint).
+- Dedup: jedno zdarzenie każdego typu per session_id (nudge_shown / nudge_cta_click / nudge_dismiss). Front gwarantuje raz/sesję; backend defensywnie ON CONFLICT DO NOTHING na `(session_id, event_type)` — UNIQUE constraint (obejmuje też nudge_dismiss bez zmiany, CHAT-T-086).
 
 ## 5. Endpoint (CHAT-T-082)
 
 `POST /api/widget/event` — publiczny, bez admina. Body JSON: `{session_id, event_type, bucket, ab_active}`.
-- Ochrona lekka (zdarzenia fire-and-forget, nie LLM): walidacja whitelist (`event_type`∈{2 wartości}, `bucket`∈{v1,v2}, `session_id` format UUID), RateLimiter per IP (reuse istniejącego, luźny limit), BEZ CostGuard, BEZ HMAC klienckiego (beacon nie niesie nagłówków auth łatwo; ryzyko zafałszowania CTR przez bota mitygowane: zdarzenia to nie akcja wrażliwa, a dane służą porównaniu v1↔v2 gdzie ewentualny szum dotyka obu wariantów równo).
+- Ochrona lekka (zdarzenia fire-and-forget, nie LLM): walidacja whitelist (`event_type`∈{nudge_shown, nudge_cta_click, nudge_dismiss}, `bucket`∈{v1,v2}, `session_id` format UUID), RateLimiter per IP (reuse istniejącego, luźny limit), BEZ CostGuard, BEZ HMAC klienckiego (beacon nie niesie nagłówków auth łatwo; ryzyko zafałszowania CTR przez bota mitygowane: zdarzenia to nie akcja wrażliwa, a dane służą porównaniu v1↔v2 gdzie ewentualny szum dotyka obu wariantów równo). Whitelist rozszerzona o nudge_dismiss w CHAT-T-086.
 - Odpowiedź: 204 No Content (beacon ignoruje body).
 - Zapis przez nowy lekki store (np. `NudgeEventStore`) na wspólnym `PostgresConnection`.
 
@@ -60,8 +63,8 @@ Oba liczone per bucket (`v1`|`v2`). Panel pokazuje także liczności (mianowniki
 
 ## 7. Panel raport CTR (CHAT-T-084) — standalone + PS
 
-- Endpoint admin (kanał serwerowy, `ServerHmacVerifier`, wzorzec jak `AdminAnalyticsController`): `GET /api/admin/nudge-ctr` → per bucket: `shown`, `clicks`, `ctr`, `conversations` (session_id z ≥1 user-msg), `conversion_rate`, rozdzielone `ab_active` true/false.
-- UI: nowa sekcja/zakładka w panelu PS (ADR-070, 243a) — tabela 2 wiersze (v1/v2) × kolumny (ekspozycje, kliki, CTR, rozmowy, konwersja), z adnotacją o liczności / minimalnej próbie. Prosty wskaźnik istotności (np. flaga "za mała próba" gdy shown < próg, próg konfigurowalny lub stały np. 100/wariant).
+- Endpoint admin (kanał serwerowy, `ServerHmacVerifier`, wzorzec jak `AdminAnalyticsController`): `GET /api/admin/nudge-ctr` → per bucket: `shown`, `clicks`, `dismissals` (klik X), `ignored` (=shown−clicks−dismissals, clamp ≥0), `ctr`, `dismiss_rate`, `conversations` (nudge_sid z ≥1 user-msg, JOIN po conversations.nudge_sid wg ADR-092), `conversion_rate`, rozdzielone `ab_active` true/false.
+- UI: nowa sekcja/zakładka w panelu PS (ADR-070, 243a) — tabela 2 wiersze (v1/v2) × kolumny (ekspozycje, kliki CTA, CTR, zamknięcia X, zamknięcia %, zignorowane, rozmowy, konwersja), z adnotacją o liczności / minimalnej próbie. Prosty wskaźnik istotności (flaga "za mała próba" gdy shown < próg, stała np. 100/wariant). Zignorowane z adnotacją: reszta bez reakcji w sesji, NIE twardy sygnał odrzucenia (257a).
 
 ## 8. Ograniczenia (z ADR-090 / pamięci)
 - Railway PG, NIGDY Aiven.
