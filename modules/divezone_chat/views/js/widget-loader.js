@@ -344,6 +344,12 @@
    * Lazy: nudge NIE pobiera bundla. Klik w dymek/CTA = ta sama sciezka co klik launcher.
    */
   var nudgeEl = null;
+  // CHAT-T-083 (faza 2 ADR-090): stan ekspozycji nudge — sid generowany przy renderze,
+  // bucket A/B aktywny w tym renderze, czy A/B był ON. Używane przez sendNudgeEvent
+  // (shown + click) oraz przekazane do bundla przez BOOT.nudge.pendingSessionId.
+  var nudgeShownSid = null;
+  var nudgeBucket   = null;
+  var nudgeAbActive = false;
 
   function ssGet(key) {
     try { return window.sessionStorage && sessionStorage.getItem(key); }
@@ -354,7 +360,100 @@
     catch (_) {}
   }
 
+  /* CHAT-T-083: localStorage helpers (Safari ITP / private mode safe). */
+  function lsGet(key) {
+    try { return window.localStorage ? localStorage.getItem(key) : null; }
+    catch (_) { return null; }
+  }
+  function lsSet(key, val) {
+    try { if (window.localStorage) localStorage.setItem(key, val); }
+    catch (_) {}
+  }
+
+  /* CHAT-T-083 (241a): bucket A/B sticky w localStorage. Gdy BOOT.nudge.ab → losowanie
+   * 50/50 przy pierwszej wizycie, zapis w `dz_ab_bucket`, reload = ten sam wariant.
+   * Gdy !ab → bucket = aktualny variant z panelu (BOOT.nudge.variant). Każda inna
+   * wartość → fallback 'v1'. Cache-safe: losowanie wyłącznie client-side runtime (ADR-087).
+   */
+  function getBucket(cfg) {
+    var ab = !!(cfg && cfg.ab);
+    if (!ab) {
+      return (cfg && cfg.variant === 'v2') ? 'v2' : 'v1';
+    }
+    var stored = lsGet('dz_ab_bucket');
+    if (stored === 'v1' || stored === 'v2') return stored;
+    var bucket = (Math.random() < 0.5) ? 'v1' : 'v2';
+    lsSet('dz_ab_bucket', bucket);
+    return bucket;
+  }
+
+  /* CHAT-T-083 (247a): UUID v4 generowany w momencie pokazania nudge. To samo ID
+   * trafia do nudge_shown, nudge_cta_click i (przy otwarciu czatu) do pierwszej
+   * wiadomości — backend JOIN-uje ekspozycję z rozmową przez session_id.
+   * Fallback ręczny gdy crypto.randomUUID niedostępne (starsze Safari/iOS).
+   */
+  function generateSessionId() {
+    try {
+      if (window.crypto && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+      }
+    } catch (_) {}
+    // Fallback RFC 4122 v4: 8-4-4-4-12 hex; pozycja 14 = '4', 19 ∈ {8,9,a,b}.
+    function r() { return Math.floor(Math.random() * 16); }
+    function h(n) { return n.toString(16); }
+    var s = '';
+    for (var i = 0; i < 36; i++) {
+      if (i === 8 || i === 13 || i === 18 || i === 23) { s += '-'; }
+      else if (i === 14) { s += '4'; }
+      else if (i === 19) { s += h((r() & 0x3) | 0x8); }
+      else { s += h(r()); }
+    }
+    return s;
+  }
+
+  /* CHAT-T-083 (246a, spec sekcja 6 — pułapka MIME): beacon do /api/widget/event.
+   * Fire-and-forget, ZERO wpływu na UX (try/catch wszędzie, błąd nie blokuje otwarcia
+   * czatu). LiteSpeed/ModSecurity na chat.divezone.pl BLOKUJE `text/plain` 403
+   * (smoke CHAT-T-082 2026-06-08); domyślny sendBeacon(url, string) → `text/plain;
+   * charset=UTF-8` → odpadnie. Konieczne: Blob z MIME `application/x-www-form-urlencoded`
+   * (nadal "simple request" CORS, brak preflight). Backend (CHAT-T-082) parsuje JSON
+   * tolerancyjnie z php://input niezależnie od Content-Type.
+   */
+  function sendNudgeEvent(type) {
+    if (!nudgeShownSid || !nudgeBucket) return; // brak ekspozycji → nic nie wysyłamy
+    var path = (BOOT.nudge && BOOT.nudge.eventPath) || '/api/widget/event';
+    var url = (BOOT.backendUrl || '') + path;
+    var body = JSON.stringify({
+      session_id: nudgeShownSid,
+      event_type: type,
+      bucket:     nudgeBucket,
+      ab_active:  !!nudgeAbActive
+    });
+    var MIME = 'application/x-www-form-urlencoded';
+    try {
+      if (navigator && typeof navigator.sendBeacon === 'function') {
+        var blob = new Blob([body], { type: MIME });
+        if (navigator.sendBeacon(url, blob)) return; // OK queued
+        // sendBeacon zwrócił false (queue pełny / payload za duży) → fetch fallback
+      }
+    } catch (_) {}
+    try {
+      fetch(url, {
+        method:      'POST',
+        body:        body,
+        keepalive:   true,
+        mode:        'cors',
+        credentials: 'omit',
+        headers:     { 'Content-Type': MIME }
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
   function openChatFlow() {
+    // CHAT-T-083 (248a): klik w zachętę (dymek/karta) = nudge_cta_click. Wysyłamy
+    // ZANIM bootBundle — fire-and-forget, błąd beacona nie może blokować otwarcia
+    // czatu. Klik launchera bez pokazanego nudge ma nudgeShownSid==null → no-op.
+    sendNudgeEvent('nudge_cta_click');
     ssSet('dz_chat_opened', '1');
     hideNudge();
     if (bundleReady && typeof window.DivezoneChatOpen === 'function') {
@@ -589,19 +688,36 @@
     var text = String(cfg.text || '').replace(/^\s+|\s+$/g, '');
     if (!text) return;
 
-    // CHAT-T-081 (ADR-090): wybor wygladu nudge. Default 'v1' (klasyczny dymek);
-    // 'v2' = karta z gradientem (renderNudgeCard). Kazda inna/brakujaca wartosc = v1.
-    var variant = (cfg.variant === 'v2') ? 'v2' : 'v1';
+    // CHAT-T-083 (241a): bucket sterowany A/B (sticky localStorage) lub variant z panelu.
+    // CHAT-T-081 (ADR-090): bucket nadpisuje variant — to bucket wybiera funkcję renderu.
+    var ab = !!cfg.ab;
+    var bucket = getBucket(cfg);
 
     setTimeout(function () {
       // Recheck guards — czat moze byc otwarty w trakcie czekania.
       if (ssGet('dz_nudge_dismissed') === '1') return;
       if (ssGet('dz_chat_opened') === '1') return;
-      if (variant === 'v2') {
+
+      // CHAT-T-083 (247a): sid generowany W MOMENCIE faktycznego pokazania nudge
+      // (po recheck guardów). Zapisujemy w state loadera (do beacona click) ORAZ
+      // w BOOT.nudge.pendingSessionId (bundle czyta jako state.sessionId, gdy brak
+      // restore z localStorage — CHAT-T-059 ma pierwszeństwo).
+      nudgeShownSid = generateSessionId();
+      nudgeBucket   = bucket;
+      nudgeAbActive = ab;
+      if (BOOT.nudge) {
+        BOOT.nudge.pendingSessionId = nudgeShownSid;
+      }
+
+      if (bucket === 'v2') {
         renderNudgeCard(text);
       } else {
         renderNudge(text);
       }
+
+      // CHAT-T-083 (248a): beacon shown — ZAWSZE, dla obu wariantów, niezależnie
+      // od trybu A/B (baseline CTR działa przy zwykłym przełączniku też).
+      sendNudgeEvent('nudge_shown');
     }, delay * 1000);
   }
 

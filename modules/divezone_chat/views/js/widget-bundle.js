@@ -1007,6 +1007,18 @@
     state.launcher = ctx.launcher;
     state.boot = ctx.boot;
 
+    // CHAT-T-083 (247a): jesli loader wygenerowal sid przy pokazaniu nudge
+    // (BOOT.nudge.pendingSessionId), uzyj go jako state.sessionId. To ten sam
+    // UUID, ktory poszedl w beaconie nudge_shown/nudge_cta_click — backend
+    // SJOIN-uje ekspozycje z rozmowa po session_id. One-shot: po skopiowaniu
+    // czyscimy pole w BOOT, zeby startNewConversation/druga rozmowa nie wracaly
+    // do tego sid. tryRestoreSession ponizej moze go nadpisac jesli restore
+    // wykryje istniejaca rozmowe (exists:true) — restore MA PIERWSZENSTWO.
+    if (state.boot && state.boot.nudge && state.boot.nudge.pendingSessionId) {
+      state.sessionId = state.boot.nudge.pendingSessionId;
+      state.boot.nudge.pendingSessionId = null;
+    }
+
     var win = buildWindow();
     state.root.appendChild(win);
 
