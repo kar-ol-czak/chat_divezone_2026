@@ -38,12 +38,18 @@ final class ConversationStore
      * wzajemnie nieodroznialne po customerId; sessionId pelni role sekretu
      * (decyzja 145a, /api/chat/history). Spojnie z findActiveBySessionId.
      *
+     * CHAT-T-085 (ADR-091): opcjonalny $nudgeSid (atrybucja zrodla). Zapis
+     * TYLKO przy INSERT nowej rozmowy (gałąź "sessionId nie istnieje" oraz
+     * ownership mismatch generujacy nowy effectiveSessionId). Przy resume
+     * istniejacej NIE nadpisujemy — atrybucja nalezy do momentu powstania
+     * rozmowy. Klient bez ekspozycji nudge wysle null -> kolumna NULL.
+     *
      * @return array{id: int, history: array, session_id: string} `id` =
      *   klucz PK z divechat_conversations (FK divechat_message_usage).
      *   `session_id` = EFEKTYWNY sessionId (moze sie roznic od wejsciowego
      *   przy ownership mismatch — caller MUSI uzyc tego pola dalej).
      */
-    public function startOrResume(string $sessionId, ?int $customerId): array
+    public function startOrResume(string $sessionId, ?int $customerId, ?string $nudgeSid = null): array
     {
         $row = $this->db->fetchOne(
             'SELECT id, ps_customer_id, messages FROM divechat_conversations
@@ -59,6 +65,8 @@ final class ConversationStore
             $requestOwner = $customerId ?? 0;
 
             if ($existingOwner === $requestOwner) {
+                // Resume istniejacej — NIE nadpisujemy nudge_sid (atrybucja
+                // nalezy do momentu powstania rozmowy, CHAT-T-085).
                 return [
                     'id' => (int) $row['id'],
                     'history' => json_decode($row['messages'], true) ?: [],
@@ -69,16 +77,20 @@ final class ConversationStore
             // Ownership mismatch -> NIE resume, NIE nadpisuj cudzej rozmowy.
             // Generujemy nowy server-side UUID v4 (zachowanie spojne ze
             // {exists:false} w /api/chat/history). Klient dostanie nowy
-            // sessionId w odpowiedzi (caller propaguje).
+            // sessionId w odpowiedzi (caller propaguje). To NOWA rozmowa,
+            // wiec nudge_sid TEZ trafia do bazy (CHAT-T-085).
             $effectiveSessionId = self::generateServerSessionId();
         }
 
         // Nowa sesja – RETURNING id w jednym roundtripie.
+        // CHAT-T-085: nudge_sid zapisany przy INSERT (null gdy klient nie
+        // miał ekspozycji nudge — kolumna ma DEFAULT NULL, ale explicit
+        // dla czytelnosci kontraktu).
         $newRow = $this->db->fetchOne(
-            'INSERT INTO divechat_conversations (session_id, ps_customer_id, messages)
-             VALUES (?, ?, ?::jsonb)
+            'INSERT INTO divechat_conversations (session_id, ps_customer_id, messages, nudge_sid)
+             VALUES (?, ?, ?::jsonb, ?)
              RETURNING id',
-            [$effectiveSessionId, $customerId, '[]'],
+            [$effectiveSessionId, $customerId, '[]', $nudgeSid],
         );
 
         return [

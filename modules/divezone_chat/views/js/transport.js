@@ -6,8 +6,10 @@
  *
  * Eksponuje globalnie: window.DivezoneChatTransport
  *
- * sendMessage(message, sessionId, callbacks) -> AbortController
+ * sendMessage(message, sessionId, nudgeSid, callbacks) -> AbortController
  *   callbacks: { onStatus(text), onDone(payload), onError(msg) }
+ *   nudgeSid (CHAT-T-085 / ADR-091): opcjonalna atrybucja ekspozycji nudge.
+ *     null gdy klient nie wszedl przez nudge (launcher / second message).
  *
  * Token + customerId + time + backendUrl + tokenUrl czyta z window.DIVEZONE_CHAT_BOOT
  * (ustawione przez shim PHP w hookDisplayFooter).
@@ -120,7 +122,7 @@
     return { events: events, rest: rest };
   }
 
-  function sendMessage(message, sessionId, callbacks) {
+  function sendMessage(message, sessionId, nudgeSid, callbacks) {
     callbacks = callbacks || {};
     var onStatus = callbacks.onStatus || function () {};
     var onDone   = callbacks.onDone   || function () {};
@@ -131,6 +133,10 @@
 
     var body = { message: message };
     if (sessionId) body.session_id = sessionId;
+    // CHAT-T-085 (ADR-091): dosylamy osobna atrybucje nudge (jesli byla
+    // ekspozycja w tej sesji przegladania). Backend zapisze w
+    // divechat_conversations.nudge_sid przy INSERT nowej rozmowy.
+    if (nudgeSid) body.nudge_sid = nudgeSid;
     var bodyJson = JSON.stringify(body);
 
     function makeRequest() {

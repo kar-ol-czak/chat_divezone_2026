@@ -37,9 +37,13 @@ final class ChatService
      * Główna metoda - obsługuje wiadomość klienta.
      *
      * @param ?callable(string): void $onStatus Callback emitujący status SSE
+     * @param ?string $nudgeSid CHAT-T-085 / ADR-091: opcjonalna atrybucja
+     *   ekspozycji nudge. Sid z ekspozycji nudge, OSOBNY od session_id (który
+     *   może być zmieniony przez restore na froncie). Zapisywany w bazie TYLKO
+     *   przy INSERT nowej rozmowy — przy resume istniejącej nie nadpisujemy.
      * @return array{response: string, session_id: string, tools_used: string[], products: array, usage: array, diagnostics: array}
      */
-    public function handle(string $sessionId, string $message, ?int $customerId, ?callable $onStatus = null): array
+    public function handle(string $sessionId, string $message, ?int $customerId, ?callable $onStatus = null, ?string $nudgeSid = null): array
     {
         $startTime = microtime(true);
         $emit = $onStatus ?? static function (string $text): void {};
@@ -52,7 +56,9 @@ final class ChatService
         // 1. Wczytaj lub utwórz sesję (PEŁNA historia + id rekordu).
         // CHAT-T-082: startOrResume moze podmienic sessionId przy ownership
         // mismatch (sekcja 3 spec) — przyjmujemy EFEKTYWNY id z wyniku.
-        $session = $this->conversationStore->startOrResume($sessionId, $customerId);
+        // CHAT-T-085: nudge_sid przekazywany dalej; zapis w bazie tylko przy
+        // INSERT nowej rozmowy (resume istniejącej nie nadpisuje atrybucji).
+        $session = $this->conversationStore->startOrResume($sessionId, $customerId, $nudgeSid);
         $conversationId = $session['id'];
         $fullHistory = $session['history'];
         $sessionId = $session['session_id'];

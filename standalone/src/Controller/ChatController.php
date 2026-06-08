@@ -232,6 +232,13 @@ final class ChatController
         // Ownership mismatch obsluguje ConversationStore::startOrResume.
         $sessionId = $this->resolveSessionId($body['session_id'] ?? null);
 
+        // CHAT-T-085 (ADR-091): nudge_sid to OSOBNA atrybucja — sid z ekspozycji
+        // nudge, przeżywa restore (CHAT-T-059) po stronie frontu. Tu walidujemy
+        // format identycznie jak session_id; brak/niepoprawny -> null (atrybucja
+        // jest opcjonalna, NIE generujemy fallbacku). Zapisany przez Store TYLKO
+        // przy INSERT nowej rozmowy.
+        $nudgeSid = $this->resolveNudgeSid($body['nudge_sid'] ?? null);
+
         if ($message === '') {
             Response::error('Pole "message" jest wymagane i nie może być puste', 400);
         }
@@ -264,6 +271,7 @@ final class ChatController
                 sessionId: $sessionId,
                 message: $message,
                 customerId: (int) $customerId ?: null,
+                nudgeSid: $nudgeSid,
             );
 
             Response::json([
@@ -317,6 +325,10 @@ final class ChatController
         // akceptowany z walidacja formatu + ownership check w startOrResume.
         $sessionId = $this->resolveSessionId($body['session_id'] ?? null);
 
+        // CHAT-T-085 (ADR-091): osobna atrybucja nudge_sid. Walidacja formatu
+        // jak session_id; brak/niepoprawny -> null (NIE generujemy).
+        $nudgeSid = $this->resolveNudgeSid($body['nudge_sid'] ?? null);
+
         if ($message === '') {
             Response::error('Pole "message" jest wymagane i nie może być puste', 400);
         }
@@ -369,6 +381,7 @@ final class ChatController
                 message: $message,
                 customerId: (int) $customerId ?: null,
                 onStatus: $emitStatus,
+                nudgeSid: $nudgeSid,
             );
 
             // event: done z pełną odpowiedzią
@@ -484,6 +497,33 @@ final class ChatController
             return $trimmed;
         }
         return $this->generateSessionId();
+    }
+
+    /**
+     * Wyłuskaj nudge_sid z body request (CHAT-T-085, ADR-091).
+     *
+     * Atrybucja jest OPCJONALNA — klient bez ekspozycji nudge (wszedł
+     * launcherem) wyśle nudge_sid=null albo brak pola. NIE generujemy
+     * fallbacku jak dla session_id (brak atrybucji = legalny stan).
+     *
+     * Format waliduje TAK SAMO jak session_id (UUID v4 lub legacy 32-hex
+     * — front generuje UUID v4 przez crypto.randomUUID przy nudge_shown).
+     * Niepoprawny format -> null (defensywa, NIE rzucamy bledu — atrybucja
+     * jest "nice to have" dla raportu CTR, nie kontrakt API).
+     */
+    private function resolveNudgeSid(mixed $clientNudgeSid): ?string
+    {
+        if (!is_string($clientNudgeSid)) {
+            return null;
+        }
+        $trimmed = trim($clientNudgeSid);
+        if ($trimmed === '') {
+            return null;
+        }
+        if (self::isValidSessionIdFormat($trimmed)) {
+            return $trimmed;
+        }
+        return null;
     }
 
     /**

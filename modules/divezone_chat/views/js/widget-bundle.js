@@ -72,6 +72,12 @@
     typingEl: null,
     srLiveEl: null,
     sessionId: null,
+    // CHAT-T-085 (ADR-091): osobna atrybucja nudge — sid z ekspozycji nudge.
+    // ZWLASZCZA: NIE czyszczone przez tryRestoreSession (restore zmienia tylko
+    // sessionId rozmowy). nudgeSid przezywa restore, dosylany przy pierwszej
+    // wiadomosci, backend zapisuje w divechat_conversations.nudge_sid przy
+    // INSERT. Konwersja w panelu = JOIN events.session_id ↔ conversations.nudge_sid.
+    nudgeSid: null,
     isStreaming: false,
     abortCtl: null,
     lastFocus: null,
@@ -206,6 +212,10 @@
       if (state.sendBtnEl) state.sendBtnEl.disabled = state.inputEl && state.inputEl.value.trim() === '';
     }
     state.sessionId = null;
+    // CHAT-T-085: nowa rozmowa = brak atrybucji nudge (klient kliknal "Nowa
+    // rozmowa", nie wszedl przez ekspozycje). Czyscimy nudgeSid zeby kolejny
+    // INSERT w bazie poszedl z NULL.
+    state.nudgeSid = null;
     lsRemove(PERSIST_KEY);
     clearMessagesView();
     if (state.srLiveEl) state.srLiveEl.textContent = '';
@@ -561,7 +571,29 @@
     state.sendBtnEl.disabled = true;
     showTyping('Asystent pisze');
 
-    state.abortCtl = transport.sendMessage(text, state.sessionId, {
+    // CHAT-T-085 fix race (smoke 2026-06-08): widget-loader robi prefetch
+    // bundla na requestIdleCallback (linia ~747 widget-loader.js), wczesniej
+    // niz setupNudge.setTimeout ktory ustawia BOOT.nudge.pendingSessionId.
+    // Mount wykonal sie ZANIM ekspozycja nudge → blok if{} przy mount nie
+    // zlapał pending (bylo undefined). Konsumujemy lazily TUTAJ, tuz przed
+    // pierwsza wiadomoscia: jesli BOOT.nudge.pendingSessionId pojawil sie
+    // PO mount (typowy przypadek), przenosimy go do state. One-shot — czyscimy
+    // pole po konsumpcji zeby kolejne wiadomosci nie wracaly do tego sid.
+    // Sprawdzenie pole-po-polu: nudgeSid (atrybucja) zawsze konsumuje pending,
+    // sessionId TYLKO gdy null (zeby NIE nadpisac restored sid z tryRestoreSession).
+    if (state.boot && state.boot.nudge && state.boot.nudge.pendingSessionId) {
+      var pendingNudge = state.boot.nudge.pendingSessionId;
+      if (!state.nudgeSid) state.nudgeSid = pendingNudge;
+      if (state.sessionId === null) state.sessionId = pendingNudge;
+      state.boot.nudge.pendingSessionId = null;
+    }
+
+    // CHAT-T-085 (ADR-091): dosyłamy nudgeSid jako OSOBNY parametr — backend
+    // zapisze w divechat_conversations.nudge_sid przy INSERT nowej rozmowy.
+    // Null gdy klient nie wszedl przez ekspozycje nudge (launcher) lub po
+    // startNewConversation. Wartosc PRZEZYWA tryRestoreSession (tylko sessionId
+    // jest nadpisywane przez restore — to rozdzielenie ról jest sednem fixu).
+    state.abortCtl = transport.sendMessage(text, state.sessionId, state.nudgeSid, {
       onStatus: function (statusText) {
         showTyping(statusText || 'Asystent pisze');
       },
@@ -575,6 +607,11 @@
           // Po nawigacji miedzy stronami sklepu front pobierze historie z backendu.
           persistSession(state.sessionId);
         }
+        // CHAT-T-085: po pierwszej wiadomosci atrybucja jest juz zapisana w
+        // bazie (INSERT z nudge_sid). Czyscimy state, zeby kolejne wiadomosci
+        // tej rozmowy nie wysylaly redundantnego pola — rozmowa juz ma swoja
+        // atrybucje w PG, dosylanie nie zmieni nic (resume nie nadpisuje).
+        state.nudgeSid = null;
         var responseText = (payload && payload.response) || '(brak odpowiedzi)';
         appendBotMessage(responseText);
         // a11y: ogloszenie gotowej wiadomosci czytnikom (ADR-063).
@@ -1007,15 +1044,20 @@
     state.launcher = ctx.launcher;
     state.boot = ctx.boot;
 
-    // CHAT-T-083 (247a): jesli loader wygenerowal sid przy pokazaniu nudge
-    // (BOOT.nudge.pendingSessionId), uzyj go jako state.sessionId. To ten sam
-    // UUID, ktory poszedl w beaconie nudge_shown/nudge_cta_click — backend
-    // SJOIN-uje ekspozycje z rozmowa po session_id. One-shot: po skopiowaniu
-    // czyscimy pole w BOOT, zeby startNewConversation/druga rozmowa nie wracaly
-    // do tego sid. tryRestoreSession ponizej moze go nadpisac jesli restore
-    // wykryje istniejaca rozmowe (exists:true) — restore MA PIERWSZENSTWO.
+    // CHAT-T-083 (247a) + CHAT-T-085 (ADR-091): jesli loader wygenerowal sid
+    // przy pokazaniu nudge (BOOT.nudge.pendingSessionId), uzyj go DWOJAKO:
+    //  (a) state.sessionId — proba startu rozmowy z tym sid (moze byc nadpisany
+    //      przez tryRestoreSession gdy backend zna stara rozmowe; restore wygrywa
+    //      dla UX zachowania historii — decyzja swiadoma, ADR-091).
+    //  (b) state.nudgeSid — OSOBNA, TRWALA atrybucja. NIE czyszczona przez
+    //      restore. Dosylana w body pierwszej wiadomosci. Backend zapisze w
+    //      divechat_conversations.nudge_sid przy INSERT nowej rozmowy. Konwersja
+    //      w panelu CHAT-T-084 = JOIN events.session_id ↔ conversations.nudge_sid.
+    // One-shot: po skopiowaniu czyscimy pendingSessionId w BOOT, zeby
+    // startNewConversation/druga rozmowa nie wracaly do tego sid.
     if (state.boot && state.boot.nudge && state.boot.nudge.pendingSessionId) {
       state.sessionId = state.boot.nudge.pendingSessionId;
+      state.nudgeSid = state.boot.nudge.pendingSessionId;
       state.boot.nudge.pendingSessionId = null;
     }
 
