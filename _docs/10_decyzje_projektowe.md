@@ -2598,10 +2598,10 @@ Dlaczego tak długo myliło: KAŻDY test czytający plik BEZPOŚREDNIO (ręczny 
 2. `app/config/parameters.php` sklepu PS (`database_password`).
 3. `.env` backendu czatu (`DB_PASSWORD`) na `/home/divezone/public_html/chat.divezone.pl/.env`.
 
-Checklista weryfikacji po rotacji: (a) sklep otwiera się / panel działa, (b) **realny `Config::load()` na serwerze daje `Config::get('DB_PASSWORD')` o pełnej długości** (NIE test na pliku, NIE `mysql -h localhost` CLI — oba mylą, bo omijają parser dotenv), (c) PDO tym hasłem z `$_ENV` łączy się OK, (d) brak nowych `1045` w `chat.divezone.pl/error_log`, (e) żywy czat zwraca produkt na pytanie typu "jakie maski polecasz". **KRYTYCZNE — format `.env`:** sekrety zawierające `#`, `$`, spację lub inne znaki specjalne (hasło DB ma `@ # ^ * & %`) MUSZĄ być w `.env` ujęte w POJEDYNCZE cudzysłowy: `DB_PASSWORD='...'`. Bez cudzysłowów phpdotenv ucina wartość na `#` (komentarz inline) — to był root cause tej awarii. Pojedyncze (nie podwójne) cudzysłowy: dotenv czyta dosłownie, nie interpoluje `$`.
+Checklista weryfikacji po rotacji: (a) sklep otwiera się / panel działa, (b) **realny `Config::load()` na serwerze daje `Config::get('DB_PASSWORD')` o pełnej długości** (NIE test na pliku, NIE `mysql -h localhost` CLI — oba mylą, bo omijają parser dotenv), (c) PDO tym hasłem z `$_ENV` łączy się OK, (d) brak nowych `1045` w `chat.divezone.pl/public/error_log` (UWAGA: to `public/error_log`, NIE root error_log — patrz ADR-088 dług/alert), (e) żywy czat zwraca produkt na pytanie typu "jakie maski polecasz". **KRYTYCZNE — format `.env`:** sekrety zawierające `#`, `$`, spację lub inne znaki specjalne (hasło DB ma `@ # ^ * & %`) MUSZĄ być w `.env` ujęte w POJEDYNCZE cudzysłowy: `DB_PASSWORD='...'`. Bez cudzysłowów phpdotenv ucina wartość na `#` (komentarz inline) — to był root cause tej awarii. Pojedyncze (nie podwójne) cudzysłowy: dotenv czyta dosłownie, nie interpoluje `$`.
 
 **Dług/następstwa (osobne taski, nie pod presją awarii):**
-- **Alert na błąd połączenia DB** — ta awaria trwała ~18h niezauważona. search_products zwracający błąd połączenia (1045/2002/timeout) powinien wywołać alert (mail/log monitorowany). Wraca temat z dyskusji o fallbacku (rozważany fallback do pgvector bez ceny/stanu z jawnym zastrzeżeniem — do osobnej decyzji). Priorytet diagnozy = wykrycie, że MySQL padł, w minutach a nie godzinach.
+- **Alert na błąd połączenia DB — ZREALIZOWANY (CHAT-T-079, wdrożony CHAT-T-080, zweryfikowany w boju 2026-06-07).** `DbHealthAlert` wykrywa błąd połączenia (MySQL 1045/2002/2006/2013, PG 08xxx/57P01), zapisuje wpis do `divechat_db_alerts` (Railway), wysyła mail, dedup 1 mail / 30 min / baza (245b). Test w boju (kontrolowana podmiana `DB_PASSWORD` na złe → realny 1045): 3 błędy w oknie → 1 wpis + 1 mail (`mail_ok=True`) + 3 linie `[DB-DOWN]` w logu; hasło wymaskowane (`password=[REDACTED]`). **WAŻNE — ścieżka logu:** `error_log()` ea-php84 ląduje w `chat.divezone.pl/public/error_log` (w katalogu `public/`!), NIE w `chat.divezone.pl/error_log` (root). Szukając śladów awarii/alertów grepuj `public/error_log` — root error_log jest pusty/stary i myli. Pozostały dług: brak fallbacku do pgvector przy 1045 (osobna decyzja, Q231).
 - **Dedykowany user DB dla czatu** — `divezone_sklep_tmp2` (nazwa "tmp") to konto współdzielone ze sklepem; czat powinien mieć osobnego usera read-only z grantem tylko na tabele potrzebne do search_products. Osobny task.
 - **Osobny błąd z error_log (06-06 08:24-08:25) — WYJAŚNIONY, fałszywy alarm:** `SQLSTATE[42703] column "concept_key" does not exist`. Wystąpił 7x w oknie 28 sekund, próbując po kolei trzech nazw tabel (`divechat_knowledge`, `divechat_encyclopedia`, znów `divechat_knowledge`) — wzorzec RĘCZNEGO zgadywania nazwy tabeli przez `php -r`/inline (stack: "Command line code", nie plik). To ślad jednorazowej sesji diagnostycznej (sprzed awarii hasła o 16:25, niepowiązane), zakończonej trafieniem na właściwą tabelę. NIE bug w żadnym wdrożonym skrypcie, NIC do naprawy. Żywy czat bezpieczny: `get_expert_knowledge` (`src/Tools/ExpertKnowledge.php`) czyta `FROM encyclopedia_chunks` (kolumny: concept_key, chunk_type, content, name_pl, embedding, metadata) — potwierdzone w kodzie lokalnym i serwerowym. `concept_key` w całym kodzie występuje WYŁĄCZNIE w ExpertKnowledge.php, zawsze wobec encyclopedia_chunks.
 - **Porządek danych (drobny dług):** `divechat_knowledge` istnieje w PG (oryginalny schemat ADR-001..018, `sql/001_create_tables.sql`: id/chunk_type/question/content/category/embedding/...), ale NIE jest już używana przez kod — wiedza ekspercka żyje w `encyclopedia_chunks` (105 konceptów, pgvector). To martwa/zdublowana tabela, pozostałość po pierwotnym projekcie wiedzy. Niegroźna, ale myląca (to przez nią poszło ręczne zgadywanie nazwy). Kandydat do archiwizacji/usunięcia po potwierdzeniu, że żaden aktywny pipeline jej nie pisze.
@@ -2639,3 +2639,123 @@ Checklista weryfikacji po rotacji: (a) sklep otwiera się / panel działa, (b) *
 **Dług powiązany (osobny task, NIE w tym ADR):** 6 sierot na serwerze (`scripts/t015_smoke.php`, `t017_smoke.php`, `t020_smoke.php`, `t022_cache_probe.php`, `t022_smoke_provider.php`, `cron_editorial_picks_expire.php`) — pliki obecne na serwerze, brak odpowiednika w repo. Wykryte podczas audytu md5 71 plików. Do przeglądu: każdy z osobna — albo dodać do repo (jeśli żywy), albo usunąć z serwera (jeśli martwy). Aktualnie zignorowane przez procedurę rsync (`--delete` świadomie nieużywane), żeby przypadkiem nie skasować czegoś, co może mieć wartość.
 
 **Smoke wykonania ADR-089 (CHAT-T-080, 2026-06-07):** rsync 3 plików CHAT-T-079 → md5 match 3/3 → `php -l` clean 3/3 → `/api/health` HTTP 200 / 0.45s / 99B. Backup `_deploy_bak/CHAT-T-080/index.php.bak` + `ChatService.php.bak` na serwerze (DbHealthAlert.php był nowym plikiem, brak backupu = OK). Test alertu w boju (rotacja `.env` na ~2 min) zaplanowany jako KROK 6 CHAT-T-080 — wykonuje Karol z architektem, nie autonomicznie.
+
+
+---
+
+### ADR-090: Wariantowanie ekranu zachęty (nudge) v1/v2 + przełącznik w panelu, A/B test i pomiar CTR (fazowo)
+**Data:** 2026-06-08 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-056/058/060 (nudge), ADR-087 (gating runtime, cache-safe HTML), ADR-070 (panel PS jako jedyny front admin), ADR-089 (deploy standalone rsync), 116b (moduł PS wgrywa Karol ręcznie). Realizacja: CHAT-T-081 (faza 1), CHAT-T-082/083/084 (faza 2). Draft designu: `_drafts/design_handoff_welcome_prompt/`.
+
+**Kontekst / problem:**
+Powstał nowy design ekranu zachęty ("Welcome Prompt", gradient głębi wody, karta 384px) w `_drafts/design_handoff_welcome_prompt/`. Karol chce wdrożyć go tak, by obecny prosty dymek pozostał jako v1, a nowy jako v2, z przełącznikiem w konfiguracji, oraz docelowo móc puścić test A/B v1 vs v2 i zmierzyć CTR.
+
+**Ustalenie kluczowe (decyzja 245a):** "Ekran zachęty" v2 to NIE nowy pośredni ekran po kliknięciu launchera (jak sugerował prototypowy README "launcher → klik → karta"). To NOWY WYGLĄD ISTNIEJĄCEGO DYMKA NUDGE. v2 pojawia się auto po X sekundach (ten sam mechanizm co dziś: config `nudge_delay`/`nudge_enabled`, sticky sessionStorage `dz_nudge_dismissed`/`dz_chat_opened`, gating dziedziczony z launchera — `widget-loader.js`). Różnica v1↔v2 = wyłącznie warstwa renderu dymka. Klik launchera dalej otwiera czat bezpośrednio (bez zmian). Zapis prototypu "po kliknięciu" traktujemy jako artefakt środowiska demo (canvas), nie docelowe zachowanie.
+
+**Decyzje:**
+
+1. **Wariant jako jedno pole configu (245a, 240b).** Nowy klucz `DIVEZONE_CHAT_NUDGE_VARIANT` (lazy init, default `v1`). Przekazywany w `BOOT.nudge.variant`. Loader wybiera funkcję renderu: `v1` → istniejący `renderNudge` (bez zmian), `v2` → nowy `renderNudgeCard` (karta z draftu). Zero ryzyka dla cache LiteSpeed — to jedna stała wartość w już istniejącym, dla-wszystkich-identycznym BOOT (ADR-087).
+
+2. **v1 nietknięty (rollback-safe).** Kod v1 (`renderNudge`) zostaje 1:1. v2 to dołożona ścieżka, nie refaktor. Przełączenie configu na `v1` = natychmiastowy powrót do dotychczasowego zachowania bez deployu kodu.
+
+3. **Przydział A/B po stronie klienta, sticky (241a).** Bucket losowany 50/50 przy pierwszej wizycie, zapisany w `localStorage` (`dz_ab_bucket` = `v1`|`v2`), stały dla danej przeglądarki. Cache-safe z definicji (HTML się nie zmienia, losowanie w runtime JS). NIE dotyka drabiny ekspozycji ani `/token`. Tryb A/B włączany osobnym kluczem configu `DIVEZONE_CHAT_NUDGE_AB` (default OFF). Gdy AB=ON: wariant z bucketa nadpisuje `nudge.variant`. Gdy AB=OFF: obowiązuje `nudge.variant` z panelu (czysty przełącznik z punktu 1).
+
+4. **CTR = dwa wskaźniki (242c).** (a) CTR ekranu = klik CTA ÷ ekspozycje karty/dymka; (b) konwersja do rozmowy = sesje z ≥1 wiadomością użytkownika ÷ ekspozycje. Oba liczone per bucket (v1/v2). Sam (a) potrafi mylić (v2 ma duży klikalny obszar → wyższy klik bez wyższej liczby realnych rozmów), dlatego mierzymy razem; koszt zebrania obu jest praktycznie taki sam (te same zdarzenia + korelacja z istniejącym sessionId rozmowy).
+
+5. **Warstwa telemetrii — NOWA, fazowo (240b).** Dziś moduł NIE ma żadnej telemetrii ekspozycji/klików (audyt: brak endpointu zdarzeń, brak tabeli). Bez niej CTR jest niemierzalny. Dlatego CTR to osobna faza, NIE dodatek do przełącznika:
+   - Lekki endpoint zdarzeń (standalone backend, same-origin proxy przez moduł lub bezpośrednio — do ustalenia w CHAT-T-082) przyjmujący zdarzenia `prompt_shown` / `prompt_cta_click` z polami: bucket, sessionId (jeśli już jest), ts, typ.
+   - Tabela w Railway PG (JEDYNA aktywna baza PROD, NIE Aiven): `divechat_widget_events`.
+   - Konwersja (wskaźnik b) liczona przez korelację bucket↔sessionId z istniejącymi danymi rozmów (`divechat_*`).
+   - Wysyłka frontowa: `navigator.sendBeacon` (fire-and-forget, zero wpływu na LCP), fallback `fetch keepalive`.
+
+6. **Raport CTR w panelu PS (243a, ADR-070).** Nowa zakładka/sekcja w panelu (lub rozszerzenie istniejącej Analityki) z dwoma wskaźnikami per wariant + liczności + prosty wskaźnik istotności (np. przedział ufności lub min. próba), żeby Karol/pracownik nie czytał surowego SQL. Zgodne z zasadą delegowalności.
+
+**Fazowanie (240b):**
+- **Faza 1 — TERAZ (CHAT-T-081, frontend + moduł PS):** v2 render (`renderNudgeCard`) + klucz `DIVEZONE_CHAT_NUDGE_VARIANT` + pole w panelu (sekcja 5 "Proaktywny dymek"). Bez A/B, bez CTR. Daje natychmiast podgląd v2 na żywo i rollback do v1 jednym przełącznikiem.
+- **Faza 2 — PÓŹNIEJ (CHAT-T-082 backend telemetria, CHAT-T-083 frontend zdarzenia + bucket A/B, CHAT-T-084 panel raport CTR):** dopiero gdy v2 zaakceptowany wizualnie na PROD. Mierzymy po zebraniu realnego ruchu.
+
+**Alternatywy rozważane:**
+- **Losowanie wariantu w PHP przy renderze hooka** — ODRZUCONE. HTML hooka jest cache'owany przez LiteSpeed identycznie dla wszystkich (ADR-087); jedno losowanie "zamroziłoby" jeden wariant dla wszystkich do końca TTL cache. Łamie cały model cache-safe.
+- **Przydział bucketa w `/token`** — odrzucone na tym etapie. Dokłada logikę do krytycznego endpointu wydającego token, bez realnej korzyści (dla widgetu marketingowego stabilność per-przeglądarka wystarcza). Do rozważenia tylko gdyby zaszła potrzeba spójności bucketa per-zalogowany-klient między urządzeniami.
+- **v2 jako pośredni ekran po kliknięciu launchera (wg prototypowego README)** — ODRZUCONE (245a). Karol potwierdził, że wersjonujemy auto-dymek pojawiający się po X sekundach, nie ścieżkę wejścia do czatu. Prostsze, korzysta z gotowego mechanizmu nudge.
+- **CTR tylko jako surowy SQL na Railway** — odrzucone (243a). Łamie zasadę delegowalności (ADR-070): pracownik nie ma czytać SQL.
+- **Wszystko naraz (przełącznik + A/B + CTR w jednym wdrożeniu)** — odrzucone (240b). Telemetria to ~70% pracy; nie powinna blokować obejrzenia v2 na żywo.
+
+**Konsekwencje:**
+- **Pozytywne:** v2 wdrażalny i odwracalny natychmiast (faza 1, niskie ryzyko). A/B i CTR oparte o cache-safe, sticky client-side assignment — bez dotykania `/token` i drabiny ekspozycji. Pomiar w panelu = delegowalny.
+- **Negatywne / dług:** faza 2 wprowadza pierwszą w module warstwę telemetrii frontowej (endpoint + tabela Railway + zakładka panelu) — realny zakres, nie trywialny. Sticky client-side bucket nie jest spójny między przeglądarkami/urządzeniami tego samego użytkownika (akceptowalne dla widgetu marketingowego). Istotność statystyczna przy małym ruchu może wymagać długiego okna testu — panel powinien pokazywać liczności, by nie wyciągać wniosków z 20 ekspozycji.
+
+**Ograniczenia techniczne do uwzględnienia w taskach (z pamięci projektu / poprzednich ADR):**
+- `pr_configuration` używa `utf8` (3-bajt) → 4-bajtowe emoji giną. Emoji w v2 (jeśli jakiekolwiek) jako stała w kodzie loadera, NIE z configu (jak `NUDGE_EMOJI`, CHAT-T-058/140a).
+- Tekst zachęty z configu renderowany WYŁĄCZNIE przez `textContent` (anty-XSS), tak jak v1.
+- v2 żyje w Shadow DOM (ADR-061), inline-style z prototypu → CSS w shadow root. Brak React — vanilla JS jak reszta loadera/bundla.
+- Moduł PS wgrywa Karol ręcznie (116b); standalone backend (faza 2) deploy wg ADR-089 (rsync + backup + STOP-point).
+- Telemetria (faza 2) → Railway PG, NIGDY Aiven.
+
+
+
+---
+
+### ADR-091: Errata treści bota synchronizowana ręcznie z encyklopedią; pgvector to runtime źródło prawdy, raw JSON to źródło buildu
+**Data:** 2026-06-08 | **Status:** PRZYJĘTA | **Powiązane:** TASK-ENC-014 (errata wyporność/suchy), errata encyklopedii decyzje 208/210 + handoff 86/89 (projekt Encyklopedia_Divezone_2026), TASK-ENC-012/013 (pipeline embed, mechanizm changed/check). Baza: Railway PG (ADR baza PROD, NIE Aiven).
+
+**Kontekst / problem:**
+Bot zacytował błędną fizykę wyporu (suchy skafander rzekomo wymaga większej wyporności worka BCD) na pytanie o jacket do butli 18l + suchy skafander. Ten sam błąd został wcześniej naprawiony w encyklopedii (errata, decyzje 208/210). Diagnoza wykazała, że poprawka encyklopedii NIE dotarła do bota, bo encyklopedia i bot mają dwie niezależne kopie treści o nurkowaniu.
+
+**Ustalenie architektoniczne (potwierdzone analizą kodu 8.06.2026):**
+1. **Dwa niezależne światy treści.** Encyklopedia: MySQL `pr_encyclopedia_*`, źródło `content_html` (artykuły). Bot: pgvector `encyclopedia_chunks` na Railway, źródło `data/encyclopedia/v3/gen_v2/raw/*.json` (wiedza produktowa: definition/faq/purchase_parameters/seller_notes/subtypes). Poprawka w jednym NIE propaguje się do drugiego.
+2. **W projekcie bota: pgvector to jedyne runtime źródło prawdy.** `ExpertKnowledge.php` w runtime robi wyłącznie similarity search po `encyclopedia_chunks`. ZERO odczytu raw JSON w runtime (brak file_get_contents/glob/fopen). Raw JSON to wyłącznie źródło buildu.
+3. **Edycja raw JSON jest niewidoczna dla bota do czasu re-embedu.** Przepływ: edit raw JSON → `embed_encyclopedia.py --mode changed` → `encyclopedia_chunks` → bot czyta na żywo (bez deploy/restart). Oba kroki konieczne, w kolejności.
+4. **Chunking 5-typowy.** Każde hasło = 5 chunków `[definition, synonyms, purchase, faq, seller]`. `--mode changed` wykrywa zmianę po `source_hash` i re-embeduje całe dotknięte hasło (5 chunków).
+
+**Decyzje:**
+1. **Synchronizacja erraty jest ręczna, nie automatyczna.** Gdy errata merytoryczna powstaje w encyklopedii, trzeba świadomie powtórzyć ją w raw JSON bota (osobny task ENC). Nie ma i na razie nie budujemy wspólnego źródła prawdy między oboma projektami.
+2. **Encyklopedia jest źródłem KIERUNKU merytorycznego, nie brzmienia.** Poprawki w raw JSON bota wpisujemy w stylu pól produktowych (krótkie), zgodnie z fizyką ustaloną w erracie encyklopedii, ale NIE kopiujemy zdań encyklopedycznych 1:1.
+3. **Procedura naprawy treści bota (kanon):** edit raw JSON → STOP/zatwierdzenie diffów → `--mode changed` (Railway) → `--mode check` (exit 0) → test bota na realnym endpoincie → dwa commity (dane + docs).
+4. **Re-embed dotyka PROD i kosztuje API.** `--mode changed` pisze na Railway pgvector i zużywa text-embedding-3-large. Wymaga STOP-pointu przed wykonaniem (zgoda Karola), zgodnie z zasadą STOP przed operacją na PROD.
+
+**Konsekwencje:**
+- **Pozytywne:** jasny, audytowalny przepływ naprawy treści bota. Rozstrzygnięta wątpliwość "czat czyta JSON czy bazę wektorową" (czyta wyłącznie bazę). Errata chirurgiczna (edycja pola → re-embed jednego hasła), bez ruszania reszty.
+- **Negatywne / dług:** podwójne utrzymanie treści (encyklopedia + bot) = ryzyko rozjazdu merytorycznego przy każdej przyszłej erracie. Brak automatu wykrywającego, że encyklopedia dostała poprawkę, której bot jeszcze nie ma. Do rozważenia w przyszłości: wspólny rejestr errat lub mechanizm sygnalizujący rozbieżność (osobna decyzja, NIE w tym ADR).
+
+---
+
+### ADR-091: Rozdzielenie sessionId rozmowy od identyfikatora atrybucji nudge (fix korelacji CTR konwersji)
+**Data:** 2026-06-08 | **Status:** PRZYJĘTA | **Powiązane:** ADR-090 (faza 2), CHAT-T-083 (telemetria — ujawniła bug), CHAT-T-059 (persystencja sesji = źródło konfliktu), CHAT-T-082 (client-supplied sessionId). Realizacja: CHAT-T-085. Decyzje 253a, 254a.
+
+**Problem (zdiagnozowany w kodzie, potwierdzony empirycznie na PROD):**
+CHAT-T-083 założył, że jeden sessionId obsłuży całą ścieżkę ekspozycja nudge → klik → rozmowa (decyzja 247a). Weryfikacja korelacji (skrypt `verify_nudge_correlation.php`, smoke Karola 2026-06-08 ~13:33) wykazała rozjazd: beacon `nudge_cta_click` miał sid `9de1a748…`, a rozmowa z tej samej interakcji zapisała się pod `566c618f…`. Konwersja w panelu byłaby zawsze 0%.
+
+**Root cause (nie jest to literówka — konflikt dwóch wymagań):**
+Wszystkie warstwy z osobna są poprawne (front wysyła pending sid, backend `resolveSessionId` akceptuje UUID v4, `startOrResume` poprawnie wstawia/wykrywa mismatch). Rozjazd powstaje przy mount okna czatu w `widget-bundle.js`:
+1. CHAT-T-083 ustawia `state.sessionId = BOOT.nudge.pendingSessionId` (sid z nudge, ten w beaconie).
+2. Zaraz potem `tryRestoreSession()` (CHAT-T-059) czyta starą rozmowę z localStorage (TTL 30 dni). Gdy backend ją zna (`exists:true`), restore NADPISUJE `state.sessionId` starym sid i wczytuje historię.
+
+Skutek: pierwsza wiadomość leci pod stary sid rozmowy, beacony nudge mają nowy sid. Pęka dla KAŻDEGO powracającego użytkownika z aktywną rozmową w localStorage — a to duża część ruchu sklepu. Spec CHAT-T-083 świadomie dał restore'owi pierwszeństwo (UX: nie gubić historii klienta) — ta słuszna zasada z definicji rozrywa pomiar konwersji.
+
+**Decyzja (253a): rozdzielić dwie role, które błędnie pełnił jeden sid.**
+- `session_id` = identyfikator ROZMOWY. Może się zmieniać (restore z localStorage, ownership mismatch). Rola UX/persystencji — bez zmian.
+- `nudge_sid` = identyfikator ATRYBUCJI ścieżki ekspozycja→konwersja. Stały od momentu pokazania nudge. NOWA, osobna rola.
+
+Front przy pierwszej wiadomości wysyła OBA: `session_id` (może być stary z restore) ORAZ `nudge_sid` (z ekspozycji, jeśli była w tej sesji przeglądania). Backend zapisuje `nudge_sid` przy tworzeniu rozmowy. Konwersja liczona przez `nudge_sid`, nie przez równość `session_id`.
+
+**Decyzja (254a): powiązanie w `divechat_conversations.nudge_sid`** (nie w `divechat_nudge_events`).
+- Rozmowa to naturalne miejsce na atrybucję źródła („skąd przyszedł ten klient"). Zapis raz, przy starcie rozmowy.
+- `divechat_nudge_events` zostaje czystą, niemutowalną tabelą zdarzeń (`ON CONFLICT DO NOTHING`) — dopisywanie `conversation_session_id` po fakcie kłóciłoby się z jej modelem (event jest niemutowalny).
+- Konwersja = JOIN `divechat_nudge_events.session_id` (sid ekspozycji) ↔ `divechat_conversations.nudge_sid`.
+
+**Kluczowy wymóg implementacyjny (z analizy kodu):**
+Bundle przy mount czyści `pendingSessionId` i NIE zachowuje go nigdzie. Po restore `state.sessionId` jest nadpisany. Dlatego front MUSI trzymać nudge_sid w OSOBNYM polu state (`state.nudgeSid`), niezależnym od `state.sessionId`, i dosyłać je w body pierwszej wiadomości. Inaczej nudge_sid przepada przy restore (to jest dokładnie ten bug).
+
+**Przepływ nudge_sid przez backend (3 warstwy):**
+ChatController (czyta `nudge_sid` z body) → ChatService::handle (nowy opcjonalny param) → ConversationStore::startOrResume (nowy opcjonalny param, zapis do kolumny przy INSERT nowej rozmowy). Zapis TYLKO przy tworzeniu rozmowy (pierwszy raz); przy resume istniejącej nie nadpisujemy (atrybucja należy do momentu powstania).
+
+**Alternatywy odrzucone:**
+- **Pending sid wygrywa z restore (253b)** — odrzucone. Czysta korelacja, ale powracający klient z historią traci ciągłość rozmowy gdy wejdzie przez nudge. Ruch sklepu to w dużej części powracający — psucie ich UX dla pomiaru to zła wymiana.
+- **Korelacja czasowo-userowa bez wspólnego sid (253c)** — odrzucone. Niepewna (wiele równoległych sesji), nie chcemy opierać na niej raportu trafiającego do decyzji biznesowych.
+- **Powiązanie w divechat_nudge_events (254b)** — odrzucone, wymaga mutacji niemutowalnego eventu.
+
+**Konsekwencje:**
+- **Pozytywne:** persystencja historii (CHAT-T-059) i pomiar konwersji przestają być w konflikcie — każde robi swoje. nudge_sid jako atrybucja jest rozszerzalny (w przyszłości inne źródła: launcher, kampania, deep link). Tabela eventów zostaje czysta.
+- **Negatywne / dług:** rozmowa nosi teraz pole atrybucji (akceptowalne, to naturalne miejsce). Konwersja policzalna dopiero dla rozmów powstałych PO wdrożeniu CHAT-T-085 (stare rozmowy mają nudge_sid=NULL — brak atrybucji wstecz, świadome). CTR ekranu (ekspozycje/kliki) był i jest spójny wewnątrz divechat_nudge_events — NIE był dotknięty bugiem, tylko kolumna konwersji.
+
+**Zakres CHAT-T-085:** migracja (kolumna `nudge_sid` w divechat_conversations) + backend (przepływ przez 3 warstwy) + front (osobne `state.nudgeSid`, dosłanie w body). Panel CTR (CHAT-T-084) może powstać równolegle dla ekspozycji/klików/CTR; kolumna konwersji w panelu czeka na CHAT-T-085.
