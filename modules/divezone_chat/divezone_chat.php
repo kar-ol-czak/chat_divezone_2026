@@ -48,6 +48,10 @@ class Divezone_Chat extends Module
     const KEY_NUDGE_TEXT      = 'DIVEZONE_CHAT_NUDGE_TEXT';
     const DEFAULT_NUDGE_DELAY = 20;
     const DEFAULT_NUDGE_TEXT  = 'Hej! 🤿 Nie wiesz, jaki sprzęt wybrać? Zapytaj naszych specjalistów.';
+    // CHAT-T-081 (ADR-090): wariant wygladu zachety. v1 = klasyczny dymek (renderNudge),
+    // v2 = karta z gradientem (renderNudgeCard). Lazy init, default 'v1' (rollback-safe).
+    const KEY_NUDGE_VARIANT   = 'DIVEZONE_CHAT_NUDGE_VARIANT';
+    const DEFAULT_NUDGE_VARIANT = 'v1';
     // CHAT-T-059: persystencja sesji czatu miedzy stronami sklepu (lazy init).
     // TTL = przez ile dni front zapamietuje sessionId w localStorage. Po TTL
     // (lub kliku "Nowa rozmowa") startujemy swieza sesje. Backend trzyma
@@ -236,6 +240,11 @@ class Divezone_Chat extends Module
         if ($nudgeText === '') {
             $nudgeText = self::DEFAULT_NUDGE_TEXT;
         }
+        // CHAT-T-081 (ADR-090): wariant wygladu zachety, default v1 (rollback-safe).
+        $nudgeVariant = (string)Configuration::get(self::KEY_NUDGE_VARIANT);
+        if ($nudgeVariant !== 'v1' && $nudgeVariant !== 'v2') {
+            $nudgeVariant = self::DEFAULT_NUDGE_VARIANT;
+        }
 
         // CHAT-T-059: persystencja sesji — TTL w dniach (lazy init, default 30).
         $persistTtl = (int)Configuration::get(self::KEY_PERSIST_TTL_DAYS);
@@ -343,6 +352,15 @@ class Divezone_Chat extends Module
         // === SEKCJA 5: Proaktywny dymek (nudge) — CHAT-T-056 ===
         $output .= '<hr><h3 style="margin-bottom:4px">' . $this->l('Proaktywny dymek (nudge)') . '</h3>';
         $output .= '<p style="margin-top:0;color:#666"><em>' . $this->l('Wysuwany dymek przy launcherze po N sekundach od wejscia na strone — zacheta do rozmowy. Dziedziczy gating launchera (drabina ekspozycji). Pokazany RAZ na sesje, do zamkniecia (×) lub otwarcia czatu.') . '</em></p>';
+        // CHAT-T-081 (ADR-090): wybor wygladu — v1 (obecny dymek) vs v2 (karta z gradientem).
+        $output .= '<p style="margin:6px 0">';
+        $output .= '<label>' . $this->l('Wyglad zachety') . ':<br>';
+        $output .= '<select name="nudge_variant" style="min-width:280px">';
+        $output .= '<option value="v1"' . ($nudgeVariant === 'v1' ? ' selected' : '') . '>' . $this->l('Klasyczny dymek (v1)') . '</option>';
+        $output .= '<option value="v2"' . ($nudgeVariant === 'v2' ? ' selected' : '') . '>' . $this->l('Karta premium (v2)') . '</option>';
+        $output .= '</select></label><br>';
+        $output .= '<small style="color:#666">' . $this->l('v1 = obecny prosty dymek (tresc z pola "Tresc zachety" ponizej). v2 = karta z gradientem glebi wody i staym copy z draftu (pole "Tresc zachety" w v2 ignorowane).') . '</small>';
+        $output .= '</p>';
         $output .= '<p style="margin:6px 0">';
         $output .= '<label><input type="checkbox" name="nudge_enabled" value="1"' . ($nudgeEnabled ? ' checked' : '') . '> <strong>' . $this->l('Wlacz dymek') . '</strong></label><br>';
         $output .= '<small style="color:#666">' . $this->l('Default OFF. Bez wlaczenia dymek nie pojawi sie nawet jak launcher jest widoczny.') . '</small>';
@@ -454,6 +472,9 @@ class Divezone_Chat extends Module
             $nudgeTextRaw = self::DEFAULT_NUDGE_TEXT;
         }
         Configuration::updateValue(self::KEY_NUDGE_TEXT, $nudgeTextRaw);
+        // CHAT-T-081 (ADR-090): wariant wygladu — 'v2' lub fallback 'v1' (rollback-safe).
+        $nudgeVariantClean = (Tools::getValue('nudge_variant') === 'v2') ? 'v2' : 'v1';
+        Configuration::updateValue(self::KEY_NUDGE_VARIANT, $nudgeVariantClean);
 
         // CHAT-T-059: persystencja sesji — TTL w dniach, walidacja 1-365 → default 30.
         $persistTtlRaw = (int)Tools::getValue('persist_ttl_days', self::DEFAULT_PERSIST_TTL_DAYS);
@@ -540,6 +561,12 @@ class Divezone_Chat extends Module
         if ($nudgeText === '') {
             $nudgeText = self::DEFAULT_NUDGE_TEXT;
         }
+        // CHAT-T-081 (ADR-090): wariant wygladu zachety, default v1. Jedna stala
+        // wartosc identyczna dla wszystkich -> cache-safe LiteSpeed (ADR-087).
+        $nudgeVariant = (string)Configuration::get(self::KEY_NUDGE_VARIANT);
+        if ($nudgeVariant !== 'v1' && $nudgeVariant !== 'v2') {
+            $nudgeVariant = self::DEFAULT_NUDGE_VARIANT;
+        }
 
         // CHAT-T-059: persystencja sesji — TTL z configu (lazy init, default 30).
         $persistTtl = (int)Configuration::get(self::KEY_PERSIST_TTL_DAYS);
@@ -570,6 +597,7 @@ class Divezone_Chat extends Module
                 'enabled' => $nudgeEnabled,
                 'delay'   => $nudgeDelay,
                 'text'    => $nudgeText,
+                'variant' => $nudgeVariant,
             ),
             // CHAT-T-059: persystencja sesji miedzy stronami — TTL + sciezka history.
             // Query param `sid` (NIE `session_id`) — LiteSpeed WAF na hostingu
