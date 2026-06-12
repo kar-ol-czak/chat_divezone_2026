@@ -101,31 +101,14 @@ final class MysqlProductEnrichmentService
             $taxRate = (float) $row['tax_rate'];
             $availability = $row['availability'] ?? 'unavailable';
 
-            $finalNetto = $priceNetto;
-            $hasPromo = false;
-
-            if (isset($specificPrices[$productId])) {
-                $sp = $specificPrices[$productId];
-                $hasPromo = true;
-
-                $base = ($sp['sp_price'] > 0) ? $sp['sp_price'] : $priceNetto;
-
-                if ($sp['reduction'] > 0) {
-                    $finalNetto = match ($sp['reduction_type']) {
-                        'percentage' => $base * (1 - $sp['reduction']),
-                        'amount' => $base - $sp['reduction'],
-                        default => $base,
-                    };
-                } else {
-                    $finalNetto = $base;
-                }
-            }
-
-            $priceBrutto = round($finalNetto * (1 + $taxRate / 100), 2);
-            $baseBrutto = round($priceNetto * (1 + $taxRate / 100), 2);
+            $priced = self::computeBruttoPrice(
+                $priceNetto,
+                $taxRate,
+                $specificPrices[$productId] ?? null,
+            );
 
             $entry = [
-                'price' => $priceBrutto,
+                'price' => $priced['price'],
                 'in_stock' => $availability !== 'unavailable',
                 'availability' => $availability,
                 'quantity' => (int) $row['quantity'],
@@ -133,8 +116,8 @@ final class MysqlProductEnrichmentService
                 'visible' => $row['visibility'] !== 'none',
             ];
 
-            if ($hasPromo && $baseBrutto > $priceBrutto) {
-                $entry['price_before_discount'] = $baseBrutto;
+            if ($priced['has_promo'] && $priced['base_brutto'] > $priced['price']) {
+                $entry['price_before_discount'] = $priced['base_brutto'];
             }
 
             $dataById[$productId] = $entry;
@@ -144,11 +127,66 @@ final class MysqlProductEnrichmentService
     }
 
     /**
+     * Czysta kalkulacja ceny brutto z uwzględnieniem promocji (ADR-093: reduction_tax).
+     * Wydzielona z enrich() by była deterministycznie testowalna bez MySQL.
+     *
+     * Reguły:
+     * - `amount` + `reduction_tax=1` (rabat BRUTTO): odejmij kwotę od ceny brutto (baseBrutto − reduction).
+     *   NIE odejmuj od netto i NIE mnóż rabatu przez VAT — to zaniżało cenę o reduction×rate (bug 98 produktów).
+     * - `amount` + `reduction_tax=0` (rabat NETTO): odejmij od netto, potem dolicz VAT (zachowanie dotychczasowe).
+     * - `percentage`: działa identycznie na netto i brutto (bez zmian).
+     * - sp_price > 0 nadpisuje cenę katalogową jako bazę promocji.
+     *
+     * @param array{sp_price: float, reduction: float, reduction_type: string, reduction_tax: int}|null $sp
+     * @return array{price: float, base_brutto: float, has_promo: bool}
+     */
+    public static function computeBruttoPrice(float $priceNetto, float $taxRate, ?array $sp): array
+    {
+        // Cena bazowa brutto z katalogu (do price_before_discount).
+        $baseBrutto = round($priceNetto * (1 + $taxRate / 100), 2);
+
+        $priceBrutto = $baseBrutto;
+        $hasPromo = false;
+
+        if ($sp !== null) {
+            $hasPromo = true;
+
+            // $base = netto bazowe promocji (sp_price nadpisuje cenę katalogową, jeśli > 0).
+            $base = ($sp['sp_price'] > 0) ? $sp['sp_price'] : $priceNetto;
+            $baseBruttoPromo = round($base * (1 + $taxRate / 100), 2);
+
+            if ($sp['reduction'] > 0) {
+                if ($sp['reduction_type'] === 'amount' && $sp['reduction_tax'] === 1) {
+                    // Rabat kwotowy BRUTTO — odejmij kwotę od ceny brutto.
+                    $priceBrutto = round($baseBruttoPromo - $sp['reduction'], 2);
+                } else {
+                    // percentage ORAZ amount+reduction_tax=0 (rabat NETTO): licz na netto, potem VAT.
+                    $finalNetto = match ($sp['reduction_type']) {
+                        'percentage' => $base * (1 - $sp['reduction']),
+                        'amount' => $base - $sp['reduction'],
+                        default => $base,
+                    };
+                    $priceBrutto = round($finalNetto * (1 + $taxRate / 100), 2);
+                }
+            } else {
+                // Brak rabatu, ale sp_price mógł nadpisać cenę bazową.
+                $priceBrutto = $baseBruttoPromo;
+            }
+        }
+
+        return [
+            'price' => $priceBrutto,
+            'base_brutto' => $baseBrutto,
+            'has_promo' => $hasPromo,
+        ];
+    }
+
+    /**
      * Pobiera najlepsza aktywna specific_price per produkt.
      * Priorytet PS: id_shop > 0 wygrywa z id_shop = 0, id_group > 0 wygrywa z id_group = 0.
      *
      * @param list<int> $productIds
-     * @return array<int, array{sp_price: float, reduction: float, reduction_type: string}>
+     * @return array<int, array{sp_price: float, reduction: float, reduction_type: string, reduction_tax: int}>
      */
     private function fetchSpecificPrices(MysqlConnection $mysql, array $productIds): array
     {
@@ -160,6 +198,7 @@ final class MysqlProductEnrichmentService
                 sp.price AS sp_price,
                 sp.reduction,
                 sp.reduction_type,
+                sp.reduction_tax,
                 sp.id_shop,
                 sp.id_group
             FROM pr_specific_price sp
@@ -185,6 +224,7 @@ final class MysqlProductEnrichmentService
                 'sp_price' => (float) $row['sp_price'],
                 'reduction' => (float) $row['reduction'],
                 'reduction_type' => $row['reduction_type'],
+                'reduction_tax' => (int) $row['reduction_tax'],
             ];
         }
 
