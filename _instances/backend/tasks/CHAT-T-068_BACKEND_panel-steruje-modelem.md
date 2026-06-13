@@ -1,5 +1,7 @@
 # CHAT-T-068 — BACKEND: panel PS steruje modelem (provider wynika z modelu, nie z .env)
 
+**Status:** DONE (2026-06-04, commit 96efaea, deploy PROD OK)
+
 **Instancja:** backend (standalone, PHP 8.4). CC WDRAŻA SAM.
 **Powiązane:** ChatService, AIProviderFactory, AIModel enum, SettingsStore, panel PS Modele (CHAT-T wcześniejsze).
 **Decyzja:** 184a (provider wynika automatycznie z modelu wybranego w panelu; .env tylko fallback gdy panel pusty), 185a (.env AI_PROVIDER zostaje jako fallback, nie ruszać ręcznie).
@@ -56,3 +58,27 @@ Zmień wyprowadzanie $currentProvider:
 6. Model logowany (divechat_message_usage) = model faktycznie użyty z panelu, nie .env.
 7. AIModel::tryFrom null (model spoza enuma) → log warning + fallback, nie cichy błąd.
 8. php -l clean; test PROD opisany (Haiku z panelu → Haiku w rozmowie; zmiana na GPT → GPT). NIE zmieniać .env PROD.
+
+## Wynik (CC, 2026-06-04)
+
+**Wybór warstwy 1: Opcja A (factory injected, lazy resolve).** Najczystszy split odpowiedzialności:
+- `AIProviderFactory` z `static create()` → instancja klasy z `createForModel(?string)`. Wewnętrzny cache `?ClaudeProvider` i `?OpenAIProvider` (lazy, tylko ten provider który faktycznie jest potrzebny). Nazwa providera z `AIModel::tryFrom($modelId)?->provider()`; fallback .env gdy null/spoza enuma.
+- `ChatService` konstruktor: `AIProviderInterface $aiProvider` → `AIProviderFactory $providerFactory`. W `handle()` po `loadSettings()` resolve `$aiProvider = $this->providerFactory->createForModel($settings['model_primary'] ?? null)`.
+- `public/index.php`: `AIProviderFactory::create()` → `new AIProviderFactory()` przekazane do ChatService.
+
+Opcja B (obie instancje wstrzykiwane) odrzucona — wymuszałaby konstrukcję OBU providerów na każdym requeście (każdy z własnym Guzzle Client + odczytem ENV), nawet gdy używany tylko jeden.
+
+**Warstwa 2:** `$currentProvider` derive z `AIModel::tryFrom($settings['model_primary'])?->provider()` (panel); fallback .env tylko gdy panel pusty albo model spoza enuma. Po naprawie linia provider===currentProvider zawsze true dla rozpoznawalnego modelu z panelu — `model_override` zawsze przechodzi.
+
+**Escalation:** `model_escalation` jest ładowany do `$settings`, ale obecny tool loop NIE używa go (sprawdzone grep'em — żadnego użycia poza loadSettings). Fabryka jest gotowa na przyszły kod escalation: wystarczy zawołać `$this->providerFactory->createForModel($settings['model_escalation'])` w punkcie eskalacji i ustawić `$aiOptions['model_override']` na model escalation. Cache fabryki sprawi, że przy primary→escalation w obrębie tego samego providera nie powstanie druga instancja Guzzle.
+
+**Bezpiecznik (kryterium 7):** w `AIProviderFactory::resolveProviderName()` — `AIModel::tryFrom() === null` → `error_log('[DiveChat] AIProviderFactory: model "X" spoza AIModel enuma — fallback na .env')`, dopiero potem .env. Identycznie w ChatService — w warstwie 2 też wpada w fallback .env (bo `$primaryModel === null`), więc panel-stale zostaje widoczne w logach, nie cicho.
+
+**Test PROD (kryteria 1+2):**
+1. Panel `model_primary=claude-haiku-4-5` → POST /api/chat → `diagnostics.model_used = claude-haiku-4-5` i `divechat_message_usage.model_id = claude-haiku-4-5`. PRZED naprawą leciało `gpt-4.1` mimo Haiku w panelu.
+2. Tymczasowo `model_primary=gpt-4.1` → `model_used = gpt-4.1`, log = `gpt-4.1`. Przywrócone `claude-haiku-4-5`.
+3. `.env` nie ruszane (`AI_PROVIDER=openai` zostało). Panel steruje w obie strony.
+
+**php -l** clean (lokalnie + na PROD przez ea-php84) dla 3 zmodyfikowanych plików.
+
+**Commit:** `96efaea` (3 pliki, +86/-25). Push do `main`. Deploy PROD: `scp` 3 plików do `~/public_html/chat.divezone.pl/` (AIProviderFactory.php, ChatService.php, public/index.php). Pliki testowe usunięte z PROD.

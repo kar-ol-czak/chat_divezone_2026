@@ -2760,3 +2760,152 @@ ChatController (czyta `nudge_sid` z body) → ChatService::handle (nowy opcjonal
 - **Negatywne / dług:** rozmowa nosi teraz pole atrybucji (akceptowalne, to naturalne miejsce). Konwersja policzalna dopiero dla rozmów powstałych PO wdrożeniu CHAT-T-085 (stare rozmowy mają nudge_sid=NULL — brak atrybucji wstecz, świadome). CTR ekranu (ekspozycje/kliki) był i jest spójny wewnątrz divechat_nudge_events — NIE był dotknięty bugiem, tylko kolumna konwersji.
 
 **Zakres CHAT-T-085:** migracja (kolumna `nudge_sid` w divechat_conversations) + backend (przepływ przez 3 warstwy) + front (osobne `state.nudgeSid`, dosłanie w body). Panel CTR (CHAT-T-084) może powstać równolegle dla ekspozycji/klików/CTR; kolumna konwersji w panelu czeka na CHAT-T-085.
+
+
+---
+
+### ADR-093: Cena z rabatem kwotowym — uwzględnić `reduction_tax` (bug zaniżania ceny na ~98 produktach)
+
+**Data:** 2026-06-12 | **Status:** ZREALIZOWANA (WDROŻONA NA PROD 2026-06-12, commit cf86a52, status v3.58; enrich([5463])=1900.00 zweryfikowane na żywym torze) | **Powiązane:** CHAT-T-062/E5 (ujednolicenie ścieżki ceny ProductDetails↔ProductSearch), ADR-065 (MysqlProductEnrichmentService MVP). Realizacja: CHAT-T-087 (KROK A). Diagnoza: chat `bc1a9c52-3803-4b1e-85e0-1a4d950a0be8`.
+
+**Problem (potwierdzony empirycznie na PROD MySQL):**
+Klient zgłosił, że bot podał za SUUNTO Eon Core (id 5463) cenę 1707 zł, a na karcie produktu jest 1900 zł. Diagnoza logu rozmowy (Railway) + zapytanie do `pr_specific_price` na PROD wykazały root cause w `MysqlProductEnrichmentService::enrich()`.
+
+**Root cause:**
+Produkt 5463: cena bazowa netto 2226,83 (brutto 2739). Aktywny rabat `pr_specific_price` (id 192162): `reduction=839`, `reduction_type='amount'`, **`reduction_tax=1`**.
+- PrestaShop (karta produktu): `reduction_tax=1` ⇒ 839 to kwota BRUTTO ⇒ 2739 − 839 = **1900 zł**.
+- Nasz `enrich()`: IGNORUJE kolumnę `reduction_tax`. Dla `amount` zawsze odejmuje kwotę od ceny NETTO, potem dolicza VAT ⇒ (2226,83 − 839) × 1,23 = **1707 zł**.
+
+Błąd dotyczy KAŻDEGO produktu z rabatem kwotowym zdefiniowanym jako brutto. Zaniżenie = `reduction × (tax_rate/100)` (tu 839 × 0,23 ≈ 193 zł).
+
+**Skala (zapytanie na PROD, aktywne promocje widoczne dla gościa, id_group IN (0,1)):**
+- `amount` + `reduction_tax=1` (liczone BŁĘDNIE): **98 produktów** / 98 wierszy.
+- `amount` + `reduction_tax=0` (liczone poprawnie): 9 produktów.
+- `percentage` (niewrażliwe na bug — procent działa tak samo na netto i brutto): bez zmian.
+To ~92% rabatów kwotowych liczonych źle. Bug systemowy, nie jednostkowy.
+
+**Decyzja:** W `MysqlProductEnrichmentService::enrich()` uwzględnić `reduction_tax` dla `reduction_type='amount'`:
+- `reduction_tax=1` (rabat brutto): odejmij kwotę od ceny BRUTTO. Tj. policz `baseBrutto`, odejmij `reduction`, wynik to finalna cena brutto (nie mnóż rabatu przez VAT).
+- `reduction_tax=0` (rabat netto): zachowanie dotychczasowe (odejmij od netto, potem VAT).
+- `percentage`: bez zmian (działa na obu poziomach identycznie).
+- `fetchSpecificPrices` musi dociągnąć kolumnę `reduction_tax` do zwracanej struktury.
+- `price_before_discount` (cena bazowa brutto) bez zmian.
+
+**Zakres (9a — celny fix, świadomie wąski):** TYLKO `reduction_tax` dla `amount`. NIE dotykamy w tym ADR `id_currency` (dziś niefiltrowany — osobny, hipotetyczny problem przy promocjach walutowych; brak zgłoszeń, nie mieszać do hotfixa cenowego) ani pełnego odwzorowania hierarchii Group/Country PrestaShop. Jeśli pojawi się zgłoszenie walutowe — osobny ADR.
+
+**Test akceptacyjny:** po fixie `enrich([5463])['price']` == 1900.00 (PLN, gość). Regresja: produkt z `amount`+`reduction_tax=0` i produkt z `percentage` — ceny bez zmian.
+
+**Konsekwencje:**
+- Pozytywne: ~98 produktów przestaje być pokazywanych taniej niż na karcie. Znika klasa zgłoszeń „bot podał inną cenę". Disclaimer „cenę potwierdź na karcie" (ADR CHAT-T-063/E5) zostaje jako druga warstwa, ale nie maskuje już realnego błędu.
+- Negatywne / uwaga: część produktów „podrożeje" w odpowiedziach bota (do poprawnej ceny). To korekta błędu, nie regres. Po wdrożeniu zweryfikować, czy `get_curated_recommendations` (verified_at snapshot) nie wymaga reseedu cen — patrz KROK A4 w CHAT-T-087.
+
+---
+
+### ADR-094: Drill-down do `get_product_details` przed odpowiedzią „nie wiem" o atrybut produktu
+
+**Data:** 2026-06-12 | **Status:** ZREALIZOWANA (WDROŻONA NA PROD 2026-06-12, commit bbd2792, status v3.59) | **Powiązane:** ADR-047 (ExpertKnowledge), CHAT-T-063 (workflow search). Realizacja: CHAT-T-087 (KROK B1). Diagnoza: chat `ef24adbae92486a7da43c625b2b525df`.
+
+**Problem (potwierdzony w logu rozmowy):**
+Klient pytał „ile czasu ważny jest voucher?". Bot odpowiedział „nie mam tej informacji" i odesłał do kontaktu — BEZ wywołania jakiegokolwiek narzędzia (w całej rozmowie zero tool_use). Tymczasem WSZYSTKIE 5 produktów voucherowych (id 4649–4653) mają w polu `pr_product_lang.description` wprost frazę: „voucher jest jednorazowy, do wykorzystania w terminie 1 roku od daty zakupu". `ProductDetails` robi `strip_tags(description)` — gdyby bot wywołał `get_product_details`, miałby odpowiedź.
+
+**Root cause (behawioralny, nie dane):**
+Bot potraktował temat „voucher" jako proceduralny (jest sekcja VOUCHER w SystemPrompt o procesie zakupu/realizacji) i nie rozpoznał, że pytanie o ATRYBUT (ważność) wymaga sięgnięcia do danych produktu. SystemPrompt nigdzie nie wymusza: pytanie o cechę/parametr/warunek konkretnego produktu ⇒ najpierw `get_product_details`, dopiero potem ewentualne „nie wiem".
+
+To problem ogólny, nie o voucherze: identycznie pęknie przy pytaniu o długość węża, ciśnienie robocze, gwint, pojemność, materiał — wszystkim, co żyje w opisie produktu, a nie w SystemPrompt. Fix musi być regułą o klasie pytań, nie wpisaniem ważności vouchera na sztywno (świadomie odrzucone — łata na objaw, nieskalowalna).
+
+**Decyzja:** Dodać do SystemPrompt regułę „DRILL-DOWN DO SZCZEGÓŁÓW PRODUKTU": gdy klient pyta o atrybut/cechę/warunek konkretnego produktu lub kategorii produktów (ważność, wymiary, długość, ciśnienie, materiał, gwarancja, zawartość zestawu, kompatybilność), a bot nie ma tej informacji w bieżącym kontekście — MUSI wywołać `get_product_details` (po uprzednim `search_products`, by ustalić product_id) ZANIM powie „nie mam informacji". Dopiero gdy `description`/`features` faktycznie nie zawierają odpowiedzi — wtedy „nie znalazłem tej informacji w opisie, potwierdzę na dive@divezone.pl / 56 307 03 03".
+
+Dla samego vouchera dodatkowo: ważność (1 rok od daty zakupu) jest treścią opisu — drill-down ją zwróci, NIE wpisujemy jej do promptu na sztywno (gdyby dane się zmieniły, prompt by skłamał).
+
+**Alternatywy odrzucone:**
+- Wpisać ważność vouchera na twardo w SystemPrompt (4a z dyskusji) — odrzucone: łata na jeden atrybut, nie rozwiązuje klasy problemu (długość węża, ciśnienie…), ryzyko rozjazdu prompt↔dane.
+
+**Test akceptacyjny:** „ile ważny jest voucher?" ⇒ bot woła search_products(voucher) → get_product_details → odpowiada „jednorazowy, ważny 1 rok od daty zakupu". Drugi scenariusz (regresja klasy): pytanie o parametr dowolnego produktu z opisu ⇒ bot dociąga details, nie zgaduje.
+
+**Konsekwencje:**
+- Pozytywne: znika klasa „bot nie wie, choć jest w opisie". Skaluje się na wszystkie atrybuty produktowe.
+- Negatywne / uwaga: dodatkowe wywołania toola (koszt/latencja) przy pytaniach o szczegóły — akceptowalne, to rdzeń wartości czatu. Pilnować, by reguła nie powodowała drill-down przy pytaniach czysto edukacyjnych (te idą do get_expert_knowledge).
+
+---
+
+### ADR-095: Komunikat dostawy „dziś→jutro” + numery kont i kluczowe linki (rejestr w divechat_shop_config)
+
+**Data:** 2026-06-12 | **Status:** ZREALIZOWANA (WDROŻONA NA PROD 2026-06-12, commit bbd2792, migracja 028 zaaplikowana na Railway, status v3.59) | **Powiązane:** ADR-059 (ShippingInfo, migracja 013), ADR-085 (get_shop_schedule, kotwica daty). Realizacja: CHAT-T-087 (KROK B2, B3, C). Diagnoza: chaty `bf0fc06d-…` (dostawa) i `406456bb-…` (numer konta / linki).
+
+**Problem 1 (dostawa — bf0fc06d):** Klient pyta „czy jak zamówię dziś, dotrze do piątku?". Bot od razu routuje do kontaktu. SystemPrompt ma twardy zakaz JAKICHKOLWIEK obietnic doręczenia (świadomie wprowadzony — ochrona przed odpowiedzialnością za kuriera). Skutek: bot nie wykorzystuje realnej przewagi sklepu („dziś kupujesz, jutro nurkujesz”) mimo że zna dostępność produktu (availability z search_products).
+
+**Decyzja 1 (2b z dyskusji): kontrolowane poluzowanie.** Gdy produkt jest `in_stock`, bot MOŻE podać komunikat probabilistyczny: zamówienia złożone do **15:00** w dni robocze wysyłamy zwykle tego samego dnia, większość paczek dociera następnego dnia roboczego. PRZY zachowaniu asekuracji: „nie gwarantujemy terminu — to po stronie kuriera; po 100% pewność (np. przed wyjazdem) zadzwoń 56 307 03 03". NIE wolno nadal: twardej obietnicy konkretnej daty/godziny doręczenia („na pewno w piątek”). Różnica vs stary zakaz: wolno powiedzieć „duża szansa, że zdążysz”, NIE wolno „gwarantuję, że zdążysz”. Cut-off **15:00** (decyzja Karola 3a).
+
+Dla `available_to_order` / `unavailable`: bez zmian (2–5 dni do magazynu + reguły dotychczasowe).
+
+**Problem 2 (numer konta / linki — 406456bb):** Klient prosi o numer konta do przelewu. Bot odmawia („nie mam wglądu w strukturę strony”). Dane są publiczne na /kontakt-z-nami. Bot nie ma ani numerów kont, ani rejestru kluczowych linków sklepu (regulamin, polityka, blog, encyklopedia, zwroty, kontakt).
+
+**Decyzja 2 (1ac + 5b):**
+- Numery kont (PLN: 27 1600 1462 1829 3115 4000 0003; EUR: PL54 1600 1462 1829 3115 4000 0002; SWIFT: PPABPLPK) bot podaje WPROST tylko przy pytaniu o płatność/przelew, ZAWSZE z linkiem do https://divezone.pl/kontakt-z-nami. Przy pytaniach ogólnych — sam link.
+- Rejestr linków + numery kont w istniejącej tabeli `divechat_shop_config` (key/value/note) — NIE nowa tabela. `divechat_shop_config` już pełni rolę edytowalnego online store (dziś trzyma free_shipping_threshold_pl). Bot sięga przez narzędzie `get_shop_links` (analogiczne do get_shipping_info) — TYLKO gdy potrzebuje (pytanie o konto/regulamin/politykę/blog/encyklopedię/kontakt/zwroty), nie w każdym requeście (5b: nie obciążać system promptu treścią potrzebną raz na 10–20 rozmów).
+
+**Decyzja 2a (rewizja vs wstępne 5b):** użyć `divechat_shop_config` zamiast nowej dedykowanej tabeli `divechat_shop_links`. Uzasadnienie: schemat key/value w pełni wystarcza (klucze `bank_account_pln`, `bank_account_eur`, `bank_swift`, `link_kontakt`, `link_regulamin`, `link_polityka_prywatnosci`, `link_blog`, `link_encyklopedia`, `link_zwroty`), zero nowej migracji strukturalnej (tylko INSERT-y seed), jeden mechanizm edycji online dla configu sklepu. Narzędzie `get_shop_links` czyta po prefiksie/whiteliście kluczy.
+
+**Test akceptacyjny:** „podaj numer konta do przelewu” ⇒ bot woła get_shop_links → podaje nr PLN + link do /kontakt-z-nami. „gdzie regulamin?” ⇒ link regulaminu. „czy dotrze do piątku?” (produkt in_stock) ⇒ komunikat „zwykle następny dzień roboczy, do 15:00 wysyłka tego samego dnia, bez gwarancji — po pewność zadzwoń”.
+
+**Konsekwencje:**
+- Pozytywne: bot przestaje odmawiać publicznie dostępnych danych; komunikat dostawy podnosi realną przewagę sklepu bez brania odpowiedzialności za kuriera. Edycja kont/linków online (bez deployu).
+- Negatywne / uwaga: numery kont w bazie wymagają aktualizacji przy zmianie (jak każdy config). get_shop_links to nowe narzędzie w rejestrze tooli — pilnować opisu (description), by model wołał je trafnie, nie nadgorliwie.
+
+
+---
+
+### ADR-096: Rewizja modelu węzła drzewa chipów — jawna hierarchia + treść inline + węzeł hybrydowy (rewizja 77a)
+
+**Data:** 2026-06-12 | **Status:** PRZYJĘTA | **Rewiduje:** ADR-071 decyzja 77a (płaska mapa węzłów), częściowo 18a. **Powiązane:** ADR-070 (panel PS), `_docs/37_tresc_chipow_operacyjnych.md`, CHAT-T-088 (realizacja schematu). Decyzje sesji: 25a (klucz hybrydowy), 29a (hierarchia), 31a (Markdown), 32b (węzeł hybrydowy), 26 (osobna zakładka konfiguracyjna chipów w panelu).
+
+**Kontekst zmiany:**
+ADR-071 (77a) zamroził model węzła jako PŁASKĄ MAPĘ: węzeł = {tekst, przyciski[]}, przycisk.target = inny_węzeł | `curated:` | `static:<klucz>` | `modal:` | `ai`. Relacje rodzic-dziecko były ukryte w przyciskach rodzica; treść statyczna miała żyć osobno pod kluczem (`static:<klucz>`). Uzasadnienie wtedy: prostota edycji.
+
+Od tego czasu trzy decyzje Karola zmieniły wymagania:
+1. **18a** — treść faktu operacyjnego żyje W WĘŹLE (nie w osobnym store pod kluczem).
+2. **26** — powstaje osobna zakładka konfiguracyjna chipów w panelu: edycja chipów, RELACJI między nimi (drzewo jak h1/h2/h3 → c1/c2/c3), linków i tekstów. Panel z jawnym drzewem wymaga jawnej hierarchii w danych.
+3. **32b** — chip może mieć JEDNOCZEŚNIE własny tekst ORAZ podchipy (przykład: "Serwis" pokazuje rdzeń cennika + przyciski "Pełny cennik"/"Umów termin"). To nie wyjątek — to fundament modelu.
+
+Płaska mapa (77a) obsługuje to słabo: przeniesienie podchipa pod innego rodzica = grzebanie w przyciskach obu rodziców, ryzyko osieroconych referencji; panel drag-and-drop drzewa nienaturalny; treść pod `static:<klucz>` sprzeczna z 18a.
+
+**Decyzja — nowy model węzła:**
+
+1. **Jawna hierarchia (29a, zmiana 77a).** Węzeł niesie `parent_id` (referencja do rodzica, NULL = poziom 1) + `level` + `sort_order`. Relacja rodzic-dziecko zapisana JAWNIE przy dziecku, nie ukryta w przyciskach rodzica. Panel edytuje drzewo natywnie (przenieś węzeł = zmień parent_id). Podchipy (np. "Dobierz rozmiar" → "Skafander/Płetwy/Maska/Kaptur") to dzieci węzła.
+
+2. **Klucz hybrydowy (25a).** `id BIGSERIAL PK` (stabilne referencje parent_id, nie psują się przy zmianie nazwy) + `node_key TEXT UNIQUE NOT NULL` (czytelny w seedzie/logach/panelu). Wzorzec surrogate+natural key. Referencje (parent_id) przez `id`.
+
+3. **Węzeł hybrydowy (32b).** Węzeł ma OPCJONALNY `bot_text` ORAZ OPCJONALNE dzieci/przyciski — może mieć jedno, drugie lub OBA naraz. Koniec sztywnego "albo static albo navigation". Typ węzła to cecha pochodna (ma tekst? ma dzieci? oba?), nie wymuszony enum albo-albo.
+
+4. **Treść inline w węźle (18a, zmiana `static:<klucz>` z 77a).** Tekst statyczny (zwroty, serwis, wysyłka z `_docs/37_`) żyje w `bot_text` węzła, NIE w osobnym store pod kluczem. Znika cel przycisku `static:<klucz>` — węzeł SAM niesie swój tekst. Przyciski-akcje pozostają: `node:<id>` (zejście), `link:<klucz_configu>` (URL z divechat_shop_config — decyzja 26), `curated:<kat>`, `modal:<typ>`, `ai`.
+
+5. **Markdown w bot_text (31a).** `bot_text` to Markdown; link inline przez `[tekst](url)`. Widget renderuje tym samym bezpiecznym rendererem co odpowiedzi bota (decyzja: htmlspecialchars → **bold**→strong → URL→link → nl2br; bez parsera HTML z treści). Spójne z tym, jak bot już formatuje produkty jako linki.
+
+6. **ZACHOWANE z ADR-071 (bez zmian):** `context_hint`/`prompt_override` na liściu ai (schemat ma to umożliwiać od początku, na start NULL); `model_level` (basic/primary/escalation — routing osobny task); głębokość-za-danymi (76a — nie budować pustych głębokich gałęzi do AI); pierwsza wiadomość chipowa wstrzykuje ludzki `content` + node_id/context_hint w metadanych (114a); drzewo w PG, widget pobiera endpointem, panel edytuje (78a/79a); Q231a (fakty operacyjne deterministyczne, ZERO LLM w rdzeniu).
+
+**Schemat (do realizacji w CHAT-T-088, migracja 029):**
+```
+divechat_chip_nodes:
+  id           BIGSERIAL PK
+  node_key     TEXT UNIQUE NOT NULL      -- czytelny: 'root','zwroty','serwis','dobor_rozmiar'
+  parent_id    BIGINT NULL REFERENCES divechat_chip_nodes(id) ON DELETE CASCADE  -- NULL=poziom 1
+  level        INT NOT NULL DEFAULT 1
+  sort_order   INT NOT NULL DEFAULT 0
+  bot_text     TEXT NULL                 -- Markdown; treść inline (18a). NULL gdy węzeł czysto nawigacyjny
+  buttons      JSONB NOT NULL DEFAULT '[]'  -- akcje NIE-nawigacyjne: [{label,target}], target=link:|curated:|modal:|ai. Zejścia do dzieci wynikają z parent_id, NIE z buttons
+  context_hint TEXT NULL                 -- dla liścia ai (na start NULL)
+  model_level  TEXT NULL                 -- 'basic'|'primary'|'escalation' (routing osobny task)
+  active       BOOLEAN NOT NULL DEFAULT TRUE
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+```
+UWAGA projektowa: dzieci-podchipy wynikają z `parent_id` (zapytanie: WHERE parent_id=X ORDER BY sort_order). `buttons` służy TYLKO akcjom nie-nawigacyjnym (link zewnętrzny, curated, modal, ai). To rozdziela "zejście w drzewie" (hierarchia) od "akcji końcowej" (buttons) — czytelne dla panelu.
+
+**Alternatywy odrzucone:**
+- Płaska mapa (77a oryginalne) — odrzucone: panel z relacjami c1/c2/c3 (26) i przenoszenie podchipów byłyby kruche (osierocone referencje w przyciskach).
+- Treść pod `static:<klucz>` w osobnym store — odrzucone (18a): węzeł niesie swój tekst, jedno miejsce edycji.
+- Enum typu węzła albo-albo (static|navigation) — odrzucone (32b): węzeł hybrydowy tekst+dzieci to fundament.
+
+**Konsekwencje:**
+- Pozytywne: schemat gotowy pod panel edycji drzewa (osobna zakładka, 26) od początku; podchipy naturalne; treść operacyjna w jednym miejscu; węzeł hybrydowy obsługuje realne przypadki (serwis = tekst + opcje).
+- Negatywne / uwaga: schemat bogatszy niż "prosty" z 77a (parent_id, level) — ale to świadoma cena za edytowalny panel. ON DELETE CASCADE: usunięcie rodzica kasuje poddrzewo — panel musi ostrzegać przed usunięciem węzła z dziećmi. Rozdział hierarchia (parent_id) vs akcje (buttons) wymaga jasnej dokumentacji dla panelu, by nie mieszać "zejścia" z "akcją".
+- Panel konfiguracyjny chipów (zakładka, 26) = osobny task PO CHAT-T-088 (schemat+endpoint+seed najpierw).
