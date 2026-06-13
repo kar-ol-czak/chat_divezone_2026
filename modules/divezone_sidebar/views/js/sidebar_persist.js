@@ -1,31 +1,44 @@
 /**
- * DiveZone Sidebar Persist (T-035).
+ * DiveZone Sidebar Persist v3 (T-035).
  *
- * Modyfikuje zachowanie sidebar menu admina PS 1.7:
- *  1. MULTI-OPEN: kazda sekcja top-level (li.link-levelone.has_submenu) moze
- *     byc niezaleznie otwarta/zamknieta. Domyslny PS handler auto-close
- *     pozostalych — nadpisujemy to.
- *  2. PERSIST: stan otwartych sekcji zapisywany w localStorage, restorowany
- *     przy load strony. Per-przegladarka, per-user.
+ * REALNA STRUKTURA PS 1.7 sidebar (z nav_bar.tpl):
  *
- * Hook: displayBackOfficeHeader z modulu divezone_sidebar.php — JS ładuje
- * sie tylko w backofficie, frontend sklepu nieruszony.
+ *   <ul class="main-menu">
+ *     <li class="link-levelone" id="tab-AdminDashboard">         <!-- Pulpit, top-level Z ikona -->
+ *     <li class="category-title" data-submenu="2" id="tab-SELL">
+ *         <span class="title">SPRZEDAZ</span>
+ *     </li>
+ *     <li class="link-levelone" id="tab-AdminOrders">              <!-- "dziecko" SPRZEDAZ, siblingi -->
+ *     <li class="link-levelone" id="tab-AdminCatalog">             <!-- jw -->
+ *     <li class="category-title" data-submenu="42" id="tab-IMPROVE">
+ *         <span class="title">ULEPSZENIA</span>
+ *     </li>
+ *     <li class="link-levelone" id="tab-AdminParentModulesSf">     <!-- "dziecko" ULEPSZENIA -->
+ *     <li class="link-levelone" id="subtab-AdminDivezoneChat">     <!-- jw -->
+ *     ...
  *
- * Selektory wziete z _we345_adm/themes/new-theme/template/components/layout/nav_bar.tpl:
- *   .nav-bar                          (kontener sidebar)
- *   li.link-levelone.has_submenu      (sekcja top-level z dziecmi, klikalna)
- *   > a                               (link sekcji, na nim default handler PS)
- *   ul.submenu.panel-collapse         (lista dzieci, slideUp/Down)
- *   .ul-open .open                    (PS markery otwartej sekcji)
- *   i.material-icons.sub-tabs-arrow   (strzalka, keyboard_arrow_up/down)
+ * Top-level BEZ ikony (SPRZEDAZ/ULEPSZENIA/KONFIGURUJ/itp) sa `category-title`,
+ * tylko teksty naglowkowe. PS NIE MA dla nich wbudowanej akordion/collapse
+ * logiki. "Dzieci" sa SIBLINGAMI (do nastepnego .category-title).
+ *
+ * Nasz modul:
+ * 1. Inject male ikony strzalki (material-icons) do kazdej .category-title
+ *    przy initialization — wizualny sygnal ze sekcja jest klikalna.
+ * 2. Capture-phase click handler na document — odpala sie PRZED handlers PS.
+ * 3. Toggle siblings od .category-title az do nastepnego .category-title
+ *    (lub konca .main-menu), slideUp/slideDown animacja.
+ * 4. Persist stanu (lista zwinietych section_id) w localStorage.
+ *
+ * Hook: displayBackOfficeHeader. Zero modyfikacji PS core.
  */
 (function () {
     'use strict';
 
-    var STORAGE_KEY = 'dz_sidebar_open_sections';
+    var STORAGE_KEY = 'dz_sidebar_collapsed_categories';
+    var COLLAPSE_CLASS = 'dz-collapsed';
+    var ARROW_CLASS = 'dz-collapse-arrow';
     var $ = window.jQuery || window.$;
     if (!$) {
-        // jQuery brak — PS 1.7 zawsze go ma w admin, ale defensive.
         if (window.console) console.warn('[divezone_sidebar] jQuery missing, abort');
         return;
     }
@@ -41,104 +54,168 @@
         }
     }
 
+    /**
+     * Pierwsza wizyta = klucz w localStorage jeszcze NIE istnieje (null).
+     * Wtedy default-collapse-all: zwijamy wszystkie sekcje i persystujemy stan,
+     * zeby kolejne load-y od razu uzywaly localStorage (uzytkownik moze potem
+     * rozwijac wybrane sekcje, kazda zmiana jest natychmiast zapisywana).
+     * Klucz '[]' (pusta lista) = swiadoma decyzja "nic nie zwiniete" — wtedy
+     * nie nadpisujemy.
+     */
+    function isFirstVisit() {
+        try {
+            return window.localStorage.getItem(STORAGE_KEY) === null;
+        } catch (e) {
+            return false;
+        }
+    }
+
     function writeState(arr) {
         try {
             window.localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
-        } catch (e) {
-            // QuotaExceeded / private mode — silently ignore.
+        } catch (e) {}
+    }
+
+    function getSectionId($cat) {
+        return $cat.attr('data-submenu') || $cat.attr('id') || null;
+    }
+
+    /**
+     * Sibling traversal: od $category w prawo, az do nastepnego .category-title
+     * (exclusive) lub konca listy. Zwraca jQuery z odnalezionymi siblingami.
+     */
+    function getCategoryChildren($category) {
+        var children = [];
+        var el = $category[0].nextElementSibling;
+        while (el) {
+            if (el.classList && el.classList.contains('category-title')) {
+                break;
+            }
+            children.push(el);
+            el = el.nextElementSibling;
         }
+        return $(children);
     }
 
-    function getSectionId($li) {
-        // data-submenu jest stable (id_tab z PS), fallback na id element.
-        return $li.attr('data-submenu') || $li.attr('id') || null;
+    function setArrow($category, collapsed) {
+        var $arrow = $category.find('.' + ARROW_CLASS);
+        if (!$arrow.length) return;
+        $arrow.text(collapsed ? 'expand_more' : 'expand_less');
     }
 
-    function arrowUp($li) {
-        $li.find('> a i.material-icons.sub-tabs-arrow').text('keyboard_arrow_up');
-    }
-
-    function arrowDown($li) {
-        $li.find('> a i.material-icons.sub-tabs-arrow').text('keyboard_arrow_down');
-    }
-
-    function openSection($li, animate) {
-        if ($li.hasClass('ul-open')) return;
-        var $submenu = $li.find('> ul.submenu');
-        $li.addClass('ul-open open');
+    function collapseCategory($category, animate) {
+        if ($category.hasClass(COLLAPSE_CLASS)) return;
+        $category.addClass(COLLAPSE_CLASS);
+        var $children = getCategoryChildren($category);
         if (animate) {
-            $submenu.stop(true, true).slideDown(200, function () {
-                $(this).removeAttr('style');
-            });
+            $children.stop(true, true).slideUp(180);
         } else {
-            $submenu.show().removeAttr('style');
+            $children.hide();
         }
-        arrowUp($li);
+        setArrow($category, true);
     }
 
-    function closeSection($li, animate) {
-        if (!$li.hasClass('ul-open')) return;
-        var $submenu = $li.find('> ul.submenu');
+    function expandCategory($category, animate) {
+        if (!$category.hasClass(COLLAPSE_CLASS)) return;
+        $category.removeClass(COLLAPSE_CLASS);
+        var $children = getCategoryChildren($category);
         if (animate) {
-            $submenu.stop(true, true).slideUp(200, function () {
-                $(this).parent().removeClass('ul-open open -hover');
-                $(this).removeAttr('style');
-            });
+            $children.stop(true, true).slideDown(180);
         } else {
-            $li.removeClass('ul-open open -hover');
-            $submenu.hide().removeAttr('style');
+            $children.show();
         }
-        arrowDown($li);
+        setArrow($category, false);
     }
 
-    function persistOpenSections() {
-        var open = [];
-        $('.nav-bar li.link-levelone.has_submenu.ul-open').each(function () {
+    function persistCollapsedCategories() {
+        var collapsed = [];
+        $('.nav-bar li.category-title.' + COLLAPSE_CLASS).each(function () {
             var id = getSectionId($(this));
-            if (id) open.push(id);
+            if (id) collapsed.push(id);
         });
-        writeState(open);
+        writeState(collapsed);
+    }
+
+    /**
+     * Inject male strzalka ikona obok tytulu kazdej .category-title +
+     * marker (data-dz-init) zeby uniknac duplicate injection przy
+     * re-bind (np. po PS bundle DOMReady).
+     */
+    function injectArrows() {
+        $('.nav-bar li.category-title').each(function () {
+            var $cat = $(this);
+            if ($cat.attr('data-dz-init') === '1') return;
+            $cat.attr('data-dz-init', '1');
+            var $title = $cat.find('.title').first();
+            // dodaj strzalke jako span po .title — domyslnie "expand_less" (rozwinieta)
+            $cat.append(
+                '<i class="material-icons ' + ARROW_CLASS + '" aria-hidden="true">expand_less</i>'
+            );
+        });
     }
 
     function restoreState() {
         var saved = readState();
         if (!saved.length) return;
-        $('.nav-bar li.link-levelone.has_submenu').each(function () {
-            var $li = $(this);
-            var id = getSectionId($li);
+        $('.nav-bar li.category-title').each(function () {
+            var $cat = $(this);
+            var id = getSectionId($cat);
             if (id && saved.indexOf(id) !== -1) {
-                openSection($li, false); // no animacji przy load
+                collapseCategory($cat, false); // bez animacji przy load
             }
         });
     }
 
-    function bindMultiOpenHandler() {
-        // Replace default PS handler:
-        //  - PS default zamyka wszystkie inne sekcje przed otwarciem klikni¦tej
-        //  - my chcemy niezalezne toggle, multi-open
-        $('.nav-bar li.link-levelone.has_submenu > a')
-            .off('click.dzSidebar')          // wyczysc jesli moduł re-injects
-            .off('click')                    // ZWALNIA default PS handler
-            .on('click.dzSidebar', function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                var $li = $(this).parent();
-                if ($li.hasClass('ul-open')) {
-                    closeSection($li, true);
-                } else {
-                    openSection($li, true);
-                }
-                persistOpenSections();
-            });
+    function collapseAllCategories() {
+        $('.nav-bar li.category-title').each(function () {
+            collapseCategory($(this), false); // bez animacji przy initial collapse
+        });
     }
 
+    /**
+     * Capture-phase listener — odpala sie PRZED kazdym direct handler.
+     * stopImmediatePropagation blokuje PS handlers, jesli by sie zarejestrowaly.
+     */
+    function handleCaptureClick(e) {
+        // Znajdz najblizszy ancestor .category-title (akceptuje klik gdziekolwiek na pasku)
+        var t = e.target;
+        var cat = null;
+        while (t && t !== document) {
+            if (t.classList && t.classList.contains('category-title')) {
+                cat = t;
+                break;
+            }
+            t = t.parentNode;
+        }
+        if (!cat) return;
+        if (!cat.closest('.nav-bar')) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        var $cat = $(cat);
+        if ($cat.hasClass(COLLAPSE_CLASS)) {
+            expandCategory($cat, true);
+        } else {
+            collapseCategory($cat, true);
+        }
+        persistCollapsedCategories();
+    }
+
+    document.addEventListener('click', handleCaptureClick, true);
+
+    // Inject + restore po DOMReady ($ ready). Jesli juz po — wykona sie od razu.
     $(function () {
-        // PS bundle (main.bundle.js) wpina swój handler na DOMReady — nasz
-        // setup MUSI byc po nim. setTimeout(0) odłozyć do nastepnego ticka
-        // event loop, kiedy PS juz zarejestrowal swoj listener.
-        setTimeout(function () {
-            bindMultiOpenHandler();
+        injectArrows();
+        if (isFirstVisit()) {
+            // Pierwsze uruchomienie aplikacji: default = wszystko zwiniete.
+            // Po pierwszym toggle persist zapisuje aktualny stan, kolejne load-y
+            // beda uzywaly tego (NIE wracamy do "wszystko zwiniete" za kazdym razem).
+            collapseAllCategories();
+            persistCollapsedCategories();
+        } else {
             restoreState();
-        }, 0);
+        }
     });
 })();

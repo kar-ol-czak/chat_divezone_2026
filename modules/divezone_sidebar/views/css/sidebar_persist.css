@@ -1,0 +1,39 @@
+/* DiveZone Sidebar — collapse styles (T-035 v3) */
+
+/* Klikalna kategoria — kursor pointer + delikatny hover */
+.nav-bar li.category-title {
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    position: relative;
+    transition: background-color 0.15s ease-out;
+}
+
+.nav-bar li.category-title:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+/* Strzalka rozwiniecia po prawej stronie kategorii.
+   Biale na ciemno-szarym tle sidebar, dobrze widoczne. !important pokonuje
+   ewentualny conflict z PS .material-icons (kolor domyslny dziedziczy z .category-title). */
+.nav-bar li.category-title .dz-collapse-arrow {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 20px;
+    color: #ffffff !important;
+    opacity: 0.95;
+    pointer-events: none;     /* klik przechodzi do parent li */
+    transition: opacity 0.15s ease-out;
+}
+
+.nav-bar li.category-title:hover .dz-collapse-arrow {
+    opacity: 1;
+}
+
+/* Gdy sidebar zwiniety do waskiej szpalty (PS .page-sidebar-closed),
+   ukryj strzalki — i tak nie ma miejsca */
+body.page-sidebar-closed .nav-bar li.category-title .dz-collapse-arrow {
+    display: none;
+}

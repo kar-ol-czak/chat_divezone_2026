@@ -80,6 +80,7 @@ class Divezone_Sidebar extends Module
     public function hookDisplayBackOfficeHeader($params)
     {
         if ($this->context->controller instanceof AdminController) {
+            $this->context->controller->addCSS($this->_path . 'views/css/sidebar_persist.css');
             $this->context->controller->addJS($this->_path . 'views/js/sidebar_persist.js');
         }
     }
