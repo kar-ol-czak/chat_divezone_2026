@@ -23,6 +23,32 @@ final class Response
         self::json(['error' => $message], $status);
     }
 
+    /**
+     * JSON cache'owalny z walidacją ETag (treść publiczna, np. drzewo chipów).
+     * ETag = hash treści; gdy If-None-Match pasuje → 304 bez body.
+     * Inaczej → 200 + Cache-Control: public + ETag.
+     */
+    public static function jsonCached(array $data, ?string $ifNoneMatch, int $maxAge = 300): never
+    {
+        $body = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $etag = '"' . md5((string) $body) . '"';
+
+        self::setCorsHeaders();
+        header("Cache-Control: public, max-age={$maxAge}");
+        header("ETag: {$etag}");
+
+        // Klient może przysłać kilka ETagów (lista) — porównaj dosłownie z naszym.
+        if ($ifNoneMatch !== null && in_array($etag, array_map('trim', explode(',', $ifNoneMatch)), true)) {
+            http_response_code(304);
+            exit;
+        }
+
+        http_response_code(200);
+        header('Content-Type: application/json; charset=utf-8');
+        echo $body;
+        exit;
+    }
+
     public static function setCorsHeaders(): void
     {
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';

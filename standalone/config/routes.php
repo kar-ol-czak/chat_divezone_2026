@@ -13,7 +13,9 @@ use DiveChat\Auth\PsCookieKeyReader;
 use DiveChat\Auth\ServerHmacVerifier;
 use DiveChat\Config;
 use DiveChat\Chat\ChatService;
+use DiveChat\Chip\ChipTreeService;
 use DiveChat\Controller\AdminRecommendationsController;
+use DiveChat\Controller\ChipTreeController;
 use DiveChat\Shop\MysqlProductEnrichmentService;
 use DiveChat\Chat\ConversationStore;
 use DiveChat\Chat\SettingsStore;
@@ -93,6 +95,15 @@ return static function (
         new RateLimiter(PostgresConnection::getInstance()),
     );
     $router->post('/api/widget/event', $widgetEventController->handle(...));
+
+    // CHAT-T-088 (ADR-096): drzewo chipów dla widgetu. Treść publiczna (jak nudge
+    // BOOT) — BEZ auth, cache'owalne (ETag + Cache-Control). Widget pobiera raz
+    // na starcie i renderuje lokalnie. ChipTreeService czyta divechat_chip_nodes,
+    // składa zagnieżdżenie po parent_id.
+    $chipTreeController = new ChipTreeController(
+        new ChipTreeService(PostgresConnection::getInstance()),
+    );
+    $router->get('/api/chip-tree', $chipTreeController->handle(...));
 
     // CHAT-T-044/046: kanal serwerowy panelu PS (ADR-068, sekret DIVECHAT_SERVER_SECRET).
     // Tworzony wczesnie zeby wszyscy admini ponizej (Conversations/Settings/Pricing/
