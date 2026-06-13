@@ -10,6 +10,7 @@ use DiveChat\Shop\MysqlProductEnrichmentService;
 use DiveChat\Shop\ShopCalendar;
 use DiveChat\Tools\CuratedRecommendations;
 use DiveChat\Tools\ExpertKnowledge;
+use DiveChat\Tools\GetShopLinks;
 use DiveChat\Tools\GetShopSchedule;
 use DiveChat\Tools\OrderStatus;
 use DiveChat\Tools\ProductDetails;
@@ -35,6 +36,7 @@ return static function (EmbeddingService $embeddingService): ToolRegistry {
     $registry->register(new ExpertKnowledge($embeddingService, $pg));
     $registry->register(new OrderStatus());
     $registry->register(new ShippingInfo($pg));
+    $registry->register(new GetShopLinks($pg));
     $registry->register(new GetShopSchedule(new ShopCalendar(new DbOverrideProvider($pg))));
     $registry->register(new CuratedRecommendations($pg, $enrichmentService));
 
