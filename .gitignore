@@ -130,3 +130,10 @@ _redteam/pytania_ze_sklepu_*.txt
 
 # T-030: raporty sprzedazy (regenerowalne, moga sie rozrastac) — skrypt commitowalny, output nie
 /reports/
+
+# Build artifacts modułów (34a): spakowany moduł PS to artefakt builda, nie źródło
+modules/*.zip
+
+# Robocze materiały projektowe (drafts): screenshoty, .pptx/.docx, prototypy design-canvas,
+# wygenerowane slajdy — scratch, nie commitujemy (binaria + materiał roboczy)
+/_drafts/
