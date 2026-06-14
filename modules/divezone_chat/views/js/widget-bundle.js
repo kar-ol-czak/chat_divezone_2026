@@ -81,6 +81,12 @@
     isStreaming: false,
     abortCtl: null,
     lastFocus: null,
+    // CHAT-T-089 (ADR-096): drzewo chipow pobrane z /api/chip-tree przy mount.
+    // chipTree = wezel root (z .children = Level 1). chipStack = sciezka zejscia
+    // w glab (Wariant A nawigacji wstecz, decyzja 44a) — szczyt stosu to biezacy
+    // poziom chipow. Pusty/NULL => fallback do statycznych CHIPS_DESKTOP.
+    chipTree: null,
+    chipStack: [],
     // CHAT-T-043 modal statusu zamowienia
     orderModalEl: null,
     orderModalOpen: false,
@@ -218,6 +224,9 @@
     state.nudgeSid = null;
     lsRemove(PERSIST_KEY);
     clearMessagesView();
+    // CHAT-T-089: przywroc Level 1 z drzewa (zamiast statycznych chipow). No-op
+    // gdy drzewo niezaladowane — wtedy clearMessagesView pokazal statyczne.
+    resetChipsToLevel1();
     if (state.srLiveEl) state.srLiveEl.textContent = '';
     if (state.inputEl) { state.inputEl.value = ''; state.inputEl.focus(); }
     scrollToBottom();
@@ -345,6 +354,191 @@
     return el;
   }
 
+  /* ───────────────────────── Silnik drzewa chipow (CHAT-T-089, ADR-096) ─────────────────────────
+   *
+   * Zastepuje statyczne CHIPS_DESKTOP dynamicznym drzewem z GET /api/chip-tree
+   * (publiczny, bez tokenu). Render Level 1 z root.children; klik wezla z bot_text
+   * renderuje tekst LOKALNIE (ZERO LLM — Q231a, decyzja 38a), klik liscia ai →
+   * sendUserMessage. Nawigacja w glab: chip "← Wróć" (Wariant A, decyzja 44a) —
+   * bable rozmowy ZOSTAJA, wraca tylko ZESTAW CHIPOW.
+   */
+
+  var CHIP_TREE_PATH = '/api/chip-tree';
+
+  // Etykieta nawigacyjna chipa = label z wezla (42a). Fallback: node_key.
+  function deriveChipLabel(node) {
+    if (node && typeof node.label === 'string' && node.label.trim() !== '') {
+      return node.label.trim();
+    }
+    return (node && node.node_key) ? String(node.node_key) : 'Opcja';
+  }
+
+  // Hook beacona klikow chipow (decyzja 39a) — celowo pusty, podpiecie w CHAT-T-090.
+  function onChipClick(nodeKey) { /* no-op do CHAT-T-090 */ }
+
+  function clearChips() {
+    if (!state.chipsEl) return;
+    while (state.chipsEl.firstChild) state.chipsEl.removeChild(state.chipsEl.firstChild);
+  }
+
+  function makeChipButton(label, cssClass, onClick) {
+    var btn = createEl('button', { class: cssClass, type: 'button' }, escapeHtml(label));
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  /**
+   * Pobranie drzewa przy mount. Public endpoint — prosty fetch, bez naglowkow
+   * X-DiveChat-*. ETag/max-age=300 obsluguje przegladarka (cache:'default').
+   * Graceful fallback: blad/puste => statyczne chipy z buildWindow zostaja.
+   */
+  function fetchChipTree() {
+    var backend = state.boot && state.boot.backendUrl;
+    if (!backend) return; // brak backendUrl => zostaja statyczne chipy
+    fetch(backend + CHIP_TREE_PATH, {
+      method: 'GET',
+      mode: 'cors',
+      credentials: 'omit',
+      cache: 'default',
+      headers: { 'Accept': 'application/json' }
+    }).then(function (resp) {
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return resp.json();
+    }).then(function (data) {
+      var roots = (data && Array.isArray(data.tree)) ? data.tree : null;
+      if (!roots || !roots.length) throw new Error('puste drzewo');
+      var root = roots[0];
+      if (!root || !Array.isArray(root.children) || !root.children.length) {
+        throw new Error('root bez dzieci');
+      }
+      state.chipTree = root;
+      state.chipStack = [root];
+      // Render Level 1 TYLKO gdy chipy sa widoczne (rozmowa sie nie zaczela
+      // / nie przywrocono historii). Jesli tryRestoreSession schowal chipy —
+      // nie pokazuj ich z powrotem.
+      if (state.chipsEl && state.chipsEl.style.display !== 'none') {
+        renderCurrentChipLevel();
+      }
+    }).catch(function () {
+      // Graceful: statyczne CHIPS_DESKTOP (buildWindow) zostaja jako fallback.
+    });
+  }
+
+  /** Render biezacego poziomu chipow = szczyt chipStack (dzieci + przyciski + ← Wróć). */
+  function renderCurrentChipLevel() {
+    if (!state.chipsEl || !state.chipTree || !state.chipStack.length) return;
+    var node = state.chipStack[state.chipStack.length - 1];
+    if (!node) return;
+
+    clearChips();
+    state.chipsEl.style.display = '';
+
+    var isMobile = window.matchMedia && window.matchMedia('(max-width: 599.98px)').matches;
+
+    // "← Wróć" tylko ponizej Level 1 (Wariant A, 44a). Na Level 1 brak.
+    if (state.chipStack.length > 1) {
+      state.chipsEl.appendChild(
+        makeChipButton('← Wróć', 'dz-chip dz-chip--back', popChipLevel)
+      );
+    }
+
+    // Nawigacja: dzieci wezla. Limit mobilny (CHIPS_MOBILE_LIMIT) wg sort_order
+    // (backend sortuje). Buttony NIE sa limitowane — to akcje, nie nawigacja.
+    var children = Array.isArray(node.children) ? node.children : [];
+    if (isMobile && children.length > CHIPS_MOBILE_LIMIT) {
+      children = children.slice(0, CHIPS_MOBILE_LIMIT);
+    }
+    children.forEach(function (child) {
+      state.chipsEl.appendChild(
+        makeChipButton(deriveChipLabel(child), 'dz-chip', function () { routeChipNode(child); })
+      );
+    });
+
+    // Akcje: przyciski wezla (link / ai / modal).
+    var buttons = Array.isArray(node.buttons) ? node.buttons : [];
+    buttons.forEach(function (btn) {
+      state.chipsEl.appendChild(
+        makeChipButton((btn && btn.label) || 'Otwórz', 'dz-chip', function () { routeChipButton(btn); })
+      );
+    });
+
+    scrollToBottom();
+  }
+
+  function popChipLevel() {
+    if (state.chipStack.length > 1) state.chipStack.pop();
+    renderCurrentChipLevel();
+  }
+
+  /** Reset do Level 1 z drzewa (np. po "Nowa rozmowa"). No-op gdy brak drzewa. */
+  function resetChipsToLevel1() {
+    if (!state.chipTree) return; // statyczne chipy zostaja (juz widoczne)
+    state.chipStack = [state.chipTree];
+    renderCurrentChipLevel();
+  }
+
+  /**
+   * Routing klika chipa nawigacyjnego (sedno, decyzja 38a):
+   *  - wezel z bot_text  → render LOKALNIE (ZERO LLM), potem zejscie do dzieci/przyciskow
+   *  - czysto nawigacyjny (bez tekstu, ma dzieci/przyciski) → zejscie bez babla
+   *  - lisc ai (bez tekstu, bez dzieci) → sendUserMessage(label) (114a)
+   */
+  function routeChipNode(node) {
+    if (!node) return;
+    onChipClick(node.node_key); // beacon hook (CHAT-T-090)
+
+    var hasText = typeof node.bot_text === 'string' && node.bot_text.trim() !== '';
+    var hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    var hasButtons = Array.isArray(node.buttons) && node.buttons.length > 0;
+
+    if (hasText) {
+      appendBotMessage(node.bot_text);
+      // Zejscie w glab tylko gdy jest co pokazac. Inaczej biezacy poziom zostaje
+      // (klient dostal odpowiedz, moze wybrac inny temat).
+      if (hasChildren || hasButtons) {
+        state.chipStack.push(node);
+        renderCurrentChipLevel();
+      }
+      return;
+    }
+
+    if (hasChildren || hasButtons) {
+      state.chipStack.push(node);
+      renderCurrentChipLevel();
+      return;
+    }
+
+    // Lisc ai: wstrzykniecie czytelnego content do LLM (114a) — NIE node_key.
+    sendUserMessage(deriveChipLabel(node));
+  }
+
+  /**
+   * Mapowanie target przycisku na akcje:
+   *  - link (+url)    → otworz URL w nowej karcie (_blank, noopener)
+   *  - ai             → sendUserMessage(label) (→ LLM)
+   *  - modal:order    → openOrderModal(); inne modal:<typ> → fallback ai
+   *  - curated:<kat> / inne → fallback ai (hook na przyszlosc, poza zakresem)
+   */
+  function routeChipButton(btn) {
+    if (!btn) return;
+    var target = String(btn.target || '');
+    if (target === 'link' && btn.url) {
+      window.open(String(btn.url), '_blank', 'noopener');
+      return;
+    }
+    if (target === 'ai') {
+      sendUserMessage(btn.label || '');
+      return;
+    }
+    if (target.indexOf('modal:') === 0) {
+      if (target === 'modal:order') { openOrderModal(); return; }
+      sendUserMessage(btn.label || ''); // inne modale jeszcze nieobslugiwane
+      return;
+    }
+    // curated:<kat> i nieznane — fallback do LLM (nie budujemy sciezki kuratora).
+    sendUserMessage(btn.label || '');
+  }
+
   function buildWindow() {
     var win = createEl('div', {
       class: 'dz-window',
@@ -398,7 +592,9 @@
     welcomeRow.appendChild(createEl('div', { class: 'dz-bubble--bot', html: WELCOME_HTML }));
     messages.appendChild(welcomeRow);
 
-    // Chipy
+    // Chipy — render poczatkowy ze statycznych CHIPS_DESKTOP (FALLBACK). Po mount
+    // fetchChipTree() podmienia je na dynamiczny Level 1 z drzewa (CHAT-T-089).
+    // Gdy fetch padnie/puste — te statyczne zostaja (graceful degradation).
     var chips = createEl('div', { class: 'dz-chips', role: 'group', 'aria-label': 'Szybkie odpowiedzi' });
     var isMobile = window.matchMedia && window.matchMedia('(max-width: 599.98px)').matches;
     var labels = CHIPS_DESKTOP.slice(0, isMobile ? CHIPS_MOBILE_LIMIT : CHIPS_DESKTOP.length);
@@ -1068,6 +1264,11 @@
     document.addEventListener('keydown', onKeydown, true);
 
     state.mounted = true;
+
+    // CHAT-T-089: pobierz drzewo chipow i podmien Level 1 (jesli chipy widoczne).
+    // Async — UI startuje od razu ze statycznymi chipami (fallback), drzewo je
+    // zastapi gdy przyjdzie. Pad => statyczne zostaja.
+    fetchChipTree();
 
     // CHAT-T-059: po mount sprobuj odtworzyc rozmowe z localStorage (TTL).
     // Async fetch — UI dziala od razu z welcome+chipy; przyjdzie historia ->

@@ -247,6 +247,16 @@
   outline: 2px solid var(--dz-focus-ring);
   outline-offset: 2px;
 }
+/* CHAT-T-089 (44a): chip "← Wróć" — wizualnie odrozniony od chipow tematu.
+   Przygaszone tlo + brak ramki, zeby czytelnie sygnalizowal nawigacje wstecz. */
+.dz-chip--back {
+  background: transparent;
+  border-color: transparent;
+  color: var(--dz-chip-text);
+  opacity: .72;
+  font-weight: 600;
+}
+.dz-chip--back:hover { opacity: 1; }
 
 /* ───────────────────────── Nota RODO ───────────────────────── */
 
