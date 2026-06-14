@@ -31,27 +31,54 @@ final class ChipTreeService
     public function getTree(): array
     {
         $rows = $this->db->fetchAll(
-            "SELECT id, node_key, parent_id, level, sort_order, bot_text, buttons, context_hint, model_level
+            "SELECT id, node_key, parent_id, level, sort_order, label, bot_text, buttons, context_hint, model_level
              FROM divechat_chip_nodes
              WHERE active = TRUE
              ORDER BY parent_id NULLS FIRST, sort_order, id",
         );
 
-        return self::buildTree($rows);
+        return self::buildTree($rows, $this->loadLinkMap());
+    }
+
+    /**
+     * Mapa klucz→URL z divechat_shop_config dla przycisków link:<klucz> (decyzja 43a).
+     * Jedno zapytanie (BEZ N+1). Pomija wartości puste/'TODO' (niepotwierdzone) —
+     * lookup zwróci wtedy null (front dostanie url:null, jak dla brakującego klucza).
+     *
+     * @return array<string, string>
+     */
+    private function loadLinkMap(): array
+    {
+        $rows = $this->db->fetchAll(
+            "SELECT key, value FROM divechat_shop_config WHERE key LIKE 'link\\_%'",
+        );
+
+        $map = [];
+        foreach ($rows as $row) {
+            $value = trim((string) $row['value']);
+            if ($value === '' || $value === 'TODO') {
+                continue;
+            }
+            $map[(string) $row['key']] = $value;
+        }
+
+        return $map;
     }
 
     /**
      * Czyste złożenie płaskich wierszy w zagnieżdżone drzewo (testowalne bez PG).
      *
-     * Wejście: wiersze jak z divechat_chip_nodes (buttons jako JSON string z PG).
+     * Wejście: wiersze jak z divechat_chip_nodes (buttons jako JSON string z PG) +
+     * opcjonalna mapa link klucz→URL (do rozwijania przycisków link:<klucz>).
      * Wyjście: korzenie (parent_id NULL) z rekurencyjnym children[]; każdy węzeł
-     * zawiera node_key, bot_text, buttons[], children[], context_hint, model_level
+     * zawiera node_key, label, bot_text, buttons[], children[], context_hint, model_level
      * (kontrakt endpointu — pola wewnętrzne id/parent_id/level NIE wychodzą).
      *
      * @param list<array<string, mixed>> $rows
+     * @param array<string, string> $linkMap klucz configu → URL (puste = url:null)
      * @return list<array<string, mixed>>
      */
-    public static function buildTree(array $rows): array
+    public static function buildTree(array $rows, array $linkMap = []): array
     {
         // Indeks węzłów po id + grupowanie id-dzieci per rodzic (klucz '' = korzenie).
         $childrenByParent = [];
@@ -64,8 +91,9 @@ final class ChipTreeService
 
             $nodeById[$id] = [
                 'node_key'     => (string) $row['node_key'],
+                'label'        => isset($row['label']) && $row['label'] !== null ? (string) $row['label'] : null,
                 'bot_text'     => $row['bot_text'] !== null ? (string) $row['bot_text'] : null,
-                'buttons'      => self::decodeButtons($row['buttons'] ?? '[]'),
+                'buttons'      => self::decodeButtons($row['buttons'] ?? '[]', $linkMap),
                 'children'     => [],
                 'context_hint' => $row['context_hint'] !== null ? (string) $row['context_hint'] : null,
                 'model_level'  => $row['model_level'] !== null ? (string) $row['model_level'] : null,
@@ -98,9 +126,15 @@ final class ChipTreeService
     /**
      * Dekoduje buttons (JSONB z PG przychodzi jako string; może być już array).
      *
-     * @return list<array{label: string, target: string}>
+     * Rozwija przyciski link:<klucz> (decyzja 43a): target zmienia się z
+     * "link:link_serwis" na czysty "link", a url = URL z mapy configu (lub null gdy
+     * klucz nieznany/pusty). Pozostałe targety (ai, modal:, curated:) → target jak
+     * jest, url:null. Front nie zna configu — dostaje gotowy URL.
+     *
+     * @param array<string, string> $linkMap klucz configu → URL
+     * @return list<array{label: string, target: string, url: string|null}>
      */
-    private static function decodeButtons(mixed $raw): array
+    private static function decodeButtons(mixed $raw, array $linkMap = []): array
     {
         $decoded = is_array($raw) ? $raw : json_decode((string) $raw, true);
         if (!is_array($decoded)) {
@@ -112,10 +146,22 @@ final class ChipTreeService
             if (!is_array($btn) || !isset($btn['label'], $btn['target'])) {
                 continue;
             }
-            $buttons[] = [
-                'label'  => (string) $btn['label'],
-                'target' => (string) $btn['target'],
-            ];
+            $target = (string) $btn['target'];
+
+            if (str_starts_with($target, 'link:')) {
+                $key = substr($target, 5);
+                $buttons[] = [
+                    'label'  => (string) $btn['label'],
+                    'target' => 'link',
+                    'url'    => $linkMap[$key] ?? null,
+                ];
+            } else {
+                $buttons[] = [
+                    'label'  => (string) $btn['label'],
+                    'target' => $target,
+                    'url'    => null,
+                ];
+            }
         }
 
         return $buttons;
