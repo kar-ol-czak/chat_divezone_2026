@@ -37,16 +37,17 @@ $rows = [
     ['id' => 1, 'node_key' => 'root', 'parent_id' => null, 'level' => 1, 'sort_order' => 0,
      'label' => 'W czym mogę pomóc?', 'bot_text' => 'W czym mogę pomóc?', 'buttons' => '[]', 'context_hint' => null, 'model_level' => null],
     ['id' => 5, 'node_key' => 'dobor', 'parent_id' => 1, 'level' => 2, 'sort_order' => 4,
-     'label' => 'Dobór sprzętu', 'bot_text' => 'Pomogę dobrać sprzęt.', 'buttons' => '[{"label":"Napisz czego szukasz","target":"ai"}]', 'context_hint' => null, 'model_level' => null],
+     'label' => 'Dobór sprzętu', 'bot_text' => 'Pomogę dobrać sprzęt.', 'buttons' => '[{"label":"Napisz czego szukasz","target":"ai"}]', 'context_hint' => null, 'model_level' => null, 'ai_prompt' => null],
     ['id' => 2, 'node_key' => 'zwroty', 'parent_id' => 1, 'level' => 2, 'sort_order' => 1,
-     'label' => 'Zwroty i wymiana', 'bot_text' => 'Masz 30 dni na zwrot.', 'buttons' => '[{"label":"Formularz i szczegóły","target":"link:link_zwroty"},{"label":"Inne pytanie","target":"ai"}]', 'context_hint' => null, 'model_level' => null],
+     'label' => 'Zwroty i wymiana', 'bot_text' => 'Masz 30 dni na zwrot.', 'buttons' => '[{"label":"Formularz i szczegóły","target":"link:link_zwroty"},{"label":"Inne pytanie","target":"ai"}]', 'context_hint' => null, 'model_level' => null, 'ai_prompt' => null],
     ['id' => 3, 'node_key' => 'serwis', 'parent_id' => 1, 'level' => 2, 'sort_order' => 2,
-     'label' => 'Serwis automatu', 'bot_text' => 'Serwisujemy automaty...', 'buttons' => '[{"label":"Pełny cennik","target":"link:link_serwis"},{"label":"Umów serwis","target":"link:link_kontakt"},{"label":"Inne pytanie","target":"ai"}]', 'context_hint' => null, 'model_level' => null],
+     'label' => 'Serwis automatu', 'bot_text' => 'Serwisujemy automaty...', 'buttons' => '[{"label":"Pełny cennik","target":"link:link_serwis"},{"label":"Umów serwis","target":"link:link_kontakt"},{"label":"Inne pytanie","target":"ai"}]', 'context_hint' => null, 'model_level' => null, 'ai_prompt' => null],
     ['id' => 4, 'node_key' => 'wysylka', 'parent_id' => 1, 'level' => 2, 'sort_order' => 3,
-     'label' => 'Dostępność i wysyłka', 'bot_text' => 'Do 15:00 wysyłamy tego samego dnia.', 'buttons' => '[{"label":"Koszty i metody dostawy","target":"ai"},{"label":"Inne pytanie","target":"ai"}]', 'context_hint' => null, 'model_level' => null],
-    // Poziom 3 pod dobor — test rekurencji. Bez label (NULL dozwolone).
+     'label' => 'Dostępność i wysyłka', 'bot_text' => 'Do 15:00 wysyłamy tego samego dnia.', 'buttons' => '[{"label":"Koszty i metody dostawy","target":"ai"},{"label":"Inne pytanie","target":"ai"}]', 'context_hint' => null, 'model_level' => null, 'ai_prompt' => null],
+    // Poziom 3 pod dobor — test rekurencji. Bez label (NULL dozwolone). ai_prompt USTAWIONY (088e).
     ['id' => 10, 'node_key' => 'dobor_skafander', 'parent_id' => 5, 'level' => 3, 'sort_order' => 1,
-     'label' => null, 'bot_text' => null, 'buttons' => '[]', 'context_hint' => null, 'model_level' => 'primary'],
+     'label' => null, 'bot_text' => null, 'buttons' => '[]', 'context_hint' => null, 'model_level' => 'primary',
+     'ai_prompt' => 'Zapytaj o obwód klatki i wzrost, dopytaj o grubość pianki.'],
 ];
 
 // Mapa link klucz→URL. link_kontakt CELOWO pominięty → test "brak klucza → url:null".
@@ -102,10 +103,15 @@ assertT('liść poziom 3: bot_text null', $dobor['children'][0]['bot_text'] === 
 assertT('liść poziom 3: label null', $dobor['children'][0]['label'] === null);
 assertT('liść poziom 3: model_level=primary', $dobor['children'][0]['model_level'] === 'primary');
 
-// === Kontrakt: pola wewnętrzne NIE wychodzą; label dołączony ===
+// === ai_prompt (088e) ===
+assertT('liść poziom 3: ai_prompt ustawiony', $dobor['children'][0]['ai_prompt'] === 'Zapytaj o obwód klatki i wzrost, dopytaj o grubość pianki.');
+assertT('root: ai_prompt null', $root['ai_prompt'] === null);
+assertT('dobor: ai_prompt null (brak instrukcji)', $dobor['ai_prompt'] === null);
+
+// === Kontrakt: pola wewnętrzne NIE wychodzą; label + ai_prompt dołączone ===
 $keys = array_keys($root);
 sort($keys);
-assertT('kontrakt: dokładnie 7 pól (z label)', $keys === ['bot_text', 'buttons', 'children', 'context_hint', 'label', 'model_level', 'node_key'], 'got ' . implode(',', $keys));
+assertT('kontrakt: dokładnie 8 pól (z label + ai_prompt)', $keys === ['ai_prompt', 'bot_text', 'buttons', 'children', 'context_hint', 'label', 'model_level', 'node_key'], 'got ' . implode(',', $keys));
 assertT('kontrakt: brak id', !array_key_exists('id', $root));
 assertT('kontrakt: brak parent_id', !array_key_exists('parent_id', $root));
 assertT('kontrakt: brak _sort', !array_key_exists('_sort', $root));
@@ -127,6 +133,7 @@ $noLabelCol = ChipTreeService::buildTree([
      'bot_text' => null, 'buttons' => '[]', 'context_hint' => null, 'model_level' => null],
 ]);
 assertT('brak kolumny label → label:null (robustność)', $noLabelCol[0]['label'] === null);
+assertT('brak kolumny ai_prompt → ai_prompt:null (robustność)', $noLabelCol[0]['ai_prompt'] === null);
 
 // === Pusty input → puste drzewo ===
 assertT('pusty input → []', ChipTreeService::buildTree([]) === []);

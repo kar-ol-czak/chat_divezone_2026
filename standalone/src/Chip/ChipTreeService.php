@@ -31,7 +31,7 @@ final class ChipTreeService
     public function getTree(): array
     {
         $rows = $this->db->fetchAll(
-            "SELECT id, node_key, parent_id, level, sort_order, label, bot_text, buttons, context_hint, model_level
+            "SELECT id, node_key, parent_id, level, sort_order, label, bot_text, buttons, context_hint, model_level, ai_prompt
              FROM divechat_chip_nodes
              WHERE active = TRUE
              ORDER BY parent_id NULLS FIRST, sort_order, id",
@@ -71,8 +71,9 @@ final class ChipTreeService
      * Wejście: wiersze jak z divechat_chip_nodes (buttons jako JSON string z PG) +
      * opcjonalna mapa link klucz→URL (do rozwijania przycisków link:<klucz>).
      * Wyjście: korzenie (parent_id NULL) z rekurencyjnym children[]; każdy węzeł
-     * zawiera node_key, label, bot_text, buttons[], children[], context_hint, model_level
-     * (kontrakt endpointu — pola wewnętrzne id/parent_id/level NIE wychodzą).
+     * zawiera node_key, label, bot_text, buttons[], children[], context_hint,
+     * model_level, ai_prompt (kontrakt endpointu — pola wewnętrzne id/parent_id/level
+     * NIE wychodzą).
      *
      * @param list<array<string, mixed>> $rows
      * @param array<string, string> $linkMap klucz configu → URL (puste = url:null)
@@ -97,6 +98,9 @@ final class ChipTreeService
                 'children'     => [],
                 'context_hint' => $row['context_hint'] !== null ? (string) $row['context_hint'] : null,
                 'model_level'  => $row['model_level'] !== null ? (string) $row['model_level'] : null,
+                // ai_prompt: opcjonalna instrukcja liścia dla AI (088e). isset chroni
+                // stary SELECT/wiersze bez kolumny (jak label w 088b).
+                'ai_prompt'    => isset($row['ai_prompt']) && $row['ai_prompt'] !== null ? (string) $row['ai_prompt'] : null,
             ];
             $sortById[$id] = (int) $row['sort_order'];
             $childrenByParent[$parentKey][] = $id;

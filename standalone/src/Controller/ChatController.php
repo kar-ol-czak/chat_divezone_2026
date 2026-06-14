@@ -239,6 +239,11 @@ final class ChatController
         // przy INSERT nowej rozmowy.
         $nudgeSid = $this->resolveNudgeSid($body['nudge_sid'] ?? null);
 
+        // CHAT-T-088e (ADR-097, decyzja 65b): kontekst ścieżki chipów — OSOBNY
+        // parametr od message (historia ma zostać czysta). Front składa go z
+        // chipStack. Defensywny cap długości; brak/pusty -> null.
+        $chipContext = $this->resolveChipContext($body['chip_context'] ?? null);
+
         if ($message === '') {
             Response::error('Pole "message" jest wymagane i nie może być puste', 400);
         }
@@ -272,6 +277,7 @@ final class ChatController
                 message: $message,
                 customerId: (int) $customerId ?: null,
                 nudgeSid: $nudgeSid,
+                chipContext: $chipContext,
             );
 
             Response::json([
@@ -329,6 +335,9 @@ final class ChatController
         // jak session_id; brak/niepoprawny -> null (NIE generujemy).
         $nudgeSid = $this->resolveNudgeSid($body['nudge_sid'] ?? null);
 
+        // CHAT-T-088e (ADR-097, decyzja 65b): kontekst ścieżki chipów (osobny od message).
+        $chipContext = $this->resolveChipContext($body['chip_context'] ?? null);
+
         if ($message === '') {
             Response::error('Pole "message" jest wymagane i nie może być puste', 400);
         }
@@ -382,6 +391,7 @@ final class ChatController
                 customerId: (int) $customerId ?: null,
                 onStatus: $emitStatus,
                 nudgeSid: $nudgeSid,
+                chipContext: $chipContext,
             );
 
             // event: done z pełną odpowiedzią
@@ -524,6 +534,34 @@ final class ChatController
             return $trimmed;
         }
         return null;
+    }
+
+    /**
+     * Wyłuskaj chip_context z body request (CHAT-T-088e, ADR-097, decyzja 65b).
+     *
+     * To kontekst ścieżki chipów (np. "Dobór rozmiaru › Kaptur" + opcjonalny
+     * ai_prompt liścia), składany przez front z chipStack i podawany OSOBNYM
+     * parametrem (nie w treści message — historia ma zostać czysta). Opcjonalny:
+     * klient piszący zwykłą wiadomość bez chipów wyśle null/brak pola.
+     *
+     * Defensywa: cap długości (kontekst zwykle krótki, ale pole jest w body i
+     * teoretycznie sterowalne) + trim. Pusty/nie-string -> null.
+     */
+    private function resolveChipContext(mixed $clientChipContext): ?string
+    {
+        if (!is_string($clientChipContext)) {
+            return null;
+        }
+        $trimmed = trim($clientChipContext);
+        if ($trimmed === '') {
+            return null;
+        }
+        // Twardy cap — kontekst ścieżki to kilka etykiet + krótki ai_prompt;
+        // 2000 znaków z zapasem. Ucinamy zamiast odrzucać (kontekst "nice to have").
+        if (mb_strlen($trimmed) > 2000) {
+            $trimmed = mb_substr($trimmed, 0, 2000);
+        }
+        return $trimmed;
     }
 
     /**

@@ -41,9 +41,14 @@ final class ChatService
      *   ekspozycji nudge. Sid z ekspozycji nudge, OSOBNY od session_id (który
      *   może być zmieniony przez restore na froncie). Zapisywany w bazie TYLKO
      *   przy INSERT nowej rozmowy — przy resume istniejącej nie nadpisujemy.
+     * @param ?string $chipContext CHAT-T-088e / ADR-097 (decyzja 65b): kontekst
+     *   ścieżki chipów ("Dobór rozmiaru › Kaptur" + opcjonalny ai_prompt liścia)
+     *   składany przez front z chipStack. Wstrzykiwany jako instrukcja systemowa
+     *   TEJ TURY (prefiks do promptu), NIE jako wiadomość user — historia zostaje
+     *   czysta (user message = realna treść klienta). Ulotny: nie zapisywany w bazie.
      * @return array{response: string, session_id: string, tools_used: string[], products: array, usage: array, diagnostics: array}
      */
-    public function handle(string $sessionId, string $message, ?int $customerId, ?callable $onStatus = null, ?string $nudgeSid = null): array
+    public function handle(string $sessionId, string $message, ?int $customerId, ?callable $onStatus = null, ?string $nudgeSid = null, ?string $chipContext = null): array
     {
         $startTime = microtime(true);
         $emit = $onStatus ?? static function (string $text): void {};
@@ -77,9 +82,18 @@ final class ChatService
         // 2. Przytnij KOPIĘ dla LLM kontekstu (pełna historia nienaruszona)
         $trimmedHistory = $this->trimHistory($fullHistory);
 
-        // 3. Zbuduj listę wiadomości dla LLM z PRZYCIĘTEJ historii
+        // 3. Zbuduj listę wiadomości dla LLM z PRZYCIĘTEJ historii.
+        // CHAT-T-088e (decyzja 65b): kontekst ścieżki chipów doklejamy do system
+        // promptu TEJ TURY (instrukcja systemowa), NIE jako osobna wiadomość user.
+        // Dzięki temu historia (divechat_messages + JSONB) zostaje czysta, a system[0]
+        // i tak jest filtrowany przy zapisie. Działa dla obu providerów (Claude bierze
+        // system osobno; OpenAI jako pierwszą wiadomość role=system).
+        $systemPrompt = SystemPrompt::build($settings['emoji_enabled']);
+        if ($chipContext !== null && $chipContext !== '') {
+            $systemPrompt .= self::buildChipContextBlock($chipContext);
+        }
         $messages = [
-            ['role' => 'system', 'content' => SystemPrompt::build($settings['emoji_enabled'])],
+            ['role' => 'system', 'content' => $systemPrompt],
         ];
 
         foreach ($trimmedHistory as $msg) {
@@ -444,6 +458,23 @@ final class ChatService
         }
 
         return $diag;
+    }
+
+    /**
+     * Buduje blok kontekstu ścieżki chipów doklejany do system promptu tej tury
+     * (CHAT-T-088e / ADR-097, decyzja 65b). Front przekazuje gotowy string: ścieżkę
+     * nawigacji ("Dobór rozmiaru › Kaptur") + opcjonalny ai_prompt liścia.
+     *
+     * Framing jest celowo cienki — treść steruje front. Instruujemy model, by
+     * potraktował to jako intencję klienta i NIE cytował dosłownie (to kontekst
+     * nawigacyjny, nie wiadomość użytkownika).
+     */
+    private static function buildChipContextBlock(string $chipContext): string
+    {
+        return "\n\n--- KONTEKST TEJ TURY (nawigacja chipami) ---\n"
+            . "Klient trafił tutaj przez chipy: {$chipContext}\n"
+            . "Potraktuj to jako jego intencję i odpowiedz zgodnie z nią. "
+            . "To kontekst nawigacyjny — nie cytuj go dosłownie.";
     }
 
     /**
