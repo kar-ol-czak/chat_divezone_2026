@@ -258,6 +258,23 @@
 }
 .dz-chip--back:hover { opacity: 1; }
 
+/* CHAT-T-089b (51a): chipy NASTEPCZE doklejane pod bablem bota (w strumieniu
+   wiadomosci), jako naturalne przedluzenie odpowiedzi. Wciecie zrownane z trescia
+   babla (avatar po lewej), odstep od babla wyzej i nastepnej pozycji nizej. */
+.dz-chips--inline {
+  margin: 2px 0 8px;
+}
+/* Wygaszony (nieaktualny) zestaw inline — interaktywny zostaje tylko najnowszy. */
+.dz-chips--spent {
+  opacity: .45;
+}
+.dz-chips--spent .dz-chip {
+  cursor: default;
+}
+.dz-chips--spent .dz-chip:hover {
+  opacity: 1;
+}
+
 /* ───────────────────────── Nota RODO ───────────────────────── */
 
 .dz-note {

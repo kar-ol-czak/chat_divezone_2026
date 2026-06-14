@@ -87,6 +87,9 @@
     // poziom chipow. Pusty/NULL => fallback do statycznych CHIPS_DESKTOP.
     chipTree: null,
     chipStack: [],
+    // CHAT-T-089b (51a): tryb nastepczy — po pierwszym bot_text chipy poziomu
+    // doklejane POD bablem w messagesEl (inline), startowe menu (chipsEl) znika.
+    chipsInline: false,
     // CHAT-T-043 modal statusu zamowienia
     orderModalEl: null,
     orderModalOpen: false,
@@ -200,6 +203,11 @@
     for (var i = 0; i < rows.length; i++) {
       if (first && rows[i].classList.contains('dz-bot-row')) { first = false; continue; }
       if (rows[i].parentNode) rows[i].parentNode.removeChild(rows[i]);
+    }
+    // CHAT-T-089b: usun rowniez inline'owe zestawy chipow doklejone pod bablami.
+    var inlineChips = state.messagesEl.querySelectorAll('.dz-chips--inline');
+    for (var k = 0; k < inlineChips.length; k++) {
+      if (inlineChips[k].parentNode) inlineChips[k].parentNode.removeChild(inlineChips[k]);
     }
     if (state.chipsEl) state.chipsEl.style.display = '';
   }
@@ -354,13 +362,19 @@
     return el;
   }
 
-  /* ───────────────────────── Silnik drzewa chipow (CHAT-T-089, ADR-096) ─────────────────────────
+  /* ───────────────────────── Silnik drzewa chipow (CHAT-T-089/089b, ADR-096) ─────────────────────────
    *
    * Zastepuje statyczne CHIPS_DESKTOP dynamicznym drzewem z GET /api/chip-tree
    * (publiczny, bez tokenu). Render Level 1 z root.children; klik wezla z bot_text
    * renderuje tekst LOKALNIE (ZERO LLM — Q231a, decyzja 38a), klik liscia ai →
    * sendUserMessage. Nawigacja w glab: chip "← Wróć" (Wariant A, decyzja 44a) —
    * bable rozmowy ZOSTAJA, wraca tylko ZESTAW CHIPOW.
+   *
+   * CHAT-T-089b (51a): DWA tryby renderu poziomu (wspolna logika renderChipLevelInto):
+   *  - STARTOWY (przed rozmowa) — w stalym state.chipsEl u gory (pod welcome).
+   *  - NASTEPCZY (po pierwszym bot_text) — inline blok doklejony POD bablem w
+   *    messagesEl; startowe menu znika. "← Wróć" dokleja kolejny inline blok
+   *    (bable ZOSTAJA). Tylko najnowszy inline zestaw jest interaktywny.
    */
 
   var CHIP_TREE_PATH = '/api/chip-tree';
@@ -376,9 +390,93 @@
   // Hook beacona klikow chipow (decyzja 39a) — celowo pusty, podpiecie w CHAT-T-090.
   function onChipClick(nodeKey) { /* no-op do CHAT-T-090 */ }
 
-  function clearChips() {
-    if (!state.chipsEl) return;
-    while (state.chipsEl.firstChild) state.chipsEl.removeChild(state.chipsEl.firstChild);
+  /**
+   * Wspolna logika renderu jednego poziomu chipow do dowolnego kontenera
+   * (CHAT-T-089b refaktor): "← Wróć" (gdy nie Level 1) + dzieci (nawigacja,
+   * limit mobilny) + przyciski (akcje). Uzywane DWOJAKO: startowy chipsEl (gora)
+   * oraz inline'owy blok pod bablem (tryb nastepczy, 51a). backHandler rozni sie
+   * per tryb (re-render startowy vs doklejenie nowego inline bloku).
+   */
+  function renderChipLevelInto(containerEl, node, backHandler) {
+    if (!containerEl || !node) return;
+    while (containerEl.firstChild) containerEl.removeChild(containerEl.firstChild);
+
+    var isMobile = window.matchMedia && window.matchMedia('(max-width: 599.98px)').matches;
+
+    // "← Wróć" tylko ponizej Level 1 (Wariant A, 44a). Na Level 1 brak.
+    if (state.chipStack.length > 1) {
+      containerEl.appendChild(makeChipButton('← Wróć', 'dz-chip dz-chip--back', backHandler));
+    }
+
+    // Nawigacja: dzieci wezla. Limit mobilny (CHIPS_MOBILE_LIMIT) wg sort_order
+    // (backend sortuje). Buttony NIE sa limitowane — to akcje, nie nawigacja.
+    var children = Array.isArray(node.children) ? node.children : [];
+    if (isMobile && children.length > CHIPS_MOBILE_LIMIT) {
+      children = children.slice(0, CHIPS_MOBILE_LIMIT);
+    }
+    children.forEach(function (child) {
+      containerEl.appendChild(
+        makeChipButton(deriveChipLabel(child), 'dz-chip', function () { routeChipNode(child); })
+      );
+    });
+
+    // Akcje: przyciski wezla (link / ai / modal).
+    var buttons = Array.isArray(node.buttons) ? node.buttons : [];
+    buttons.forEach(function (btn) {
+      containerEl.appendChild(
+        makeChipButton((btn && btn.label) || 'Otwórz', 'dz-chip', function () { routeChipButton(btn); })
+      );
+    });
+  }
+
+  /**
+   * Wejscie w tryb nastepczy (51a): rozmowa sie zaczela, startowe menu (chipsEl)
+   * u gory znika — od teraz chipy poziomu doklejane sa POD bablem w messagesEl.
+   */
+  function enterInlineMode() {
+    state.chipsInline = true;
+    if (state.chipsEl) state.chipsEl.style.display = 'none';
+  }
+
+  /**
+   * Wygas wszystkie wczesniejsze inline'owe zestawy chipow — interaktywny zostaje
+   * tylko najnowszy. Chroni przed mieszaniem wspoldzielonego chipStack przez klik
+   * w nieaktualny "← Wróć". Link do tresci pozostaje klikalny w samym bablu (50a).
+   */
+  function spendPriorInlineChips() {
+    if (!state.messagesEl) return;
+    var prior = state.messagesEl.querySelectorAll('.dz-chips--inline:not(.dz-chips--spent)');
+    for (var i = 0; i < prior.length; i++) {
+      prior[i].classList.add('dz-chips--spent');
+      var btns = prior[i].querySelectorAll('button');
+      for (var j = 0; j < btns.length; j++) btns[j].disabled = true;
+    }
+  }
+
+  /**
+   * Doklejenie zestawu chipow biezacego poziomu jako nowy inline blok POD ostatnim
+   * bablem (51a). Bable rozmowy ZOSTAJA (44a). Starsze inline bloki wygaszane.
+   */
+  function appendInlineChips(node) {
+    if (!state.messagesEl || !node) return;
+    spendPriorInlineChips();
+    var inline = createEl('div', {
+      class: 'dz-chips dz-chips--inline',
+      role: 'group',
+      'aria-label': 'Szybkie odpowiedzi'
+    });
+    renderChipLevelInto(inline, node, goBackInline);
+    state.messagesEl.appendChild(inline);
+    scrollToBottom();
+  }
+
+  /**
+   * "← Wróć" w trybie inline: poziom wyzej. Bable ZOSTAJA — doklejamy nowy inline
+   * blok poziomu wyzej pod ostatnia pozycja (NIE kasujemy historii, 44a).
+   */
+  function goBackInline() {
+    if (state.chipStack.length > 1) state.chipStack.pop();
+    appendInlineChips(state.chipStack[state.chipStack.length - 1]);
   }
 
   function makeChipButton(label, cssClass, onClick) {
@@ -424,64 +522,40 @@
     });
   }
 
-  /** Render biezacego poziomu chipow = szczyt chipStack (dzieci + przyciski + ← Wróć). */
+  /**
+   * Render biezacego poziomu w STARTOWYM chipsEl (gora, pod welcome). Tryb sprzed
+   * rozmowy: startowe menu Level 1 + ewentualne zejscie w wezel BEZ bot_text.
+   * "← Wróć" tu re-renderuje startowy chipsEl w miejscu.
+   */
   function renderCurrentChipLevel() {
     if (!state.chipsEl || !state.chipTree || !state.chipStack.length) return;
     var node = state.chipStack[state.chipStack.length - 1];
     if (!node) return;
-
-    clearChips();
     state.chipsEl.style.display = '';
-
-    var isMobile = window.matchMedia && window.matchMedia('(max-width: 599.98px)').matches;
-
-    // "← Wróć" tylko ponizej Level 1 (Wariant A, 44a). Na Level 1 brak.
-    if (state.chipStack.length > 1) {
-      state.chipsEl.appendChild(
-        makeChipButton('← Wróć', 'dz-chip dz-chip--back', popChipLevel)
-      );
-    }
-
-    // Nawigacja: dzieci wezla. Limit mobilny (CHIPS_MOBILE_LIMIT) wg sort_order
-    // (backend sortuje). Buttony NIE sa limitowane — to akcje, nie nawigacja.
-    var children = Array.isArray(node.children) ? node.children : [];
-    if (isMobile && children.length > CHIPS_MOBILE_LIMIT) {
-      children = children.slice(0, CHIPS_MOBILE_LIMIT);
-    }
-    children.forEach(function (child) {
-      state.chipsEl.appendChild(
-        makeChipButton(deriveChipLabel(child), 'dz-chip', function () { routeChipNode(child); })
-      );
-    });
-
-    // Akcje: przyciski wezla (link / ai / modal).
-    var buttons = Array.isArray(node.buttons) ? node.buttons : [];
-    buttons.forEach(function (btn) {
-      state.chipsEl.appendChild(
-        makeChipButton((btn && btn.label) || 'Otwórz', 'dz-chip', function () { routeChipButton(btn); })
-      );
-    });
-
+    renderChipLevelInto(state.chipsEl, node, popChipLevelStartowe);
     scrollToBottom();
   }
 
-  function popChipLevel() {
+  function popChipLevelStartowe() {
     if (state.chipStack.length > 1) state.chipStack.pop();
     renderCurrentChipLevel();
   }
 
   /** Reset do Level 1 z drzewa (np. po "Nowa rozmowa"). No-op gdy brak drzewa. */
   function resetChipsToLevel1() {
+    state.chipsInline = false; // powrot do startowego menu u gory
     if (!state.chipTree) return; // statyczne chipy zostaja (juz widoczne)
     state.chipStack = [state.chipTree];
     renderCurrentChipLevel();
   }
 
   /**
-   * Routing klika chipa nawigacyjnego (sedno, decyzja 38a):
-   *  - wezel z bot_text  → render LOKALNIE (ZERO LLM), potem zejscie do dzieci/przyciskow
-   *  - czysto nawigacyjny (bez tekstu, ma dzieci/przyciski) → zejscie bez babla
-   *  - lisc ai (bez tekstu, bez dzieci) → sendUserMessage(label) (114a)
+   * Routing klika chipa nawigacyjnego (sedno, decyzja 38a + 51a):
+   *  - wezel z bot_text  → render LOKALNIE (ZERO LLM); chipy poziomu doklejone
+   *    INLINE POD bablem (tryb nastepczy), startowe menu znika.
+   *  - czysto nawigacyjny (bez tekstu, ma dzieci/przyciski) → zejscie bez babla:
+   *    inline pod ostatnim bablem gdy rozmowa juz trwa, inaczej w startowym chipsEl.
+   *  - lisc ai (bez tekstu, bez dzieci) → sendUserMessage(label) (114a).
    */
   function routeChipNode(node) {
     if (!node) return;
@@ -493,18 +567,27 @@
 
     if (hasText) {
       appendBotMessage(node.bot_text);
-      // Zejscie w glab tylko gdy jest co pokazac. Inaczej biezacy poziom zostaje
-      // (klient dostal odpowiedz, moze wybrac inny temat).
+      // Chipy poziomu doklejone POD bablem (51a) — naturalne przedluzenie
+      // odpowiedzi. Tylko gdy jest co pokazac; inaczej bot_text zostaje sam,
+      // startowe menu (jesli jeszcze widoczne) tez zostaje.
       if (hasChildren || hasButtons) {
+        enterInlineMode();
         state.chipStack.push(node);
-        renderCurrentChipLevel();
+        appendInlineChips(node);
       }
       return;
     }
 
     if (hasChildren || hasButtons) {
+      // Wezel czysto nawigacyjny (bez tekstu). W trybie inline (rozmowa trwa)
+      // doklej chipy pod ostatnim bablem; przed rozmowa — zejscie w startowym
+      // chipsEl u gory (zachowanie 089, np. przyszle podchipy doboru).
       state.chipStack.push(node);
-      renderCurrentChipLevel();
+      if (state.chipsInline) {
+        appendInlineChips(node);
+      } else {
+        renderCurrentChipLevel();
+      }
       return;
     }
 
@@ -758,6 +841,10 @@
     if (state.chipsEl && state.chipsEl.parentNode) {
       state.chipsEl.style.display = 'none';
     }
+    // CHAT-T-089b: wejscie w swobodna rozmowe — wygas aktywne inline'owe chipy
+    // (klient zadal pytanie do LLM, nie nawiguje juz drzewem). Link w tresci
+    // poprzednich babli zostaje klikalny.
+    spendPriorInlineChips();
 
     appendUserMessage(text);
     state.inputEl.value = '';
