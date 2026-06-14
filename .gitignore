@@ -137,3 +137,6 @@ modules/*.zip
 # Robocze materiały projektowe (drafts): screenshoty, .pptx/.docx, prototypy design-canvas,
 # wygenerowane slajdy — scratch, nie commitujemy (binaria + materiał roboczy)
 /_drafts/
+
+# Backupy plików PROD przed deployem (ADR-089) — lokalne, nie do gita
+_deploy_bak/

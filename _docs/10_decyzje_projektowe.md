@@ -2911,3 +2911,27 @@ UWAGA projektowa: dzieci-podchipy wynikają z `parent_id` (zapytanie: WHERE pare
 - Panel konfiguracyjny chipów (zakładka, 26) = osobny task PO CHAT-T-088 (schemat+endpoint+seed najpierw).
 
 **Aktualizacja (CHAT-T-088b, 2026-06-14, decyzje 42a/43a):** model węzła rozszerzony o kolumnę `label TEXT NULL` (krótka etykieta nawigacyjna, osobna od `bot_text` — chip wyświetla `label`, nie `node_key`; migracja 030). Endpoint `/api/chip-tree` rozwija przyciski `link:<klucz>` po stronie backendu na gotowy URL z `divechat_shop_config` (`{label, target:"link", url}`; jedno SELECT `link_%`, bez N+1) — front nie zna configu, dostaje gotowy link. Brak klucza / target nie-`link` → `url:null`. Kontrakt węzła: `{node_key, label, bot_text, buttons:[{label,target,url}], children:[…], context_hint, model_level}`.
+
+---
+
+### ADR-097: Kontekst ścieżki chipów dla AI — osobny parametr `chip_context`, historia czysta („dwa światy")
+
+**Data:** 2026-06-14 | **Status:** PRZYJĘTA | **Powiązane:** ADR-096 (model węzła drzewa chipów), CHAT-T-088e (realizacja), CHAT-T-089/089b (silnik widgetu). Decyzje sesji: 63c (hybryda: automatyczna ścieżka + opcjonalny `ai_prompt` liścia), 65b (kontekst osobnym parametrem, nie w treści wiadomości).
+
+**Kontekst:**
+Po CHAT-T-089 liść `ai` wysyłał do LLM samą etykietę chipa (np. „Kaptur") — za płytko. Klient schodzący „Dobór rozmiaru → Kaptur" powinien dać AI bogatszy kontekst: skąd przyszedł (ścieżka nawigacji) + intencję, a opcjonalnie instrukcję od obsługi. Trzeba rozdzielić „dwa światy": **co klient widzi/klika** (krótki `label`) od **tego, co dostaje AI** (kontekst ścieżki + opcjonalny `ai_prompt`).
+
+**Decyzja:**
+1. **Hybryda kontekstu (63c).** Kontekst dla AI = automatyczna ścieżka nawigacji (składana przez FRONT z `chipStack`, np. „Dobór rozmiaru › Kaptur") + OPCJONALNY `ai_prompt` węzła-liścia (instrukcja od pracownika; nowa kolumna `divechat_chip_nodes.ai_prompt TEXT NULL`, migracja 033). NULL = sama ścieżka.
+2. **Osobny parametr, historia czysta (65b).** Kontekst idzie OSOBNYM polem `chip_context` w body `POST /api/chat[/stream]`, NIE w treści `message`. Wiadomość user (w `divechat_messages` + JSONB) = realna treść klienta (lub `label` liścia gdy kliknął bez pisania). `chip_context` jest ULOTNY — wstrzykiwany do **system promptu TEJ TURY** (`ChatService::buildChipContextBlock`), nie zapisywany jako osobny user turn. Zgodne z 114a.
+3. **Kontrakt `sendMessage` (transport.js).** Sygnatura: `sendMessage(message, sessionId, nudgeSid, chipContext, callbacks)` — `chipContext` jako nowy opcjonalny parametr (5. pozycja, przed `callbacks`). Front składa go z `chipStack` (`buildChipContext`): ścieżka (etykiety węzłów, root pominięty) + `ai_prompt` jako „Instrukcja od obsługi: …". `null` dla wolnego pisania (czysta rozmowa).
+4. **Wstrzyknięcie po stronie backendu.** `ChatController::resolveChipContext` (trim + cap 2000 znaków, pusty→null) → `ChatService::handle(..., chipContext)` dokleja blok do `system[0]` tury. Działa dla obu providerów (Claude bierze `system` osobno; OpenAI jako `role=system`). `system[0]` jest filtrowany przy zapisie historii → kontekst nie wycieka do zapisu.
+
+**Alternatywy odrzucone:**
+- Kontekst w treści `message` (prefiks doklejany do wiadomości user) — odrzucone (65b): brudzi historię rozmowy sztucznymi prefiksami, psuje podgląd w panelu i restore.
+- Sam `ai_prompt` bez automatycznej ścieżki — odrzucone (63c): wymuszałby wypełnianie `ai_prompt` na każdym liściu; ścieżka nawigacji jest „za darmo" z `chipStack`.
+- Osobna wiadomość systemowa mid-conversation w `messages[]` — odrzucone: ClaudeProvider bierze ostatni `role=system` jako cały system (nadpisanie); doklejenie do `system[0]` jest bezpieczne dla obu providerów.
+
+**Konsekwencje:**
+- Pozytywne: AI dostaje „skąd klient przyszedł" zamiast samej etykiety; pracownik może dopisać instrukcję per liść (`ai_prompt`) bez zmian w kodzie; historia rozmowy pozostaje czysta (user = realna treść). Fundament pod Level 2 (088f) i panel edycji chipów (D).
+- Negatywne / uwaga: `chip_context` jest sterowalny z body (publiczny endpoint) → twardy cap długości w `resolveChipContext`. Kontekst jest ULOTNY (nie w historii) — nie odtworzy się przy restore (świadome; to kontekst nawigacyjny tury, nie treść).
