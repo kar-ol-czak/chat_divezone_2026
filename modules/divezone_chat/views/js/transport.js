@@ -6,10 +6,13 @@
  *
  * Eksponuje globalnie: window.DivezoneChatTransport
  *
- * sendMessage(message, sessionId, nudgeSid, callbacks) -> AbortController
+ * sendMessage(message, sessionId, nudgeSid, chipContext, callbacks) -> AbortController
  *   callbacks: { onStatus(text), onDone(payload), onError(msg) }
  *   nudgeSid (CHAT-T-085 / ADR-091): opcjonalna atrybucja ekspozycji nudge.
  *     null gdy klient nie wszedl przez nudge (launcher / second message).
+ *   chipContext (CHAT-T-088e / ADR-097, decyzja 65b): opcjonalny kontekst sciezki
+ *     chipow ("Dobór rozmiaru › Kaptur" + ai_prompt). OSOBNY od message — backend
+ *     wstrzykuje go do promptu tury, NIE do historii. null dla wolnego pisania.
  *
  * Token + customerId + time + backendUrl + tokenUrl czyta z window.DIVEZONE_CHAT_BOOT
  * (ustawione przez shim PHP w hookDisplayFooter).
@@ -122,7 +125,7 @@
     return { events: events, rest: rest };
   }
 
-  function sendMessage(message, sessionId, nudgeSid, callbacks) {
+  function sendMessage(message, sessionId, nudgeSid, chipContext, callbacks) {
     callbacks = callbacks || {};
     var onStatus = callbacks.onStatus || function () {};
     var onDone   = callbacks.onDone   || function () {};
@@ -137,6 +140,9 @@
     // ekspozycja w tej sesji przegladania). Backend zapisze w
     // divechat_conversations.nudge_sid przy INSERT nowej rozmowy.
     if (nudgeSid) body.nudge_sid = nudgeSid;
+    // CHAT-T-088e (ADR-097, decyzja 65b): kontekst sciezki chipow jako osobne pole.
+    // Backend (ChatController::resolveChipContext) trimuje + capuje; tu tylko gdy niepuste.
+    if (chipContext) body.chip_context = chipContext;
     var bodyJson = JSON.stringify(body);
 
     function makeRequest() {

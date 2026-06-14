@@ -34,7 +34,9 @@
     'Status zamówienia',
     'Serwis sprzętu'
   ];
-  var CHIPS_MOBILE_LIMIT = 4;
+  // CHAT-T-088e (58a): Level 1 ma 5 chipow po rozdzieleniu doboru (088d) —
+  // limit podniesiony 4→6, zeby wszystkie zmiescily sie na mobile.
+  var CHIPS_MOBILE_LIMIT = 6;
   var ORDER_CHIP_LABEL = 'Status zamówienia';
 
   var PRIVACY_NOTE_HTML =
@@ -391,6 +393,37 @@
   function onChipClick(nodeKey) { /* no-op do CHAT-T-090 */ }
 
   /**
+   * CHAT-T-088e (ADR-097, decyzja 65b): "dwa swiaty" — co klient klika (label) ≠
+   * co dostaje AI. Serializujemy sciezke zejscia z chipStack na czytelny string
+   * ("Dobór rozmiaru › Kaptur") + opcjonalny ai_prompt liscia/wezla. Wysylany
+   * OSOBNYM parametrem chipContext (NIE w tresci user message — historia czysta).
+   *
+   * extraLabel: etykieta liscia jeszcze NIE bedacego na stosie (routeChipNode
+   *   wola sendUserMessage BEZ pushu liscia) — doklejana na koniec sciezki.
+   *   null dla przyciskow akcji (wezel-zrodlo jest juz na stosie).
+   * aiPrompt: instrukcja od obslugi z wezla (kolumna ai_prompt) — gdy ustawiona.
+   * Zwraca null gdy brak i sciezki, i ai_prompt (np. wpis z wolnego pola).
+   */
+  function buildChipContext(extraLabel, aiPrompt) {
+    var labels = [];
+    // chipStack[0] = root ("W czym mogę pomóc?") — pomijamy, nie niesie intencji.
+    for (var i = 1; i < state.chipStack.length; i++) {
+      labels.push(deriveChipLabel(state.chipStack[i]));
+    }
+    if (extraLabel && String(extraLabel).trim() !== '') {
+      labels.push(String(extraLabel).trim());
+    }
+    var path = labels.join(' › ');
+    var prompt = (typeof aiPrompt === 'string' && aiPrompt.trim() !== '') ? aiPrompt.trim() : '';
+    if (path === '' && prompt === '') return null;
+    var ctx = path;
+    if (prompt !== '') {
+      ctx += (path !== '' ? '. ' : '') + 'Instrukcja od obsługi: ' + prompt;
+    }
+    return ctx;
+  }
+
+  /**
    * Wspolna logika renderu jednego poziomu chipow do dowolnego kontenera
    * (CHAT-T-089b refaktor): "← Wróć" (gdy nie Level 1) + dzieci (nawigacja,
    * limit mobilny) + przyciski (akcje). Uzywane DWOJAKO: startowy chipsEl (gora)
@@ -592,7 +625,11 @@
     }
 
     // Lisc ai: wstrzykniecie czytelnego content do LLM (114a) — NIE node_key.
-    sendUserMessage(deriveChipLabel(node));
+    // CHAT-T-088e: user message = label liscia; sciezka + ai_prompt liscia ida
+    // OSOBNYM parametrem chipContext (decyzja 65b). Lisc NIE jest na stosie —
+    // doklejamy jego label jako ostatni segment sciezki (extraLabel).
+    var leafLabel = deriveChipLabel(node);
+    sendUserMessage(leafLabel, buildChipContext(leafLabel, node.ai_prompt));
   }
 
   /**
@@ -609,17 +646,21 @@
       window.open(String(btn.url), '_blank', 'noopener');
       return;
     }
+    // CHAT-T-088e: przycisk akcji ai siedzi na wezle-zrodle (juz na chipStack),
+    // wiec sciezka = caly stos; ai_prompt bierzemy z tego wezla (extraLabel=null).
+    var srcNode = state.chipStack.length ? state.chipStack[state.chipStack.length - 1] : null;
+    var ctx = buildChipContext(null, srcNode && srcNode.ai_prompt);
     if (target === 'ai') {
-      sendUserMessage(btn.label || '');
+      sendUserMessage(btn.label || '', ctx);
       return;
     }
     if (target.indexOf('modal:') === 0) {
       if (target === 'modal:order') { openOrderModal(); return; }
-      sendUserMessage(btn.label || ''); // inne modale jeszcze nieobslugiwane
+      sendUserMessage(btn.label || '', ctx); // inne modale jeszcze nieobslugiwane
       return;
     }
     // curated:<kat> i nieznane — fallback do LLM (nie budujemy sciezki kuratora).
-    sendUserMessage(btn.label || '');
+    sendUserMessage(btn.label || '', ctx);
   }
 
   function buildWindow() {
@@ -829,7 +870,7 @@
 
   /* ───────────────────────── Wysylka + streaming ───────────────────────── */
 
-  function sendUserMessage(text) {
+  function sendUserMessage(text, chipContext) {
     if (state.isStreaming) return;
     var transport = window.DivezoneChatTransport;
     if (!transport) {
@@ -876,7 +917,10 @@
     // Null gdy klient nie wszedl przez ekspozycje nudge (launcher) lub po
     // startNewConversation. Wartosc PRZEZYWA tryRestoreSession (tylko sessionId
     // jest nadpisywane przez restore — to rozdzielenie ról jest sednem fixu).
-    state.abortCtl = transport.sendMessage(text, state.sessionId, state.nudgeSid, {
+    // CHAT-T-088e (ADR-097, decyzja 65b): chipContext (sciezka chipow + ai_prompt)
+    // jako OSOBNY parametr — backend wstrzykuje go do system promptu tej tury, NIE
+    // do tresci user message. null dla wolnego pisania (czysta rozmowa).
+    state.abortCtl = transport.sendMessage(text, state.sessionId, state.nudgeSid, chipContext || null, {
       onStatus: function (statusText) {
         showTyping(statusText || 'Asystent pisze');
       },
