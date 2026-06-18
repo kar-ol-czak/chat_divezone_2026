@@ -16,6 +16,7 @@ use DiveChat\Tools\OrderStatus;
 use DiveChat\Tools\ProductDetails;
 use DiveChat\Tools\ProductSearch;
 use DiveChat\Tools\ShippingInfo;
+use DiveChat\Tools\SizeRecommender;
 use DiveChat\Tools\SynonymExpander;
 use DiveChat\Tools\ToolRegistry;
 
@@ -39,6 +40,8 @@ return static function (EmbeddingService $embeddingService): ToolRegistry {
     $registry->register(new GetShopLinks($pg));
     $registry->register(new GetShopSchedule(new ShopCalendar(new DbOverrideProvider($pg))));
     $registry->register(new CuratedRecommendations($pg, $enrichmentService));
+    // CHAT-T-100 (ADR-099): deterministyczny dobór rozmiaru skafandra mokrego (NIE embeddingi).
+    $registry->register(new SizeRecommender($pg));
 
     return $registry;
 };
