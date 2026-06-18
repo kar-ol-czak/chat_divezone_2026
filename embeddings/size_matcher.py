@@ -110,6 +110,78 @@ def match_size(sizes: list[dict], chest: float, *, waist=None, hip=None,
             "detail": {"nearest": nearest}}
 
 
+def is_pointwise(sizes: list[dict], dim: str = "height") -> bool:
+    """Czy chart jest punktowy na wymiarze `dim` (min==max we wszystkich wierszach),
+    np. chart dzieciecy Rebel (Scubapro/DZIECI) — pojedyncze wartosci wzrostu."""
+    rows = [s for s in sizes if dim in s["dims"]]
+    return bool(rows) and all(s["dims"][dim][0] == s["dims"][dim][1] for s in rows)
+
+
+def match_pointwise(sizes: list[dict], value: float, dim: str = "height") -> dict:
+    """Dobor po wymiarze PUNKTOWYM (CHAT-T-099b sekcja F.1 — chart dzieciecy Rebel).
+    NIE BETWEEN: rozmiary to pojedyncze wartosci wzrostu. Logika:
+      - trafienie dokladne -> 'match' (1 rozmiar),
+      - wzrost MIEDZY dwoma rozmiarami -> 'boundary': dwa najblizsze + flaga graniczny
+        (bot: pianka musi przylegac; wiekszy dopuszczalny jako swiadomy kompromis, nie default),
+      - ponizej najmniejszego / powyzej najwiekszego -> 'out_of_scale' (zero ekstrapolacji).
+    """
+    pts = sorted([(s["dims"][dim][0], s) for s in sizes if dim in s["dims"]], key=lambda x: x[0])
+    if not pts:
+        return {"decision": "out_of_scale", "sizes": [], "consult": True, "graniczny": False,
+                "reason": f"chart nie ma wymiaru {dim}", "detail": {}}
+
+    exact = [s for v, s in pts if v == value]
+    if exact:
+        return {"decision": "match", "sizes": [exact[0]["label"]], "consult": False,
+                "graniczny": False, "reason": f"{dim} trafia dokladnie w rozmiar",
+                "detail": {dim: value}}
+
+    lo, hi = pts[0][0], pts[-1][0]
+    if value < lo or value > hi:
+        nearest = sorted(pts, key=lambda x: abs(x[0] - value))[:2]
+        return {"decision": "out_of_scale", "sizes": [s["label"] for _, s in nearest],
+                "consult": True, "graniczny": False,
+                "reason": f"{dim} poza skala dzieciecego charta — bez ekstrapolacji",
+                "detail": {"nearest": [s["label"] for _, s in nearest]}}
+
+    # value miedzy dwoma kolejnymi rozmiarami -> graniczny.
+    for i in range(len(pts) - 1):
+        if pts[i][0] < value < pts[i + 1][0]:
+            pair = [pts[i][1]["label"], pts[i + 1][1]["label"]]
+            return {"decision": "boundary", "sizes": pair, "consult": True, "graniczny": True,
+                    "reason": "wzrost miedzy dwoma rozmiarami — dwa najblizsze, wiekszy to "
+                              "swiadomy kompromis (pianka musi przylegac, decyzja rodzica)",
+                    "detail": {"between": pair, dim: value}}
+    # nie powinno sie zdarzyc (wartosci unikalne), ale defensywnie:
+    return {"decision": "out_of_scale", "sizes": [pts[0][1]["label"]], "consult": True,
+            "graniczny": False, "reason": "nierozstrzygniete", "detail": {}}
+
+
+def load_aliases(brand: str, gender: str) -> dict:
+    """Mapa alias_label -> canonical_label dla charta (CHAT-T-099b 45c). {} gdy brak."""
+    import psycopg2
+    import psycopg2.extras
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("""
+            SELECT a.alias_label, a.canonical_label
+            FROM divechat_size_label_alias a
+            JOIN divechat_size_charts c ON a.chart_id = c.id
+            WHERE c.brand = %s AND c.gender = %s
+        """, (brand, gender))
+        return {r["alias_label"]: r["canonical_label"] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+
+def resolve_label(label: str, aliases: dict) -> str:
+    """Normalizacja etykiety wariantu PrestaShop do etykiety charta przez warstwe aliasow."""
+    return aliases.get(label, label)
+
+
 def load_chart(brand: str, gender: str) -> list[dict]:
     """Loader z PostgreSQL/Railway (po zaaplikowaniu seedu 035)."""
     import psycopg2
@@ -166,6 +238,30 @@ def _selftest():
         ok_all &= good
         flag = "OK " if good else "FAIL"
         print(f"  [{flag}] {desc}: -> {res['decision']} {res['sizes']} ({res['reason']})")
+
+    # CHAT-T-099b: chart dzieciecy Rebel — wartosci punktowe (height).
+    rebel = build_sizes([
+        {"size_label": l, "size_full": None, "dimension": "height",
+         "min_val": h, "max_val": h, "sort_order": i}
+        for i, (l, h) in enumerate(
+            [("XXS", 104), ("XS", 116), ("S", 128), ("M", 140), ("L", 152), ("XL", 164)], 1)
+    ])
+    assert is_pointwise(rebel, "height"), "rebel powinien byc punktowy"
+    pcases = [
+        ("DZIECI height 134 -> [S,M] graniczny", 134, "boundary", {"S", "M"}, True),
+        ("DZIECI height 140 -> M", 140, "match", {"M"}, False),
+        ("DZIECI height 170 -> out_of_scale (>XL)", 170, "out_of_scale", None, False),
+        ("DZIECI height 100 -> out_of_scale (<XXS)", 100, "out_of_scale", None, False),
+    ]
+    print("SELF-TEST algorytmu punktowego (dzieciecy):")
+    for desc, h, exp_dec, exp_set, exp_gran in pcases:
+        res = match_pointwise(rebel, h, "height")
+        good = (res["decision"] == exp_dec
+                and (exp_set is None or set(res["sizes"]) == exp_set)
+                and res["graniczny"] == exp_gran)
+        ok_all &= good
+        flag = "OK " if good else "FAIL"
+        print(f"  [{flag}] {desc}: -> {res['decision']} {res['sizes']} graniczny={res['graniczny']}")
     print("WYNIK:", "wszystkie OK" if ok_all else "SA BLEDY")
     return ok_all
 
@@ -180,10 +276,17 @@ if __name__ == "__main__":
     a = ap.parse_args()
     if a.selftest:
         raise SystemExit(0 if _selftest() else 1)
-    if a.brand and a.gender and a.chest is not None:
+    if a.brand and a.gender:
         sizes = build_sizes(load_chart(a.brand, a.gender))
-        res = match_size(sizes, chest=a.chest, waist=a.waist, hip=a.hip,
-                         height=a.height, weight=a.weight)
-        print(res)
+        # Chart dzieciecy / punktowy -> dobor po wzroscie (NIE chest).
+        if a.gender == "DZIECI" or is_pointwise(sizes, "height"):
+            if a.height is None:
+                ap.error("chart dzieciecy/punktowy wymaga --height")
+            print(match_pointwise(sizes, a.height, "height"))
+        elif a.chest is not None:
+            print(match_size(sizes, chest=a.chest, waist=a.waist, hip=a.hip,
+                             height=a.height, weight=a.weight))
+        else:
+            ap.error("chart doroslego wymaga --chest")
     else:
         ap.print_help()
