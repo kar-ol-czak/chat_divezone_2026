@@ -3,29 +3,26 @@
 declare(strict_types=1);
 
 /**
- * CHAT-T-100 — parytet SizeRecommender (PHP) z size_matcher.py, na ŻYWYCH danych Railway.
- * Uruchom: php tests/size_recommender_parity.php
+ * CHAT-T-100 / CHAT-T-103 — parytet SizeRecommender (PHP) z size_matcher.py.
+ * CHAT-T-103: źródło danych = MySQL PrestaShop (divezone_attr_*), nie Railway/PG.
+ * Wartości oczekiwane są identyczne jak przy PG (parytet danych 100%, ATTR-T-001) —
+ * ten sam zestaw asercji co dowód PG = dowód parytetu MySQL vs PG.
+ *
+ * Uruchom NA SERWERZE (MySQL = localhost): php tests/size_recommender_parity.php
  */
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 
 use DiveChat\Config;
-use DiveChat\Database\PostgresConnection;
+use DiveChat\Database\MysqlConnection;
 use DiveChat\Tools\SizeRecommender;
 
-// Lokalny .env ma niepoprawną nazwę zmiennej (DATAFORSEO_API_PASSWORD-BASE64) która wywraca
-// phpdotenv — to defekt lokalnego pliku, niezwiązany z tym taskiem. Do testu wyłuskujemy
-// SAMO DATABASE_URL (na PROD Config::load działa normalnie). Fallback: pełny Config::load.
-$envPath = dirname(__DIR__, 2) . '/.env';
-if (is_readable($envPath) && preg_match('/^DATABASE_URL=(.*)$/m', (string) file_get_contents($envPath), $m)) {
-    $_ENV['DATABASE_URL'] = trim($m[1], " \t\"'");
-} else {
-    Config::load(dirname(__DIR__));
-}
+// Na serwerze Config::load czyta .env (DB_HOST/PORT/NAME_PROD/USER/PASSWORD = reader).
+Config::load(dirname(__DIR__));
 
 $ok = true;
-$pg = PostgresConnection::getInstance();
-$tool = new SizeRecommender($pg);
+$db = MysqlConnection::getInstance();
+$tool = new SizeRecommender($db);
 
 $check = function (string $desc, array $params, string $expDecision, ?array $expContains, ?bool $expGran = null) use ($tool, &$ok): void {
     $res = $tool->execute($params);
@@ -47,7 +44,7 @@ $check = function (string $desc, array $params, string $expDecision, ?array $exp
         . json_encode($sizes, JSON_UNESCAPED_UNICODE) . $extra . $full . "\n";
 };
 
-echo "PARYTET SizeRecommender (PHP) vs size_matcher.py — żywe dane Railway:\n";
+echo "PARYTET SizeRecommender (PHP) vs size_matcher.py — żywe dane MySQL (divezone_attr_*):\n";
 
 // Dorośli (przedziałowy). Parytet z self-test PY + acceptance z handoffu.
 $check('Scubapro M chest 104 h182 w88 -> L',
@@ -68,6 +65,23 @@ $check('DZIECI height 170 -> out_of_scale (>XL)',
     ['brand' => 'Scubapro', 'gender' => 'DZIECI', 'height' => 170], 'out_of_scale', null, false);
 $check('DZIECI height 100 -> out_of_scale (<XXS)',
     ['brand' => 'Scubapro', 'gender' => 'DZIECI', 'height' => 100], 'out_of_scale', null, false);
+
+// CHAT-T-103: wybór charta przez product_id (mapowanie divezone_attr_product_chart).
+// Produkty 4243/4244/6681 = bi-gender (mapowane do chartu Scubapro M + K) — płeć klienta wybiera.
+// Wartości oczekiwane = baseline PG (parytet danych 100%).
+$check('product 4243 + M chest 104 h182 w88 -> L (chart Scubapro M)',
+    ['product_id' => 4243, 'gender' => 'M', 'chest' => 104, 'height' => 182, 'weight' => 88], 'match', ['L']);
+$check('product 4243 + K chest 88 h165 -> ambiguous [S,ST] (chart Scubapro K)',
+    ['product_id' => 4243, 'gender' => 'K', 'chest' => 88, 'height' => 165], 'ambiguous', ['S', 'ST']);
+$check('product 6681 + M chest 104 (bez weryfikatorów) -> ambiguous [LS,L,LT]',
+    ['product_id' => 6681, 'gender' => 'M', 'chest' => 104], 'ambiguous', ['LS', 'L', 'LT']);
+
+// CHAT-T-103: warstwa aliasów etykiet (divezone_attr_size_label_alias).
+$aliasRes = $tool->execute(['product_id' => 4243, 'gender' => 'K', 'chest' => 88, 'height' => 165]);
+$aOk = ($aliasRes['aliases']['M tall'] ?? null) === 'MT';
+$ok = $ok && $aOk;
+echo '  [' . ($aOk ? 'OK ' : 'FAIL') . "] alias 'M tall'->'MT' obecny w wyniku (chart Scubapro K): "
+    . json_encode($aliasRes['aliases'] ?? null, JSON_UNESCAPED_UNICODE) . "\n";
 
 // Reguły walidacji (bot ma dopytać — narzędzie zwraca error, nie zgaduje).
 $noGender = $tool->execute(['brand' => 'Scubapro', 'chest' => 104]);

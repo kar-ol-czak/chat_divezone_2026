@@ -15,10 +15,16 @@ use DiveChat\AI\ClaudeProvider;
 use DiveChat\AI\EmbeddingService;
 use DiveChat\AI\OpenAIProvider;
 
-// Wyłuskaj DATABASE_URL (lokalny .env nieparsowalny przez phpdotenv — defekt lokalny).
+// Wyłuskaj DATABASE_URL + DB_* (lokalny .env nieparsowalny przez phpdotenv — defekt lokalny).
+// CHAT-T-103: SizeRecommender bierze MysqlConnection::getInstance() (lazy) przy budowie rejestru
+// w config/tools.php — getInstance() czyta DB_NAME_PROD/DB_USER/DB_PASSWORD, więc muszą istnieć.
+// Ten test nie wykonuje narzędzia (tylko definicje), więc realne połączenie nie jest nawiązywane.
 $envPath = dirname(__DIR__, 2) . '/.env';
-if (is_readable($envPath) && preg_match('/^DATABASE_URL=(.*)$/m', (string) file_get_contents($envPath), $m)) {
-    $_ENV['DATABASE_URL'] = trim($m[1], " \t\"'");
+$raw = is_readable($envPath) ? (string) file_get_contents($envPath) : '';
+foreach (['DATABASE_URL', 'DB_HOST', 'DB_PORT', 'DB_NAME_PROD', 'DB_USER', 'DB_PASSWORD'] as $k) {
+    if (preg_match('/^' . $k . '=(.*)$/m', $raw, $mm)) {
+        $_ENV[$k] = trim($mm[1], " \t\"'");
+    }
 }
 $_ENV['ANTHROPIC_API_KEY'] ??= 'sk-test-noop';
 $_ENV['OPENAI_API_KEY'] ??= 'sk-test-noop';

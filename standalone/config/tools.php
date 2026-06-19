@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use DiveChat\AI\EmbeddingService;
+use DiveChat\Database\MysqlConnection;
 use DiveChat\Database\PostgresConnection;
 use DiveChat\Editorial\EditorialPicksService;
 use DiveChat\Shop\DbOverrideProvider;
@@ -41,7 +42,8 @@ return static function (EmbeddingService $embeddingService): ToolRegistry {
     $registry->register(new GetShopSchedule(new ShopCalendar(new DbOverrideProvider($pg))));
     $registry->register(new CuratedRecommendations($pg, $enrichmentService));
     // CHAT-T-100 (ADR-099): deterministyczny dobór rozmiaru skafandra mokrego (NIE embeddingi).
-    $registry->register(new SizeRecommender($pg));
+    // CHAT-T-103: źródło prawdy rozmiarów na MySQL PrestaShop (divezone_attr_*), nie Railway/PG.
+    $registry->register(new SizeRecommender(MysqlConnection::getInstance()));
 
     return $registry;
 };

@@ -20,7 +20,9 @@ use DiveChat\Chat\SystemPrompt;
 // Wyłuskaj klucze z .env (lokalny .env nieparsowalny przez phpdotenv — defekt lokalny).
 $envPath = dirname(__DIR__, 2) . '/.env';
 $raw = is_readable($envPath) ? (string) file_get_contents($envPath) : '';
-foreach (['DATABASE_URL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'AI_MAX_TOKENS'] as $k) {
+// CHAT-T-103: DB_* wymagane — SizeRecommender łączy się z MySQL (registry build + execute).
+foreach (['DATABASE_URL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_MODEL', 'AI_MAX_TOKENS',
+          'DB_HOST', 'DB_PORT', 'DB_NAME_PROD', 'DB_USER', 'DB_PASSWORD'] as $k) {
     if (preg_match('/^' . $k . '=(.*)$/m', $raw, $mm)) {
         $v = trim($mm[1], " \t\"'");
         if ($v !== '') {

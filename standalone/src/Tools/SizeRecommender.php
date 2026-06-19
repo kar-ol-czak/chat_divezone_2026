@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace DiveChat\Tools;
 
-use DiveChat\Database\PostgresConnection;
+use DiveChat\Database\MysqlConnection;
 
 /**
  * Deterministyczny dobór rozmiaru skafandra mokrego (Scubapro / Bare).
  * CHAT-T-100 / ADR-099 (+ ADDENDUM 099b). Port logiki z embeddings/size_matcher.py.
+ * CHAT-T-103: źródło prawdy rozmiarów przeniesione na MySQL PrestaShop
+ * (divezone_attr_*, ATTR-T-001) — wcześniej Railway/PG divechat_size_*. Logika doboru bez zmian.
  *
- * NIE embeddingi — relacyjny lookup w divechat_size_* (SQL BETWEEN / wartości punktowe).
+ * NIE embeddingi — relacyjny lookup w divezone_attr_size_* (SQL BETWEEN / wartości punktowe).
  *  - chart przedziałowy (dorośli, min≠max): klatka piersiowa wiodąca, reszta weryfikuje;
  *  - chart punktowy (dzieci Rebel, gender='DZIECI', height min==max): dobór po wzroście.
  *
@@ -22,7 +24,7 @@ final class SizeRecommender implements ToolInterface
     private const VERIFY_DIMS = ['waist', 'hip', 'height', 'weight'];
 
     public function __construct(
-        private readonly PostgresConnection $db,
+        private readonly MysqlConnection $db,
     ) {}
 
     public function getName(): string
@@ -166,10 +168,10 @@ final class SizeRecommender implements ToolInterface
     {
         if ($productId !== null) {
             $charts = $this->db->fetchAll(
-                'SELECT c.id, c.brand, c.gender
-                 FROM divechat_product_size_chart pc
-                 JOIN divechat_size_charts c ON pc.chart_id = c.id
-                 WHERE pc.product_id = ?
+                'SELECT c.id_chart AS id, c.brand, c.gender
+                 FROM divezone_attr_product_chart pc
+                 JOIN divezone_attr_size_charts c ON pc.id_chart = c.id_chart
+                 WHERE pc.id_product = ?
                  ORDER BY c.gender',
                 [$productId],
             );
@@ -191,7 +193,7 @@ final class SizeRecommender implements ToolInterface
 
         if ($brand !== null && $brand !== '') {
             return $this->db->fetchOne(
-                'SELECT id, brand, gender FROM divechat_size_charts WHERE brand = ? AND gender = ?',
+                'SELECT id_chart AS id, brand, gender FROM divezone_attr_size_charts WHERE brand = ? AND gender = ?',
                 [$brand, $gender],
             );
         }
@@ -204,8 +206,8 @@ final class SizeRecommender implements ToolInterface
     {
         return $this->db->fetchAll(
             'SELECT r.size_label, r.size_full, r.dimension, r.min_val, r.max_val, r.sort_order
-             FROM divechat_size_chart_rows r
-             WHERE r.chart_id = ?
+             FROM divezone_attr_size_chart_rows r
+             WHERE r.id_chart = ?
              ORDER BY r.sort_order',
             [$chartId],
         );
@@ -450,7 +452,7 @@ final class SizeRecommender implements ToolInterface
     private function loadAliases(int|string $chartId): array
     {
         $rows = $this->db->fetchAll(
-            'SELECT alias_label, canonical_label FROM divechat_size_label_alias WHERE chart_id = ?',
+            'SELECT alias_label, canonical_label FROM divezone_attr_size_label_alias WHERE id_chart = ?',
             [$chartId],
         );
         $map = [];
