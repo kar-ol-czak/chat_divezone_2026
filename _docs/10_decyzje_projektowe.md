@@ -2610,6 +2610,24 @@ Checklista weryfikacji po rotacji: (a) sklep otwiera się / panel działa, (b) *
 
 ---
 
+### ADR-088 UZUPEŁNIENIE: poprawność `.env` to DWA niezależne wymiary — wartości ORAZ nazwy kluczy
+**Data:** 2026-06-28 | **Status:** PRZYJĘTA | **Powiązane:** ADR-088 (root cause `#` w wartości), CHAT-T-104 (ujawnione przy real-path teście recenzji rozmów)
+
+**Kontekst:** Diagnoza z prawdziwej ścieżki (`Config::load()`) pokazała drugi, NIEZALEŻNY tryb awarii phpdotenv, inny niż `#` z ADR-088. Lokalny `.env` miał klucz `DATAFORSEO_API_PASSWORD-BASE64` (myślnik w NAZWIE). phpdotenv `EntryParser::isValidName` dopuszcza w nazwie wyłącznie `[A-Za-z_][A-Za-z0-9_]*` (plus kropki) — myślnik jest nielegalny, więc parser RZUCA `InvalidFileException` i przerywa CAŁY parse (all-or-nothing). Skutek: `$_ENV['DATABASE_URL']` = NULL mimo że `DATABASE_URL` był poprawny i WYŻEJ w pliku (linia 8) niż zły klucz (linia 16). Jeden zły klucz unieważnia cały plik, nie tylko siebie.
+
+**Rozróżnienie (klucz do niepomylenia z ADR-088):** cudzysłowy z ADR-088 chronią WARTOŚĆ (przed ucięciem na `#`), ale NIE legalizują NAZWY. Wartość `DATAFORSEO_API_PASSWORD-BASE64` była poprawnie w pojedynczych cudzysłowach — to nie miało znaczenia, bo wysypała się nazwa, nie wartość. To dlatego objaw mylił: „przecież jest w cudzysłowach" to prawda, ale dotyczy innego wymiaru.
+
+**Dlaczego dopiero teraz, skoro klucz był od początku:** najpewniej zaostrzenie phpdotenv (nowsze wersje twardo odrzucają złe nazwy i wywracają cały parse; starsze tolerowały) i/lub fakt, że wzorzec real-path przez `Config::load()` w lokalnych skryptach to świeższa praktyka — wcześniej nikt nie szedł ścieżką, która waliduje plik. Prod ma własny `.env`, którego ten konkretny klucz mógł nie zawierać.
+
+**Naprawa (Karol):** zmiana nazwy na `DATAFORSEO_API_PASSWORD_BASE64` (myślnik → podkreślnik). Po poprawce `Config::load()` OK, `$_ENV['DATABASE_URL']` len=110, pełny. Lokalne skrypty real-path wróciły na `Config::load()` (ręczny `preg_match` na `DATABASE_URL` był obejściem TEGO błędu, nie oryginalnym stylem — wzorzec to `Config::load()`, np. `scripts/verify_nudge_correlation.php`, `scripts/sales_report.php`).
+
+**Zasada na przyszłość (rozszerza checklistę `.env` z ADR-088):**
+- **Wartości:** sekrety ze znakami specjalnymi (`# $ spacja` itd.) w POJEDYNCZYCH cudzysłowach (ADR-088).
+- **Nazwy kluczy:** wyłącznie `[A-Za-z_][A-Za-z0-9_]*` (plus kropki). ZERO myślników, spacji, innych znaków. Jeden zły klucz = cały plik nieczytany przez phpdotenv (`$_ENV` puste) — fail całościowy, nie punktowy.
+- **Weryfikacja:** jak w ADR-088 — wyłącznie realną ścieżką `Config::load()→$_ENV→PDO`. Ręczny odczyt pliku / CLI maskuje OBA tryby (ucięcie wartości na `#` i odrzucenie nazwy), bo omija parser.
+
+---
+
 ### ADR-089: Deploy standalone (chat.divezone.pl) — rsync z backupem do czasu przejścia na git; korekta błędnego "CC wdraża samo"
 **Data:** 2026-06-07 | **Status:** PRZYJĘTA (procedura przejściowa) | **Powiązane:** ADR-088 (root cause „alert nie istniał"), CHAT-T-079 (kod alertu), CHAT-T-080 (deploy CHAT-T-079 + ten ADR), 116b (granica „CC wdraża samo" dotyczy wyłącznie standalone — `newtmp2`/PrestaShop bez zmian)
 
@@ -2935,3 +2953,242 @@ Po CHAT-T-089 liść `ai` wysyłał do LLM samą etykietę chipa (np. „Kaptur"
 **Konsekwencje:**
 - Pozytywne: AI dostaje „skąd klient przyszedł" zamiast samej etykiety; pracownik może dopisać instrukcję per liść (`ai_prompt`) bez zmian w kodzie; historia rozmowy pozostaje czysta (user = realna treść). Fundament pod Level 2 (088f) i panel edycji chipów (D).
 - Negatywne / uwaga: `chip_context` jest sterowalny z body (publiczny endpoint) → twardy cap długości w `resolveChipContext`. Kontekst jest ULOTNY (nie w historii) — nie odtworzy się przy restore (świadome; to kontekst nawigacyjny tury, nie treść).
+
+
+### ADR-098: Rozmiar skrzydeł/uprzęży — deterministyczny sygnał `size_variants` + KB metodologiczny + reguła SystemPrompt
+
+**Data:** 2026-06-14 | **Status:** PRZYJĘTA | **Powiązane:** TASK-ENC-014 (wzorzec trzykomponentowy buoyancy), TASK-CHAT-014 (realizacja), ADR-091/092 (manual errata sync z Encyklopedią). Diagnoza: chat `636e4786-…` (rozmiary skrzydeł/uprzęży).
+
+**Problem:** Bot nie zna konceptu, że zestaw płyta+uprząż z regulowaną uprzężą NIE ma rozmiaru (regulacja pasów dopasowuje od ~150 cm/50 kg do ~200 cm/140 kg). Błąd bazowej wiedzy modelu, nie tylko brak danych — analogicznie do buoyancy. Wyjątki (xDEEP Ghost S/L wg wzrostu, próg 175 cm) mają realny rozmiar wynikający z geometrii PŁYTY, zapięty w kombinacjach PrestaShop.
+
+**Decyzja:** Trzy komponenty (jak TASK-ENC-014):
+1. **Sygnał deterministyczny** (16a, 18a, 19a, 20a): enrichment `MysqlProductEnrichmentService` pobiera per produkt warianty rozmiaru z `pr_product_attribute` → `pr_attribute_group_lang` (grupa „Rozmiar"), wynik jako pole `size_variants` (pusty = uniwersalny, niepusty = lista). Działa na CAŁYM katalogu (sygnał generyczny, nie tylko skrzydła). Read-only. Enrichment dotychczas NIE pobierał kombinacji — wymaga osobnego zapytania zbiorczego (nie N+1).
+2. **KB metodologiczny**: `ROZMIAR_SKRZYDLA_UPRZEZY.json` (koncept 106) — uniwersalność przez regulację + wyjątek geometrii płyty (Ghost jako wzorzec).
+3. **Reguła SystemPrompt** (15c, obok sekcji wyporności): puste `size_variants` dla skrzydła/uprzęży → uniwersalny, zakaz zgadywania; niepuste → rozmiary z danych; zakaz ekstrapolacji progów wzrostu; interpretacja „uniwersalny przez regulację" WYŁĄCZNIE dla skrzydeł/uprzęży.
+
+**Rozważane alternatywy:**
+- Tylko dane produktowe („Rozmiar: uniwersalny" w opisie globalnie) — odrzucone: kłamałoby na produktach mających realne rozmiary (jackety S/M/L, płyty S/L), narusza zero fabrykacji.
+- Ręczny tag per produkt (16b) — odrzucone: wymaga utrzymania, kombinacje to samoutrzymujący się sygnał.
+- Wyłącznie reguła SystemPrompt bez danych (16c) — odrzucone: bot nie odróżni Ghost od uniwersalnego bez deterministycznego dyskryminatora.
+- Zawężenie zapytania tylko do skrzydeł/uprzęży (20b) — odrzucone: skoro dotykamy enrichmentu, sygnał kombinacji rozmiaru jest wartościowy dla całej klasy produktów rozmiarowych; reguła SystemPrompt i tak zawęża interpretację.
+
+**Konsekwencje:**
+- Pozytywne: deterministyczne odróżnienie uniwersalny/rozmiarowy, zero fabrykacji, fundament `size_variants` dla pianek/butów/rękawic, automatyczna obsługa przyszłych produktów bez tagowania.
+- Negatywne / uwaga: zależność od poprawnej nazwy grupy atrybutu „Rozmiar" w `pr_attribute_group_lang` (do weryfikacji w bazie). Komponent 2 to zmiana KB → hard STOP przed re-embeddingiem na produkcję. Wpis KB + errata do manualnej synchronizacji z Encyklopedią (ADR-091/092).
+
+
+---
+
+### ADR-099: Dobór rozmiaru skafandrów mokrych — deterministyczna tabela `product_sizing` (NIE embeddingi) + algorytm przedziałowy + function calling
+
+**Data:** 2026-06-18 | **Status:** PRZYJĘTA | **Powiązane:** ADR-098 (`size_variants` jako dyskryminator uniwersalny/rozmiarowy), ADR-097 (chip_context), wzorzec trzykomponentowy TASK-ENC-014. Diagnoza: realne opisy Scubapro Definition 5mm + dane od dev (Janek): 4 zparsowane tabele progów (Bare M/K, Scubapro M/K).
+
+**Problem:** Część skafandrów ma tabele rozmiarowe wyłącznie jako grafiki producenta (zły rendering mobile + chat nie ma danych o rozmiarach). Pierwotne założenie „skanuj ostatni obrazek OCR-em" okazało się fałszywe po weryfikacji realnych danych: (a) ostatni obrazek w opisie to grafika lifestyle, nie tabela; (b) dane progów JUŻ ISTNIEJĄ — dev wykonał OCR ręcznie i ma gotowe tabele liczbowe per marka; (c) na stronie działa kalkulator (PHP inline w opisie) z progami, ale nieuniwersalny (tylko część produktów).
+
+**Kluczowe ustalenia dziedzinowe:**
+- System rozmiarów jest WSPÓLNY per marka (Scubapro, Bare) — jeden size chart na wiele modeli, NIE per produkt.
+- Wymiary różnią się per marka i per płeć (Bare damskie ma `noga`, męskie nie; Scubapro: chest/waist/hip/height/weight). → wyklucza sztywne kolumny, wymusza long format.
+- Rozmiary mają podwójne oznaczenia (Scubapro „MT - 98") — chart trzyma etykietę handlową OSOBNO od pełnej nazwy (wariant w `pr_product_attribute` ma „MT", nie „MT - 98").
+- Suche skafandry WYKLUCZONE z automatu — tabele bardzo złożone, w praktyce zawsze „zbieranie miary" + konsultacja z dostawcą. Reguła do SystemPrompt, NIE do `product_sizing`.
+
+**Decyzja:**
+
+1. **Dane deterministyczne, NIE embeddingi (P27a, P42a).** Progi (klatka 101–107 → L) trafiają do RELACYJNEJ tabeli `product_sizing` w Postgresie/Railway. Lookup przez SQL `BETWEEN`, NIE similarity search. ZERO wektoryzacji liczb. Embeddingi dotyczą wyłącznie wiedzy opisowej („jak mierzyć obwód klatki") — poza zakresem tego ADR. UWAGA NA NAZWĘ INSTANCJI: zadanie realizuje instancja `embeddings` (Python, ma dostęp do PG + ETL), ale nazwa instancji NIE oznacza, że rozmiary są embeddingami. To deterministyczny ETL do tabeli relacyjnej.
+
+2. **Model long format (P35b).** Jeden wiersz = jeden wymiar dla jednego rozmiaru danego charta. Typ wymiaru jest WARTOŚCIĄ w wierszu, nie kolumną. Dwie tabele:
+   - `divechat_size_charts` — chart per marka+płeć (Scubapro/M, Scubapro/K, Bare/M, Bare/K).
+   - `divechat_size_chart_rows` — wiersze (chart_id, size_label, size_full, dimension, min_val, max_val, unit).
+   - Mapowanie produkt→chart osobno (`divechat_product_size_chart`), bo system wspólny per marka.
+
+3. **Mapowanie produkt→chart przez markę + płeć (P38).** Płeć NIE jest zgadywana z atrybutu — bot ZAWSZE pyta „dla kobiety czy mężczyzny?" (twarda reguła w SystemPrompt). Mapowanie produktu do charta: marka (`pr_manufacturer`) + płeć → chart, lista do akceptacji Karola (półautomat).
+
+4. **Algorytm przedziałowy, NIE „najbliższy środek" (P36a — rozstrzygnięcie architekta).** Metoda dev (suma odległości od środków przedziałów + minimum) jest wadliwa: zawsze zwraca jakiś rozmiar nawet dla osoby poza skalą/między rozmiarami, waży 1 cm różnych wymiarów tak samo. Zastępujemy: dopasowanie przedziałowe z klatką piersiową jako wymiarem WIODĄCYM (P37a), reszta weryfikująca. Gdy klatka wypada między dwa rozmiary lub poza skalę → bot NIE zgaduje, podaje dwa najbliższe i kieruje do konsultacji. Ta sama zasada co wyporność (zero ekstrapolacji).
+
+5. **Function calling (P33a — jedno źródło prawdy).** Chat dobiera rozmiar przez function calling do `product_sizing` (ten sam lookup, którego docelowo użyje kalkulator na stronie — warstwa 2, osobno). Spójność chat ↔ kalkulator gwarantowana wspólnym źródłem.
+
+6. **Reguła suchych skafandrów (SystemPrompt).** Dla suchych: bot NIE używa automatu progowego, informuje że dobór wymaga zebrania pełnej miary i konsultacji z dostawcą.
+
+7. **Raport pokrycia (P41a).** Task generuje CSV: produkt, marka, płeć, czy ma podpięty chart, czy ma `size_variants` (z ADR-098), status. Realizacja pierwotnych celów Karola (1: brak rozmiarów mimo że powinny; 2: rozmiary bez wymiarów). Bez tego „100% pokrycia" jest niemierzalne.
+
+8. **Zakres iteracji 1 (P39a).** TYLKO Scubapro + Bare, skafandry mokre (zimne + ciepłe wody). Reszta marek/kategorii (rękawice, buty) w następnych iteracjach, w miarę zbierania chartów.
+
+**Dane wejściowe (źródło prawdy, użyte wprost — P42a):** cztery tabele progów dostarczone przez dev (Bare męskie, Bare damskie, Scubapro męskie, Scubapro damskie). Dołączone do task spec CHAT-T-099.
+
+**Poza zakresem (świadomie wydzielone):**
+- **Warstwa 2** — kalkulator na stronie czyta z `product_sizing` zamiast PHP inline w opisie; zamiana brzydkiego widgetu na przycisk „Dobierz rozmiar". Robota frontu sklepu (dev), PO warstwie 1.
+- **Warstwa 3 — OSOBNY PROJEKT (P40b).** Uzupełnienie BRAKUJĄCYCH rozmiarów na stronie: OCR pozostałych produktów, wyszukiwanie rozmiarów w internecie gdzie ich nigdzie nie ma, generacja tabel HTML do opisów, write do `pr_product_lang.description`. Inny profil ryzyka (produkcyjny write setek produktów → hard STOP), własny research. NIE mieszać z tym ADR.
+
+**Rozważane alternatywy:**
+- OCR obrazków jako główna ścieżka — odrzucone: źródłem prawdy są gotowe tabele liczbowe od dev, nie obrazki; OCR masowy ryzykowny (grafiki lifestyle dają śmieci).
+- Embeddingi tabel rozmiarowych — odrzucone (P27a): dobór rozmiaru to operacja deterministyczna (BETWEEN), wektor nie policzy przynależności do przedziału.
+- Progi per produkt — odrzucone (P35b): system wspólny per marka, kopiowanie progów do setek produktów = dług utrzymaniowy.
+- Metoda „najbliższy środek" dev — odrzucone (P36a): matematycznie wadliwa, brak obsługi „poza skalą".
+- Płeć z atrybutu „Damska/Męska" — odrzucone (P38): bot pyta wprost (twarda reguła), pewniejsze niż poleganie na kompletności atrybutu.
+
+**Konsekwencje:**
+- Pozytywne: deterministyczny, wiarygodny dobór; jedno źródło dla chatu i (docelowo) kalkulatora; długi format skaluje się na nowe marki/kategorie bez zmiany schematu; raport pokrycia czyni „100%" mierzalnym; zero fabrykacji.
+- Negatywne / uwaga: nowe tabele na Railway (PROD) — to NOWE tabele, nie zmiana istniejących, więc niskie ryzyko, ale migracja na PROD wymaga STOP przed wykonaniem. Mapowanie marka+płeć→chart wymaga akceptacji listy przez Karola. Algorytm przedziałowy to logika do precyzyjnej specyfikacji (zachowanie „między rozmiarami" / „poza skalą"). Reguła suchych + reguła płci to zmiany SystemPrompt (komponent metodologiczny). Rozszerzenie na kolejne marki zależne od dostarczenia ich chartów.
+
+
+---
+
+### ADR-100: REWIZJA źródła prawdy rozmiarów — PrestaShop (MySQL) zamiast Railway (PG). Rozmiary to atrybut produktu, nie wiedza czatu
+
+**Data:** 2026-06-19 | **Status:** PRZYJĘTA | **Rewiduje:** ADR-099 pkt 1, 2, 5 (lokalizacja danych). **Podtrzymuje z ADR-099:** long format (pkt 2 model), algorytm przedziałowy + punktowy (pkt 4), reguły SystemPrompt płeć/klatka/suche/out_of_scale + F.1–F.3, mapowanie marka+płeć, zero fabrykacji. **Powiązane:** ADR-098, CHAT-T-099/099b/100.
+
+**Kontekst rewizji:** ADR-099 umieścił `product_sizing` na Railway (Postgres, baza czatu), bo projekt budowano od strony czatu. To była decyzja podyktowana KOLEJNOŚCIĄ PRAC i stanem technicznym, nie właściwym modelem domenowym. Karol (właściciel logiki biznesowej) wskazał błąd: **rozmiary to twardy atrybut PRODUKTU, nie wiedza czatu.** Produkt i jego rozmiary istnieją niezależnie od istnienia czatu; strona produktu, kalkulator i obsługa sklepu potrzebują rozmiarów nawet gdyby czat wyłączyć.
+
+**Zasada nadrzędna (utrwalona jako wniosek):** Stan techniczny („dane już są na Railway") NIE jest argumentem za tym, gdzie dane POWINNY należeć. Wszystkie twarde dane o produktach są własnością katalogu PrestaShop (źródło prawdy). Czat jest KONSUMENTEM: czyta dane deterministyczne z PrestaShop (read-only), ewentualnie wektoryzuje teksty u siebie. Rozmiary muszą działać tak samo jak cena/waga/materiał — symetria z resztą architektury. Wyjątek („akurat rozmiary mieszkają w mózgu czatu") = dług.
+
+**Decyzja:**
+
+1. **Źródło prawdy rozmiarów = baza PrestaShop (MySQL sklepu) (P66a).** Railway `product_sizing` był stanem przejściowym wynikłym z kolejności prac. Przenosimy TERAZ, póki zbudowane jest minimum (charty + 1 tool), bo każdy dzień zwłoki zwiększa ilość kodu opartego na Railway i koszt zwrotu.
+
+2. **Mini moduł PrestaShop z własnymi tabelami w MySQL sklepu (P67a — kierunek Janka).** Progi liczbowe (klatka 101–107 → L) NIE mieszczą się w natywnych atrybutach Presty (`pr_attribute` mówi „dostępny w L"; próg mówi „L = klatka 101–107" — to inna informacja). Dlatego moduł z własnymi tabelami (np. `divezone_size_charts`, `divezone_size_chart_rows`, `divezone_product_size_chart`, `divezone_size_label_alias` — nazwy do potwierdzenia z konwencją modułów PS). Long format zachowany (z ADR-099). Panel zarządzania w adminie SKLEPU (Katalog, obok/pod „Atrybuty i Cechy" — logiczne miejsce domenowe).
+
+3. **Jedno źródło, wiele konsumentów.** Moduł = jedyne źródło. Konsumenci: (a) strona produktu (render tabeli + przyszły przycisk „Pokaż tabelę / Dobierz rozmiar"), (b) kalkulator na stronie (warstwa 2), (c) czat przez function calling. Czat czyta rozmiary tym samym kanałem read-only co resztę danych produktowych. ZERO write ze sklepu do bazy czatu; ZERO osobnej kopii tabel dla wyświetlania (unikamy rozjazdu — była to lekcja z ADR-099 pkt 5).
+
+4. **Hybryda progi/treść (rozszerzenie wobec ADR-099).** Część „tabel rozmiarowych" to NIE progi liczbowe (kaptur S/M-L/XL bez wymiarów; maski mała/średnia/duża; tabele jakościowe). Tam, gdzie są progi → tabela na stronie GENEROWANA z progów (jedno źródło). Gdzie progów brak → moduł trzyma tabelę jako treść zarządzaną ręcznie. Oba przypadki w JEDNYM module, jednym panelu.
+
+5. **Migracja danych Railway → PrestaShop.** Przenieść: 4 charty dorosłe + chart dziecięcy Scubapro/DZIECI + 67 mapowań + aliasy (migracje 035/036). Mało danych, schemat ten sam (long format), zmiana bazy PG→MySQL.
+
+6. **Przepięcie bota (rewizja CHAT-T-100).** Tool `recommend_wetsuit_size` zmienia ŹRÓDŁO z Railway PG na MySQL PrestaShop (przez istniejący read-only kanał lub endpoint modułu). **Logika algorytmu (match_size / match_pointwise) BEZ ZMIAN** — zmienia się wyłącznie warstwa dostępu do danych. Reguły SystemPrompt bez zmian.
+
+7. **utf8 vs utf8mb4 (P — nieblokujące).** MySQL PS to `utf8`. Dla rozmiarów (liczby + etykiety ASCII) problem nie występuje. Ewentualna konwersja bazy = osobny temat na przyszłość, poza tym ADR.
+
+**Kolejność prac (zmieniona):**
+1. ADR-100 (ten dokument). ✅
+2. Diagnoza schematu atrybutów w realnej bazie PrestaShop (jak Presta trzyma rozmiary/warianty — by NIE stworzyć trzeciego bytu obok natywnych wariantów). Z DANYCH, nie z założeń.
+3. Projekt schematu modułu (MySQL sklepu) + ADR/spec.
+4. Migracja danych Railway → MySQL.
+5. Przepięcie bota (rewizja CHAT-T-100, źródło danych).
+6. Panel zarządzania w adminie sklepu.
+7. Strona produktu: render tabeli + przycisk.
+8. RÓWNOLEGLE/niezależnie: inwentaryzacja katalogu (które marki/kategorie mają czart graficzny / tekstowy / brak) — nie zależy od lokalizacji danych, można puścić od razu.
+
+**Zakres rozmiarów (P62, P65a):** marki obecne w kategoriach rozmiarowych: skafandry suche + mokre, buty, rękawice i powiązane. Szacowane 90–95% potrzeb. Później dodać: płetwy kaloszowe i paskowe. Inwentaryzacja iteracja 1 = te kategorie, bez płetw (drugie przejście).
+
+**Konsekwencje:**
+- Pozytywne: model domenowo poprawny (rozmiary = atrybut produktu); symetria z resztą architektury (PS = źródło, czat = konsument); jeden panel zarządzania w naturalnym miejscu (katalog); strona/kalkulator/czat z jednego źródła; moduł Janka staje się centralnym elementem, nie dodatkiem.
+- Koszt zwrotu (świadomie akceptowany teraz, póki tani): migracja 035/036 z PG na MySQL; rewizja CHAT-T-100 (warstwa danych toola); budowa modułu PS od zera. Logika algorytmu i reguły NIE wymagają przeróbki.
+- Ryzyko: nie stworzyć trzeciego bytu obok natywnych atrybutów Presty — stąd obowiązkowa diagnoza schematu z realnej bazy PRZED projektem (krok 2). MySQL PS read-only dla czata pozostaje; moduł zapisuje w adminie sklepu (natywny kontekst PS, nie czat).
+
+**Wniosek metodologiczny (do zapamiętania):** Gdy rekomendacja opiera się na „dane już są w miejscu X", sprawdź czy to argument domenowy czy tylko inercja stanu technicznego. Właściciel logiki biznesowej bije optymalizację pod istniejący kod. (Ten ADR powstał, bo Karol zakwestionował rekomendację architekta opartą na inercji.)
+
+
+---
+
+### ADR-101: Schemat modułu rozszerzonych atrybutów produktu (MySQL sklepu) — rozmiary pierwsze, dwa typy chartów, miejsce na kolory
+
+**Data:** 2026-06-19 | **Status:** PRZYJĘTA | **Realizuje:** ADR-100 (krok 3 — projekt schematu). **Powiązane:** ADR-099 (long format, algorytm), ADR-098, CHAT-T-101 (diagnoza atrybutów), CHAT-T-102 (inwentaryzacja). **Decyzje:** P70a, P71a, P72a, P73a.
+
+**Kontekst:** CHAT-T-101 udowodnił z realnej bazy, że (a) progi nie mają natywnego miejsca w Preście, (b) etykiety atrybutów są globalne i agnostyczne marki — jeden `id_attribute` „L" współdzieli ~69 Scubapro i 43 Bare, więc „L" nie wie, że u różnych marek znaczy inne cm. To wymusza własne tabele modułu z mapowaniem marka+płeć→chart i aliasami. CHAT-T-102 pokazał skalę: 287 produktów w zakresie, ~25 marek bez chartów, 209 pozycji do pozyskania danych.
+
+**Decyzja:**
+
+1. **Moduł rozszerzonych atrybutów, nie „moduł rozmiarów" (P72a).** Karol sygnalizuje, że kolory (osobny wątek) trafią do tego samego custom modułu (3–4 pola). Dlatego projektujemy moduł jako kontener na rozszerzone atrybuty produktu, gdzie ROZMIARY są pierwszym mieszkańcem, a schemat zostawia miejsce na kolory bez przebudowy. **Pola kolorów NIE są tu projektowane** (należą do tamtego wątku) — zapewniamy tylko, że ich dołożenie nie wymusi migracji rozmiarów. Nazwa prefiksu np. `divezone_attr_*` (do potwierdzenia z konwencją modułów PS), NIE `divezone_size_*`.
+
+2. **Lokalizacja: baza sklepu `divezone_2025` (MySQL).** Uzasadnienie (CHAT-T-101 pkt 5): tabele w `divezone_2025` automatycznie w zasięgu `divezone_chat_reader` (SELECT) — zero nowych GRANT-ów, zero nowego styku dla czatu. Osobna baza = nowe uprawnienia i kanał bez korzyści. Czat czyta przez istniejące read-only konto.
+
+3. **Dwa typy chartów od początku (P71a, P73a).** Kolumna `chart_type`:
+   - `progowy` — long format z wymiarami (klatka/talia/.../obwód głowy/szerokość twarzy/wzrost). DOMYŚLNY cel: wszystko, gdzie da się ustalić wymiary. Obejmuje też: kaptury (obwód głowy — Karol zrobi wymiarowe), maski (szerokość twarzy — Karol ustali zakresy S/M/L per marka), dzieci (wzrost — już mamy). Bot DOBIERA.
+   - `tresciowy` — FALLBACK: tabela/treść do wyświetlenia bez doboru liczbowego (produkty „uniwersalny przez regulację" jak jacket Rebel; marki publikujące tylko tabelę opisową; przypadki bez pozyskanych progów). Strona ma co pokazać, bot cytuje + kieruje do konsultacji. NIE główny obywatel — fallback.
+
+4. **Schemat (long format zachowany z ADR-099, przeniesiony PG→MySQL):**
+   - `divezone_attr_size_charts` — chart: `id`, `brand`, `gender` (`M`/`K`/`DZIECI`/`UNISEX`), `chart_type` (`progowy`/`tresciowy`), `category_hint` (opcj. dla jakiej klasy: skafander/but/rękawica/kaptur/maska), `source`, `note`, timestamps. UNIQUE(brand, gender, category_hint) — bo marka może mieć inny system dla skafandrów niż butów.
+   - `divezone_attr_size_chart_rows` — wiersze PROGOWE: `chart_id`, `size_label`, `size_full`, `dimension`, `min_val`, `max_val`, `unit`, `sort_order`. (wartości punktowe = min==max, jak dzieci.)
+   - `divezone_attr_size_chart_content` — treść dla `tresciowy`: `chart_id`, `content_html` (lub markdown), `note`. Render bez doboru.
+   - `divezone_attr_product_chart` — mapowanie: `product_id`, `chart_id`, PK(product_id, chart_id). Produkt bi-gender = dwa wiersze (M+K).
+   - `divezone_attr_size_label_alias` — aliasy: `chart_id`, `alias_label`, `canonical_label` (z ADR-099/099b: „M tall"→MT, „6 Plus"→„6+" itd.).
+   - **Miejsce na kolory:** osobny obszar tabel `divezone_attr_color_*` dokładany później BEZ dotykania powyższych. Wspólny prefiks `divezone_attr_` = jeden moduł, rozdzielne domeny.
+
+5. **Render na stronie: hook `displayProductExtraContent`** (CHAT-T-101 — natywny, zero edycji rdzenia). Progowy → tabela generowana z wierszy + (przyszły) przycisk „Dobierz rozmiar". Treściowy → `content_html` bezpośrednio. Przycisk „Pokaż tabelę rozmiarów" w iteracji późniejszej.
+
+6. **Czat: bezpośredni SELECT read-only na tabele modułu** (nie endpoint). Tool `recommend_wetsuit_size` zmienia źródło PG→MySQL (rewizja CHAT-T-100), logika `match_size`/`match_pointwise` BEZ ZMIAN. Jedno źródło: strona, kalkulator (warstwa 2), czat.
+
+7. **Korekta założeń z inwentaryzacji (CHAT-T-101/102):**
+   - Kalkulatora inline w opisach NIE MA w aktywnych produktach (0 `<script>`/`<input>`). „Warstwa 2" (kalkulator na stronie) to BUDOWA OD ZERA, nie przeróbka. Aktualizuje ADR-099 (zakładał istniejący kalkulator PHP inline).
+   - Skala pozyskania danych: ~25 marek, 209 pozycji bez pewnego czartu. Zasilanie modułu = długi proces marka po marce, niezależny od budowy modułu.
+
+8. **Migracja danych Railway→MySQL.** Przenieść z PG (035/036): 4 charty dorosłe + Scubapro/DZIECI + 67 mapowań + aliasy. Schemat docelowy = powyższy (z `chart_type='progowy'`, `category_hint` dla skafandrów). Po migracji Railway `product_sizing` = do wygaszenia (jak Aiven wcześniej).
+
+**Konsekwencje:**
+- Pozytywne: model domenowo poprawny; jeden moduł na rozszerzone atrybuty (rozmiary + przyszłe kolory); dwa typy pokrywają i dobór, i produkty bez progów; zero nowych GRANT-ów dla czatu; render natywnym hookiem bez edycji rdzenia; `category_hint` pozwala marce mieć różne systemy dla skafandrów vs butów.
+- Koszt: budowa modułu PS od zera; migracja 035/036 PG→MySQL; rewizja warstwy danych toola; kalkulator strony to nowa budowa (nie przeróbka). Logika algorytmu bez zmian.
+- Ryzyko: `category_hint` w kluczu UNIQUE wymaga przemyślenia przy mapowaniu (marka+płeć+klasa). Treściowy fallback nie może „udawać" doboru — bot musi rozróżniać typ charta i przy `tresciowy` NIE wywoływać doboru liczbowego. Wygaszenie Railway dopiero PO potwierdzeniu parytetu na MySQL.
+
+**Kolejność realizacji (po tym ADR):**
+1. Task FUNDAMENT (P70a): schemat MySQL (tabele pkt 4) + migracja danych Railway→MySQL + walidacja parytetu. STOP przed write do `divezone_2025`.
+2. Rewizja CHAT-T-100: przepięcie toola PG→MySQL (osobny task).
+3. Panel admina sklepu (Katalog) — osobny task (instancja modułu PS).
+4. Hook render + przycisk — osobny task.
+5. RÓWNOLEGLE: plan pozyskania chartów dla ~25 marek (OCR 48 pewnych grafik + research + od dostawcy).
+
+
+---
+
+### ADR-102: System recenzji rozmów (notatka edytowalna + status + werdykt) — narzędzie do regularnego przeglądu czatów
+
+**Data:** 2026-06-28 | **Status:** PRZYJĘTA | **Powiązane:** ADR-070 (panel PS jako jedyny front admina), ADR-088 (.env), ADR-089 (deploy rsync + STOP). **Instancje:** backend (CHAT-T-104), frontend/panel PS (CHAT-T-105). **Decyzje:** P13a, P14b, P15c, P16b, P17a, P18a, D1, D2, D3.
+
+**Problem:** Dziś tylko Karol przegląda rozmowy ręcznie (kopiuje ID do notatnika), więc robi to rzadko, więc błędy bota żyją tygodniami. Zły bot = brak konwersji. Brakuje narzędzia, które czyni przegląd regularnym i delegowalnym do pracownika (WARUNEK delegacji z notatki: niechętny pracownik = narzędzie wraca na biurko; tu WARUNEK spełniony — Karol i tak skorzysta, P18a).
+
+**Decyzja:**
+
+1. **Dwie niezależne osie (rozdzielenie pracy od jakości).** Mieszanie workflow i werdyktu w jednym polu daje kombinatorykę nieczytelną na liście. Dlatego:
+   - `status` — oś pracy recenzenta: `nowy` → `do_weryfikacji` → `w_trakcie` → `zamkniety`.
+   - `verdict` — oś jakości czatu (ustawiana przy domykaniu): `ok` (fałszywy alarm, bot zadziałał dobrze) / `problem_do_rozwiazania` (potwierdzony błąd bota, czeka na fix) / `problem_rozwiazany` (fix wdrożony).
+   - Pracownik operuje osią `status` i przy zamykaniu nadaje `ok` albo `problem_do_rozwiazania`. **Przejście na `problem_rozwiazany` nadaje Karol po wdrożeniu fixu** (zamknięcie pętli, podział ról).
+
+2. **Stan domyślny = brak wiersza (D3).** Czat bez wpisu w tabeli recenzji = stan "nowy" implicytnie. Wiersz powstaje przy pierwszej akcji recenzenta (oznaczenie / pierwsza notatka). Nie zakładamy wiersza dla każdego czatu z góry — większość rozmów nigdy nie będzie recenzowana. Lista robocza domyślnie pokazuje wpisy o `status='do_weryfikacji'` (flagowane ręcznie, P15c — auto-flag to osobny przyszły task).
+
+3. **Notatka (P16b):** jedno pole tekstowe nadpisywane przy każdym zapisie + `updated_by` (id_employee) + `updated_at`. Bez historii wpisów (overkill przy jednym recenzencie) i bez czystego nadpisywania bez śladu (gubi kto dotykał).
+
+4. **Lokalizacja stanu: Railway PostgreSQL, osobna tabela (P13a, D3).** `divechat_conversation_review`, FK `conversation_id` → `divechat_conversations`. Osobna tabela, nie kolumny na `divechat_conversations` — żeby nie mieszać danych operacyjnych bota z metadanymi pracy ludzkiej. Migracja kolejna w numeracji (do potwierdzenia przez CC przed seedem).
+
+5. **Tożsamość recenzenta z sesji PS (P17a, D2).** `id_employee` z `pr_employee` (sesja admina PS). PS module wysyła `id_employee` w payloadzie zapisu; backend ufa modułowi (kanał uwierzytelniony `DIVECHAT_SERVER_SECRET`). W Railway trzymamy tylko liczbę; mapowanie `id_employee → nazwa` robi PS przy wyświetlaniu.
+
+6. **Dostęp przez API backendu czatu, nie PS→Railway bezpośrednio (D1).** Nowe endpointy pod `/api/admin/review`. PS module ↔ standalone backend ↔ Railway, zgodnie z istniejącą architekturą. Panel czatu w adminie PS jest jedynym frontem (ADR-070); standalone `/admin` wygaszany.
+
+7. **Zakres MVP (P18a — pełne narzędzie, ale bez nadbudowy).** Wchodzi: lista filtrowana po statusie + sortowana po dacie, notatka edytowalna z zapisem, zmiana statusu, werdykt przy domknięciu, tożsamość recenzenta. NIE wchodzi (osobne przyszłe taski): auto-flagowanie sygnałami jakości (P15c), przypisania recenzenta (jeden recenzent na start), metryki skuteczności pętli (`problem_rozwiazany`/`problem_*`) jako panel.
+
+**Konsekwencje:**
+- Pozytywne: przegląd staje się regularny i delegowalny; rozdzielenie osi daje czytelną listę i darmową przyszłą metrykę domknięcia pętli; tożsamość z sesji PS bez dodatkowej pracy; brak wiersza = brak narzutu dla 99% rozmów.
+- Koszt: nowa tabela + migracja na Railway; 3–4 nowe endpointy admina; rozszerzenie panelu PS o kolumnę statusu, pole notatki i kontrolki.
+- Ryzyko: backend ufa `id_employee` z modułu (akceptowalne — kanał już uwierzytelniony, to nie dane finansowe); werdykt `problem_rozwiazany` zależny od dyscypliny Karola (poza narzędziem — pętla domykana ręcznie po fixie).
+
+**Kolejność realizacji:**
+1. CHAT-T-104 (backend): migracja tabeli `divechat_conversation_review` + endpointy `/api/admin/review` (GET lista, GET/POST per conversation) + rozszerzenie `ConversationViewer`. STOP przed deploy (ADR-089).
+2. CHAT-T-105 (frontend/panel PS): kolumna statusu na liście rozmów + pole notatki + kontrolki status/werdykt w modalu rozmowy. Po merge kontraktu z CHAT-T-104.
+
+
+---
+
+### ADR-103: Struktura drzewa chipów oparta na analizie realnych rozmów
+
+**Data:** 2026-06-28 | **Status:** PRZYJĘTA | **Powiązane:** ADR-071 (model węzła), ADR-096 (ai_prompt + „dwa światy"), CHAT-T-088 (fundament drzewa na produkcji), CHAT-T-088f (seed). **Pełna struktura:** `_docs/38`. **Decyzje Karola:** P26a, P27(suchy out, automat za płetwami), P28(pianka+Level 3), P29a, P30a+„Zestaw maska z fajką", P31a(rozbicie start/snorkeling), P32a(„Zaczynam nurkować").
+
+**Problem:** Wcześniejsza propozycja chipów (dok. 38 z 2026-06-14) była projektowana z liczb kategorii PrestaShop i reguł domenowych, BEZ analizy realnych rozmów — mimo że pierwsze polecenie brzmiało „na bazie dotychczasowych rozmów". Skutek: osie doboru oparte na założeniach (twin/sidemount, zimna/ciepła woda), które w rozmowach klientów nie występują. Ryzyko: drzewo, którego klient nie używa.
+
+**Podstawa decyzji:** analiza `divechat_messages` (Railway) — 1217 wiadomości userów → 772 unikalne po odfiltrowaniu fixture'ów red-team i deduplikacji. Rozkład intencji (2026-06-28).
+
+**Decyzja:**
+
+1. **Filozofia: dobór przez liść AI, nie sztywne Level 3.** Kluczowe odkrycie z danych: 126 wiadomości (16%) zaczyna się od konkretnej marki/modelu (Suunto Ocean, Apeks XTX200, Santi BZ4000). Klient z nazwą w ręku omija każdą taksonomię. Dlatego chipy = brama wejścia, a cała inteligencja doboru w `ai_prompt` liścia (pyta o budżet, poziom, markę, zastosowanie — realne osie z rozmów).
+
+2. **Level 1 = 5 chipów:** Dobór sprzętu · Pomoc w rozmiarze · Zaczynam nurkować · Maska i rurka (snorkeling) · Moje zamówienie. „Start/snorkeling" rozbity na dwa (P31a, P32a) — dwie różne osoby: nurek po kursie (19 wzmianek OWD/kurs) vs snorkeler/wakacjowicz (≈16, język klienta: „rurka"/„snurkowanie", termin „snorkeling" zna tylko część → label wiedzie „maska i rurka"). „Moje zamówienie" scala status(14)+dostępność(20)+wysyłka(21)+zwroty(5) ≈ największy blok obsługi.
+
+3. **serwis USUNIĘTY z drzewa** (3 wzmianki w rozmowach — empiryczne potwierdzenie decyzji Karola). Kontekst serwisu zostaje w SystemPrompt (`serwis@divezone.pl`).
+
+4. **Level 3 tylko 3 gałęzie**, gdzie rozgraniczenie realnie pada w rozmowach: Maska (Do nurkowania / Do snorkelingu / Zestaw maska z fajką / Korekcyjna — oś snorkel/nurkowanie ma 19 trafień), Płetwy (Paskowe / Kaloszowe — pada wprost), Pianka mokra (Cienka ciepła / Gruba zimna / Shorty). Reszta płaska (liść AI).
+
+5. **Odrzucone osie (brak w danych):** twin/sidemount jako kryterium doboru automatu/jacketu (≈0 trafień), zimna/ciepła woda jako oś doboru (pada jako cecha modelu, nie sposób wyboru), budżet jako chip (klient podaje sam → pytanie AI), butla(18)/latarka(5) jako osobne chipy (zbyt rzadkie na czacie mimo wartości sprzedażowej).
+
+6. **Kolejność Level 2 doboru wg częstości:** Komputer(67) · Maska(69) · Płetwy(30) · Automat(31) · Pianka(18) · Jacket(13). Nie wg wartości katalogu, lecz wg realnych pytań na czacie.
+
+**Konsekwencje:**
+- Pozytywne: struktura odbija realne intencje, nie założenia; płaskie liście = tanie utrzymanie i spójność; `ai_prompt` modyfikowalny miękko (POP) bez przeprojektowania drzewa, gdy dane się zmienią; nowe wejścia (start, moje zamówienie) pokrywają wcześniej nieobsłużone strumienie.
+- Koszt: seed CHAT-T-088f (przebudowa względem Level 1 na produkcji — dochodzą gałęzie + nowy chip L1 „Sprzęt na start" + „Moje zamówienie", schodzą „zwroty" i „serwis" z L1).
+- Ryzyko: część liści (jacket 13, niektóre rozmiary) ma mało danych — `ai_prompt` oparty na regułach domenowych, nie na bogatej próbce; do rewizji za ~3 mies. na większym zbiorze. „Zestaw maska z fajką" może się mylić z „Sprzęt na start" — rozdzielone w `ai_prompt`.
+
+**Do rewizji (~3 mies.):** przegląd `ai_prompt` wszystkich liści na większym zbiorze rozmów (dziś 772 → wtedy kilka×). Wtedy też decyzja, czy któryś liść AI zasługuje na Level 3 (np. komputer wg poziomu), gdy pojawi się wyraźny wzorzec.
