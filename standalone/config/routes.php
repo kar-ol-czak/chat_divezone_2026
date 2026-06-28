@@ -19,8 +19,10 @@ use DiveChat\Controller\ChipTreeController;
 use DiveChat\Shop\MysqlProductEnrichmentService;
 use DiveChat\Chat\ConversationStore;
 use DiveChat\Chat\SettingsStore;
+use DiveChat\Admin\ConversationReviewRepository;
 use DiveChat\Controller\AdminAnalyticsController;
 use DiveChat\Controller\AdminController;
+use DiveChat\Controller\AdminConversationReviewController;
 use DiveChat\Controller\AdminEditorialPicksController;
 use DiveChat\Controller\AdminNudgeCtrController;
 use DiveChat\Controller\AdminPricingController;
@@ -148,7 +150,10 @@ return static function (
     $htpasswdPath = dirname(__DIR__) . '/admin/.htpasswd';
     $adminAuth = new AdminAuthMiddleware($htpasswdPath);
     $costAnalytics = new CostAnalytics($db, $pricingService, $exchangeRateService);
-    $conversationViewer = new ConversationViewer($db, $exchangeRateService);
+    // CHAT-T-104 (ADR-102): repo recenzji wstrzykniety do ConversationViewer (blok
+    // `review` w pelnej rozmowie) ORAZ do dedykowanego AdminConversationReviewController.
+    $reviewRepository = new ConversationReviewRepository($db);
+    $conversationViewer = new ConversationViewer($db, $exchangeRateService, $reviewRepository);
     $adminController = new AdminController($adminAuth, $costAnalytics, $conversationViewer);
 
     // CHAT-T-049 (Etap 2): Analityka na kanal serwerowy panelu PS, rola admin-only.
@@ -169,6 +174,15 @@ return static function (
     // dla nudge_dismiss) + atrybucje conversations.nudge_sid (CHAT-T-085/ADR-092).
     $adminNudgeCtrController = new AdminNudgeCtrController($serverVerifier, $db);
     $router->get('/api/admin/nudge-ctr', $adminNudgeCtrController->handle(...));
+
+    // CHAT-T-104 (ADR-102): system recenzji rozmow. Kanal serwerowy + DOWOLNA rola
+    // (operator+admin) — recenzja delegowalna do pracownika. Statyczna lista
+    // `/api/admin/review` PRZED parametrycznym `/{conversationId}` (Router matchuje
+    // po kolejnosci). $reviewRepository utworzony wyzej (wspoldzielony z ConversationViewer).
+    $reviewController = new AdminConversationReviewController($reviewRepository, $serverVerifier, $db);
+    $router->get('/api/admin/review', $reviewController->list(...));
+    $router->get('/api/admin/review/{conversationId}', $reviewController->get(...));
+    $router->post('/api/admin/review/{conversationId}', $reviewController->upsert(...));
 
     // Admin: Editorial Picks (T-008, ADR-054).
     // CHAT-T-054 Etap 3 (127b/128a): przepiete z Basic Auth na kanal serwerowy

@@ -16,6 +16,7 @@ final class ConversationViewer
     public function __construct(
         private readonly PostgresConnection $db,
         private readonly ExchangeRateService $exchangeRates,
+        private readonly ?ConversationReviewRepository $reviewRepository = null,
     ) {}
 
     /**
@@ -115,6 +116,10 @@ final class ConversationViewer
             ],
             'messages' => $messagesOut,
             'orphan_usage_count' => count($orphanUsage),
+            // CHAT-T-104 (ADR-102): stan recenzji rozmowy. null = brak wiersza =
+            // stan "nowy" implicytny (D3). Mirror dedykowanego GET /api/admin/review/:id
+            // (kanoniczny endpoint dla CHAT-T-105); tu wygodny przy ladowaniu modala.
+            'review' => $this->reviewRepository?->getByConversation($conversationId),
         ];
     }
 }
