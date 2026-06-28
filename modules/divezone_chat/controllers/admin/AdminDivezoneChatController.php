@@ -37,6 +37,11 @@ class AdminDivezoneChatController extends ModuleAdminController
     // Szczegoly: ENDPOINT_CONVERSATIONS . '/' . rawurlencode($sessionId).
     // Status:    ENDPOINT_CONVERSATIONS . '/' . rawurlencode($sessionId) . '/status'.
     const ENDPOINT_CONVERSATIONS   = '/api/conversations';
+    // CHAT-T-105 (ADR-102): system recenzji rozmow (CHAT-T-104 backend, any-role).
+    // Lista:   ENDPOINT_REVIEW . '?status=&limit=&offset='.
+    // Stan:    ENDPOINT_REVIEW . '/' . $conversationId (int).
+    // Upsert:  POST ENDPOINT_REVIEW . '/' . $conversationId.
+    const ENDPOINT_REVIEW          = '/api/admin/review';
     // CHAT-T-050: Analityka (admin-only, CHAT-T-049 backend, ADR-074).
     const ENDPOINT_COST_KPI          = '/api/admin/cost/kpi';
     const ENDPOINT_COST_TREND        = '/api/admin/cost/trend';
@@ -78,6 +83,8 @@ class AdminDivezoneChatController extends ModuleAdminController
     private $convFlash = '';
     /** @var string typ komunikatu: success | error */
     private $convFlashType = 'success';
+    /** @var array<int,string> cache mapowania id_employee->nazwa w obrebie requestu (CHAT-T-105) */
+    private $employeeNameCache = array();
     /** @var string komunikat flashowy do wyswietlenia na gorze widoku Editorial (CHAT-T-055) */
     private $epFlash = '';
     /** @var string typ komunikatu: success | error */
@@ -129,6 +136,13 @@ class AdminDivezoneChatController extends ModuleAdminController
         // 2c. Submit zmiany statusu rozmowy -> POST .../status, zostan na Rozmowach (CHAT-T-048).
         if (Tools::isSubmit('submitDivezoneChatConvStatus')) {
             $this->handleConvStatusSave($employeeId);
+            $activeTab = self::TAB_CONVERSATIONS;
+        }
+
+        // 2c-bis. Submit panelu recenzji (CHAT-T-105, ADR-102) -> POST /api/admin/review/:convId
+        // z {status, verdict, note, id_employee}. id_employee z sesji PS (NIGDY z inputu).
+        if (Tools::isSubmit('submitDivezoneChatReview')) {
+            $this->handleReviewSave($employeeId);
             $activeTab = self::TAB_CONVERSATIONS;
         }
 
@@ -235,6 +249,27 @@ class AdminDivezoneChatController extends ModuleAdminController
         $css .= '.dz-status-reviewed{background:#5cb85c;}';
         $css .= '.dz-status-knowledge_created{background:#1a5e5a;}';
         $css .= '.dz-status-ignored{background:#999;}';
+        // CHAT-T-105 (ADR-102): badge statusu recenzji + chip werdyktu + pasek filtra + panel.
+        $css .= '.dz-review-badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:0.85em;color:#fff;font-weight:600;}';
+        $css .= '.dz-review-nowy{background:#5680b8;}';
+        $css .= '.dz-review-do_weryfikacji{background:#d9534f;}'; // alarmowy
+        $css .= '.dz-review-w_trakcie{background:#e0a800;}';
+        $css .= '.dz-review-zamkniety{background:#999;}'; // neutralny
+        $css .= '.dz-review-empty{color:#bbb;}';
+        $css .= '.dz-verdict-chip{display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.8em;font-weight:600;border:1px solid;}';
+        $css .= '.dz-verdict-ok{color:#3c763d;border-color:#c6e3b6;background:#eef8e9;}';
+        $css .= '.dz-verdict-problem_do_rozwiazania{color:#a94442;border-color:#ebccd1;background:#fbeeee;}';
+        $css .= '.dz-verdict-problem_rozwiazany{color:#31708f;border-color:#bce8f1;background:#eef7fb;}';
+        $css .= '.dz-review-filterbar{margin-bottom:10px;}';
+        $css .= '.dz-review-panel{margin:24px 0 0;padding:14px;background:#fff8f5;border:1px solid #f0d6cc;border-radius:4px;}';
+        $css .= '.dz-review-panel h3{margin:0 0 12px;border-bottom:1px solid #f0d6cc;padding-bottom:6px;font-size:14px;color:#7a3a2c;}';
+        $css .= '.dz-review-panel label{font-weight:600;display:block;margin-bottom:4px;font-size:13px;color:#444;}';
+        $css .= '.dz-review-panel select,.dz-review-panel textarea{width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #ccc;border-radius:3px;background:#fff;font-size:13px;}';
+        $css .= '.dz-review-panel .dz-review-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;margin-bottom:12px;}';
+        $css .= '.dz-review-panel .dz-review-hint{font-size:11px;color:#888;font-weight:400;display:block;margin-top:3px;}';
+        $css .= '.dz-review-panel .dz-review-meta{font-size:12px;color:#777;margin:10px 0;}';
+        $css .= '.dz-review-panel button{padding:9px 22px;background:#c0392b;color:#fff;border:0;border-radius:4px;font-weight:600;cursor:pointer;font-size:13px;}';
+        $css .= '.dz-review-panel button:hover{background:#a93226;}';
         // CHAT-T-051: master-detail layout (113a) + pozycje listy + placeholder + formatowanie bubli.
         $css .= '.dz-conv-layout{display:flex;gap:14px;align-items:flex-start;}';
         $css .= '.dz-conv-list-col{width:340px;flex-shrink:0;max-height:75vh;overflow-y:auto;}';
@@ -1048,7 +1083,20 @@ class AdminDivezoneChatController extends ModuleAdminController
     {
         $sessionId = trim((string) Tools::getValue('session_id', ''));
 
-        $listHtml = $this->renderConversationsList($employeeId, $sessionId);
+        // CHAT-T-105 (ADR-102): filtr recenzji steruje trybem listy.
+        //  - status recenzji ('nowy'/'do_weryfikacji'/'w_trakcie'/'zamkniety') ->
+        //    lista robocza z /api/admin/review (sort po updated_at recenzji DESC).
+        //  - 'wszystkie' -> klasyczna lista wszystkich rozmow (/api/conversations).
+        // Default = 'do_weryfikacji' (ADR-102 D3: lista robocza domyslnie pokazuje
+        // wpisy flagowane do weryfikacji).
+        $reviewStatus = $this->resolveReviewFilter();
+
+        $listHtml  = $this->renderReviewFilterBar($reviewStatus, $sessionId);
+        if ($reviewStatus === 'wszystkie') {
+            $listHtml .= $this->renderConversationsList($employeeId, $sessionId);
+        } else {
+            $listHtml .= $this->renderReviewList($employeeId, $sessionId, $reviewStatus);
+        }
 
         if ($sessionId !== '') {
             $detailHtml = $this->renderConversationDetail($employeeId, $sessionId);
@@ -1060,6 +1108,163 @@ class AdminDivezoneChatController extends ModuleAdminController
         $html .= '<aside class="dz-conv-list-col">' . $listHtml . '</aside>';
         $html .= '<section class="dz-conv-detail-col">' . $detailHtml . '</section>';
         $html .= '</div>';
+        return $html;
+    }
+
+    /**
+     * CHAT-T-105: wartosc filtra recenzji z querystring. Sentinel 'wszystkie' =
+     * tryb pelnej listy rozmow (NIE pusty string — pusty gubilby sie w linkach
+     * pomijajacych puste parametry; default to 'do_weryfikacji').
+     */
+    private function resolveReviewFilter()
+    {
+        $rs    = trim((string) Tools::getValue('review_status', 'do_weryfikacji'));
+        $valid = array_keys($this->reviewStatusOptions());
+        $valid[] = 'wszystkie';
+        if (!in_array($rs, $valid, true)) {
+            $rs = 'do_weryfikacji';
+        }
+        return $rs;
+    }
+
+    /**
+     * CHAT-T-105: pasek wyboru statusu recenzji nad lista (GET form). Obecny w
+     * obu trybach, zeby pracownik mogl przelaczac robocza/pelna liste. Zachowuje
+     * otwarta rozmowe (session_id) przy przelaczeniu.
+     */
+    private function renderReviewFilterBar($reviewStatus, $sessionId)
+    {
+        $token = Tools::getAdminTokenLite('AdminDivezoneChat');
+
+        $html  = '<form method="get" class="dz-conv-filters dz-review-filterbar" action="">';
+        $html .= '<input type="hidden" name="controller" value="AdminDivezoneChat">';
+        $html .= '<input type="hidden" name="token" value="' . htmlspecialchars($token, ENT_QUOTES) . '">';
+        $html .= '<input type="hidden" name="tab" value="' . self::TAB_CONVERSATIONS . '">';
+        if ($sessionId !== '') {
+            $html .= '<input type="hidden" name="session_id" value="' . htmlspecialchars($sessionId, ENT_QUOTES) . '">';
+        }
+
+        $html .= '<div><select name="review_status" onchange="this.form.submit()">';
+        foreach ($this->reviewStatusOptions() as $k => $label) {
+            $sel = $reviewStatus === $k ? ' selected' : '';
+            $html .= '<option value="' . htmlspecialchars($k, ENT_QUOTES) . '"' . $sel . '>' . $this->l('Recenzja:') . ' ' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
+        }
+        $selAll = $reviewStatus === 'wszystkie' ? ' selected' : '';
+        $html .= '<option value="wszystkie"' . $selAll . '>' . $this->l('— wszystkie rozmowy —') . '</option>';
+        $html .= '</select></div>';
+
+        $html .= '<div><button type="submit" class="btn btn-primary">' . $this->l('Pokaz') . '</button></div>';
+        $html .= '</form>';
+        return $html;
+    }
+
+    /**
+     * CHAT-T-105: lista robocza recenzji (/api/admin/review?status=...). Pozycje
+     * z badgem statusu recenzji + chipem werdyktu; sort po updated_at recenzji DESC
+     * (backend). Klik = pelen reload detalu wg session_id (review_status zachowany).
+     */
+    private function renderReviewList($employeeId, $activeSessionId, $reviewStatus)
+    {
+        $page    = max(1, (int) Tools::getValue('page', 1));
+        $perPage = (int) Tools::getValue('per_page', 20);
+        if ($perPage <= 0 || $perPage > 100) {
+            $perPage = 20;
+        }
+        $offset = ($page - 1) * $perPage;
+
+        $query = http_build_query(array(
+            'status' => $reviewStatus,
+            'limit'  => $perPage,
+            'offset' => $offset,
+        ));
+        $resp = $this->callBackend(self::ENDPOINT_REVIEW . '?' . $query, $employeeId);
+
+        $statusLabel = $this->reviewStatusOptions();
+        $statusLabel = isset($statusLabel[$reviewStatus]) ? $statusLabel[$reviewStatus] : $reviewStatus;
+
+        $html  = '<div class="panel" style="border-top-left-radius:0;">';
+        $html .= '<div class="panel-heading"><i class="icon-flag"></i> ' . $this->l('Recenzja rozmow') . ' — ' . htmlspecialchars($statusLabel, ENT_QUOTES) . '</div>';
+        $html .= '<div style="padding:0;">';
+
+        if ($this->convFlash !== '') {
+            $html .= '<div style="padding:14px 14px 0 14px;">';
+            $html .= '<div class="dz-flash ' . htmlspecialchars($this->convFlashType, ENT_QUOTES) . '">'
+                  . htmlspecialchars($this->convFlash, ENT_QUOTES) . '</div>';
+            $html .= '</div>';
+        }
+
+        if (isset($resp['error'])) {
+            $httpStatus = isset($resp['http_status']) ? (int) $resp['http_status'] : 0;
+            $msg = $this->reviewErrorMessage($resp, $httpStatus, $this->l('Blad pobrania listy recenzji:'));
+            $html .= '<p style="color:#a94442;background:#f2dede;padding:10px;margin:14px;border:1px solid #ebccd1;border-radius:3px;">';
+            $html .= '<strong>' . htmlspecialchars($msg, ENT_QUOTES) . '</strong>';
+            $html .= '</p></div></div>';
+            return $html;
+        }
+
+        $items = isset($resp['items']) && is_array($resp['items']) ? $resp['items'] : array();
+        $total = isset($resp['total']) ? (int) $resp['total'] : 0;
+
+        if (empty($items)) {
+            $html .= '<p style="padding:14px;">' . $this->l('Brak rozmow w tym statusie recenzji.') . '</p>';
+            $html .= '</div></div>';
+            return $html;
+        }
+
+        $html .= '<ul class="dz-conv-items">';
+        foreach ($items as $item) {
+            $html .= $this->renderReviewListItem($item, $activeSessionId, $reviewStatus);
+        }
+        $html .= '</ul>';
+
+        $filters = array('page' => $page, 'per_page' => $perPage, 'review_status' => $reviewStatus);
+        $html .= '<div style="padding:0 14px 14px 14px;">' . $this->renderConvPager($page, $perPage, $total, $filters) . '</div>';
+
+        $html .= '</div></div>';
+        return $html;
+    }
+
+    /**
+     * CHAT-T-105: pozycja listy recenzji. Dane z /api/admin/review (skrot rozmowy +
+     * stan recenzji). Klik = otwarcie detalu wg session_id z zachowaniem review_status/page.
+     */
+    private function renderReviewListItem($item, $activeSessionId, $reviewStatus)
+    {
+        $sessionId   = isset($item['session_id']) ? (string) $item['session_id'] : '';
+        $startedAt   = isset($item['started_at']) ? (string) $item['started_at'] : '';
+        $firstMsg    = isset($item['first_user_message']) ? $item['first_user_message'] : null;
+        $status      = isset($item['status']) ? (string) $item['status'] : '';
+        $verdict     = isset($item['verdict']) && $item['verdict'] !== null ? (string) $item['verdict'] : '';
+        $msgCount    = isset($item['message_count']) ? (int) $item['message_count'] : 0;
+
+        $url = $this->context->link->getAdminLink('AdminDivezoneChat')
+            . '&tab=' . self::TAB_CONVERSATIONS
+            . '&session_id=' . rawurlencode($sessionId)
+            . '&review_status=' . rawurlencode($reviewStatus);
+
+        foreach (array('page', 'per_page') as $k) {
+            $v = Tools::getValue($k, '');
+            if ($v !== '' && $v !== null) {
+                $url .= '&' . $k . '=' . rawurlencode((string) $v);
+            }
+        }
+
+        $activeClass = ($sessionId !== '' && $sessionId === $activeSessionId) ? ' is-active' : '';
+        $msgPreview  = $this->truncateFirstMessage($firstMsg);
+
+        $html  = '<li><a href="' . htmlspecialchars($url, ENT_QUOTES) . '" class="dz-conv-item' . $activeClass . '">';
+        $html .= '<div class="dz-conv-item-msg">' . htmlspecialchars($msgPreview, ENT_QUOTES) . '</div>';
+        $html .= '<div class="dz-conv-item-meta">';
+        $html .= '<span>' . htmlspecialchars($this->formatConvDate($startedAt), ENT_QUOTES) . '</span>';
+        $html .= '<span>';
+        $html .= $this->renderReviewBadge($status);
+        if ($verdict !== '') {
+            $html .= ' ' . $this->renderVerdictChip($verdict);
+        }
+        $html .= ' <span style="color:#999;">' . (int) $msgCount . ' ' . $this->l('wiad.') . '</span>';
+        $html .= '</span>';
+        $html .= '</div>';
+        $html .= '</a></li>';
         return $html;
     }
 
@@ -1158,6 +1363,8 @@ class AdminDivezoneChatController extends ModuleAdminController
         $html .= '<input type="hidden" name="controller" value="AdminDivezoneChat">';
         $html .= '<input type="hidden" name="token" value="' . htmlspecialchars($token, ENT_QUOTES) . '">';
         $html .= '<input type="hidden" name="tab" value="' . self::TAB_CONVERSATIONS . '">';
+        // CHAT-T-105: ten formularz dziala tylko w trybie pelnej listy — utrzymaj go.
+        $html .= '<input type="hidden" name="review_status" value="wszystkie">';
 
         $html .= '<div><input type="text" id="dz-conv-search" name="search" value="' . htmlspecialchars($search, ENT_QUOTES) . '" placeholder="' . $this->l('Szukaj konwersacji') . '"></div>';
 
@@ -1200,7 +1407,9 @@ class AdminDivezoneChatController extends ModuleAdminController
             . '&session_id=' . rawurlencode($sessionId);
 
         // Zachowaj filtry i strone w linkach — klik nie zeruje kontekstu wyszukiwania.
-        foreach (array('page', 'per_page', 'search', 'admin_status', 'knowledge_gap') as $k) {
+        // CHAT-T-105: review_status='wszystkie' tez utrzymany (inaczej klik wracalby
+        // do domyslnego trybu 'do_weryfikacji').
+        foreach (array('page', 'per_page', 'search', 'admin_status', 'knowledge_gap', 'review_status') as $k) {
             $v = Tools::getValue($k, '');
             if ($v !== '' && $v !== null) {
                 $url .= '&' . $k . '=' . rawurlencode((string) $v);
@@ -1351,6 +1560,11 @@ class AdminDivezoneChatController extends ModuleAdminController
         $messages = isset($resp['messages']) && is_array($resp['messages']) ? $resp['messages'] : array();
         $html .= '<h3 style="margin:24px 0 8px;border-bottom:1px solid #ddd;padding-bottom:6px;">' . $this->l('Przebieg rozmowy') . '</h3>';
         $html .= $this->renderConvMessages($messages);
+
+        // CHAT-T-105 (ADR-102): panel recenzji POD trescia rozmowy. conversation_id
+        // (int) z detalu (kolumna `id`); stan recenzji z dedykowanego GET /api/admin/review/:id.
+        $convId = isset($resp['id']) ? (int) $resp['id'] : 0;
+        $html .= $this->renderReviewPanel($employeeId, $sessionId, $convId);
 
         $html .= $this->renderConvDiagnostics($resp);
 
@@ -1623,6 +1837,273 @@ class AdminDivezoneChatController extends ModuleAdminController
             return (string) $iso;
         }
         return date('Y-m-d H:i', $t);
+    }
+
+    // ============================================================================
+    // SEKCJA: Recenzja rozmow (CHAT-T-105, ADR-102). Dwie osie: status (praca
+    // recenzenta) + verdict (jakosc czatu). Backend = CHAT-T-104 (/api/admin/review).
+    // Tozsamosc recenzenta (id_employee) ZAWSZE z sesji PS, NIGDY z inputu (D2).
+    // ============================================================================
+
+    /**
+     * Enumy statusu recenzji (ADR-102 pkt 1). Wartosci = klucze wysylane do backendu
+     * (NIE tlumaczyc), etykiety PL do wyswietlenia. Backend waliduje whitelist;
+     * niezgodne -> 422.
+     */
+    private function reviewStatusOptions()
+    {
+        return array(
+            'nowy'           => $this->l('nowy'),
+            'do_weryfikacji' => $this->l('do weryfikacji'),
+            'w_trakcie'      => $this->l('w trakcie'),
+            'zamkniety'      => $this->l('zamkniety'),
+        );
+    }
+
+    /**
+     * Enumy werdyktu recenzji (ADR-102 pkt 1). 'problem_rozwiazany' nadaje Karol po
+     * wdrozeniu fixu — pokazujemy z adnotacja, ale nie blokujemy twardo (decyzja UX panelu).
+     */
+    private function reviewVerdictOptions()
+    {
+        return array(
+            'ok'                     => $this->l('OK (falszywy alarm — bot zadzialal dobrze)'),
+            'problem_do_rozwiazania' => $this->l('problem do rozwiazania (potwierdzony blad bota)'),
+            'problem_rozwiazany'     => $this->l('problem rozwiazany (fix wdrozony)'),
+        );
+    }
+
+    private function renderReviewBadge($status)
+    {
+        $status = (string) $status;
+        if ($status === '') {
+            return '<span class="dz-review-badge dz-review-empty">—</span>';
+        }
+        $opts   = $this->reviewStatusOptions();
+        $label  = isset($opts[$status]) ? $opts[$status] : $status;
+        $cssKey = preg_replace('/[^a-z_]/', '', strtolower($status));
+        $class  = 'dz-review-badge dz-review-' . ($cssKey !== '' ? $cssKey : 'nowy');
+        return '<span class="' . $class . '">' . htmlspecialchars($label, ENT_QUOTES) . '</span>';
+    }
+
+    private function renderVerdictChip($verdict)
+    {
+        $verdict = (string) $verdict;
+        if ($verdict === '') {
+            return '';
+        }
+        $opts   = $this->reviewVerdictOptions();
+        // Krotka etykieta na chipie (przed nawiasem), pelna w panelu.
+        $full   = isset($opts[$verdict]) ? $opts[$verdict] : $verdict;
+        $short  = trim((string) preg_replace('/\s*\(.*$/u', '', $full));
+        $cssKey = preg_replace('/[^a-z_]/', '', strtolower($verdict));
+        $class  = 'dz-verdict-chip dz-verdict-' . ($cssKey !== '' ? $cssKey : 'ok');
+        return '<span class="' . $class . '">' . htmlspecialchars($short, ENT_QUOTES) . '</span>';
+    }
+
+    /**
+     * Mapowanie id_employee -> nazwa po stronie PS (ADR-102 pkt 5: w Railway trzymamy
+     * tylko liczbe). Czyta pr_employee przez klase Employee PS. Cache w obrebie requestu.
+     * Fallback '#<id>' gdy konto usuniete/niezaladowane.
+     */
+    private function employeeName($idEmployee)
+    {
+        $id = (int) $idEmployee;
+        if ($id <= 0) {
+            return '';
+        }
+        if (isset($this->employeeNameCache[$id])) {
+            return $this->employeeNameCache[$id];
+        }
+        $name = '';
+        try {
+            $emp = new Employee($id);
+            if (Validate::isLoadedObject($emp)) {
+                $name = trim((string) $emp->firstname . ' ' . (string) $emp->lastname);
+            }
+        } catch (Exception $e) {
+            $name = '';
+        }
+        if ($name === '') {
+            $name = '#' . $id;
+        }
+        $this->employeeNameCache[$id] = $name;
+        return $name;
+    }
+
+    /**
+     * Panel recenzji pod trescia rozmowy (CHAT-T-105). Czyta stan z
+     * GET /api/admin/review/:convId (review=null gdy brak wiersza = stan "nowy"
+     * implicytny, D3). Formularz POST -> handleReviewSave.
+     */
+    private function renderReviewPanel($employeeId, $sessionId, $convId)
+    {
+        if ($convId <= 0) {
+            return '';
+        }
+
+        $resp   = $this->callBackend(self::ENDPOINT_REVIEW . '/' . (int) $convId, $employeeId);
+        $review = null;
+        $loadErr = '';
+        if (isset($resp['error'])) {
+            $httpStatus = isset($resp['http_status']) ? (int) $resp['http_status'] : 0;
+            $loadErr = $this->reviewErrorMessage($resp, $httpStatus, $this->l('Blad pobrania recenzji:'));
+        } elseif (isset($resp['review']) && is_array($resp['review'])) {
+            $review = $resp['review'];
+        }
+
+        // Stan biezacy: gdy brak wiersza -> 'nowy' implicytny (D3). Werdykt/notatka puste.
+        $curStatus  = ($review !== null && isset($review['status'])) ? (string) $review['status'] : 'nowy';
+        $curVerdict = ($review !== null && isset($review['verdict']) && $review['verdict'] !== null) ? (string) $review['verdict'] : '';
+        $curNote    = ($review !== null && isset($review['note']) && $review['note'] !== null) ? (string) $review['note'] : '';
+        $updatedBy  = ($review !== null && isset($review['updated_by']) && $review['updated_by'] !== null) ? (int) $review['updated_by'] : 0;
+        $updatedAt  = ($review !== null && isset($review['updated_at'])) ? (string) $review['updated_at'] : '';
+
+        $action = $this->context->link->getAdminLink('AdminDivezoneChat')
+            . '&tab=' . self::TAB_CONVERSATIONS
+            . '&session_id=' . rawurlencode($sessionId)
+            . '&review_status=' . rawurlencode($this->resolveReviewFilter());
+
+        $html  = '<div class="dz-review-panel">';
+        $html .= '<h3>' . $this->l('Recenzja') . '</h3>';
+
+        if ($loadErr !== '') {
+            $html .= '<div class="dz-flash error" style="margin-bottom:12px;">' . htmlspecialchars($loadErr, ENT_QUOTES) . '</div>';
+        }
+
+        $html .= '<form method="post" action="' . htmlspecialchars($action, ENT_QUOTES) . '">';
+        $html .= '<input type="hidden" name="conversation_id" value="' . (int) $convId . '">';
+        $html .= '<input type="hidden" name="session_id" value="' . htmlspecialchars($sessionId, ENT_QUOTES) . '">';
+
+        $html .= '<div class="dz-review-grid">';
+
+        // Status
+        $html .= '<div>';
+        $html .= '<label>' . $this->l('Status recenzji') . '</label>';
+        $html .= '<select name="status">';
+        foreach ($this->reviewStatusOptions() as $k => $label) {
+            $sel = $k === $curStatus ? ' selected' : '';
+            $html .= '<option value="' . htmlspecialchars($k, ENT_QUOTES) . '"' . $sel . '>' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
+        }
+        $html .= '</select>';
+        $html .= '</div>';
+
+        // Verdict
+        $html .= '<div>';
+        $html .= '<label>' . $this->l('Werdykt') . '</label>';
+        $html .= '<select name="verdict">';
+        $selNone = $curVerdict === '' ? ' selected' : '';
+        $html .= '<option value=""' . $selNone . '>' . $this->l('— brak —') . '</option>';
+        foreach ($this->reviewVerdictOptions() as $k => $label) {
+            $sel = $k === $curVerdict ? ' selected' : '';
+            $html .= '<option value="' . htmlspecialchars($k, ENT_QUOTES) . '"' . $sel . '>' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
+        }
+        $html .= '</select>';
+        $html .= '<span class="dz-review-hint">' . $this->l('„problem rozwiazany" ustawia administrator po wdrozeniu fixu.') . '</span>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // grid
+
+        // Notatka
+        $html .= '<div>';
+        $html .= '<label>' . $this->l('Notatka') . '</label>';
+        $html .= '<textarea name="note" rows="3">' . htmlspecialchars($curNote, ENT_QUOTES) . '</textarea>';
+        $html .= '</div>';
+
+        // Metadane
+        if ($review !== null) {
+            $byName = $updatedBy > 0 ? $this->employeeName($updatedBy) : $this->l('(nieznany)');
+            $html .= '<div class="dz-review-meta">';
+            $html .= $this->l('Ostatnia zmiana:') . ' <strong>' . htmlspecialchars($byName, ENT_QUOTES) . '</strong>';
+            $html .= ' &middot; ' . htmlspecialchars($this->formatConvDate($updatedAt), ENT_QUOTES);
+            $html .= '</div>';
+        } else {
+            $html .= '<div class="dz-review-meta">' . $this->l('Brak recenzji — wiersz powstanie przy pierwszym zapisie.') . '</div>';
+        }
+
+        $html .= '<div style="margin-top:10px;"><button type="submit" name="submitDivezoneChatReview">' . $this->l('Zapisz recenzje') . '</button></div>';
+        $html .= '</form>';
+        $html .= '</div>';
+        return $html;
+    }
+
+    /**
+     * Handler zapisu recenzji (CHAT-T-105). POST /api/admin/review/:convId z
+     * {status, verdict, note, id_employee}. id_employee = $employeeId z sesji PS (D2,
+     * NIGDY z inputu). Walidacja enumow lokalnie przed POST; backend dubluje (422).
+     * note "" -> czyszczenie pola (kontrakt CHAT-T-104). verdict "" -> null.
+     */
+    private function handleReviewSave($employeeId)
+    {
+        $convId  = (int) Tools::getValue('conversation_id', 0);
+        $status  = trim((string) Tools::getValue('status', ''));
+        $verdict = trim((string) Tools::getValue('verdict', ''));
+        $noteRaw = Tools::getValue('note', '');
+        $note    = is_string($noteRaw) ? $noteRaw : '';
+
+        if ($convId <= 0) {
+            $this->convFlash     = $this->l('Brak conversation_id — recenzja nie zapisana.');
+            $this->convFlashType = 'error';
+            return;
+        }
+
+        if (!array_key_exists($status, $this->reviewStatusOptions())) {
+            $this->convFlash     = $this->l('Nieprawidlowy status recenzji.');
+            $this->convFlashType = 'error';
+            return;
+        }
+
+        if ($verdict !== '' && !array_key_exists($verdict, $this->reviewVerdictOptions())) {
+            $this->convFlash     = $this->l('Nieprawidlowy werdykt.');
+            $this->convFlashType = 'error';
+            return;
+        }
+
+        $payload = array(
+            'status'      => $status,
+            'verdict'     => $verdict === '' ? null : $verdict,
+            'note'        => $note, // "" czysci pole (kontrakt)
+            'id_employee' => (int) $employeeId, // z sesji PS, NIGDY z inputu
+        );
+        $body = json_encode($payload);
+
+        $resp = $this->callBackend(self::ENDPOINT_REVIEW . '/' . (int) $convId, $employeeId, 'POST', $body);
+
+        if (isset($resp['error'])) {
+            $httpStatus = isset($resp['http_status']) ? (int) $resp['http_status'] : 0;
+            $this->convFlash     = $this->reviewErrorMessage($resp, $httpStatus, $this->l('Blad zapisu recenzji:'));
+            $this->convFlashType = 'error';
+            return;
+        }
+
+        $this->convFlash     = $this->l('Recenzja zapisana.');
+        $this->convFlashType = 'success';
+    }
+
+    /**
+     * Wspolne mapowanie bledow API recenzji na komunikaty PL. 401 = token kanalu,
+     * 403 = brak roli, 422 = zly enum (pokaz reason z backendu), 400 = zly request.
+     */
+    private function reviewErrorMessage($resp, $httpStatus, $prefix)
+    {
+        if ($httpStatus === 401) {
+            return $this->l('Brak/nieprawidlowy token kanalu serwerowego (TTL 900s). Sprawdz Sekret SERWEROWY w konfiguracji modulu.');
+        }
+        if ($httpStatus === 403) {
+            return $this->l('Brak roli (no_role): konto nie ma roli w divechat_admin_roles. Recenzje moze prowadzic operator/admin.');
+        }
+        $reason = '';
+        if (isset($resp['reason']) && is_string($resp['reason'])) {
+            $reason = ' (' . $resp['reason'] . ')';
+        }
+        if ($httpStatus === 422) {
+            return $this->l('Nieprawidlowa wartosc statusu/werdyktu — odrzucone przez backend.') . $reason;
+        }
+        if ($httpStatus === 400) {
+            return $this->l('Nieprawidlowe zadanie zapisu recenzji.') . $reason;
+        }
+        $err = isset($resp['error']) ? (string) $resp['error'] : $this->l('nieznany blad');
+        return $prefix . ' ' . $err . $reason;
     }
 
     // ============================================================================
