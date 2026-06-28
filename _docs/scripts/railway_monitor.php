@@ -23,6 +23,16 @@ declare(strict_types=1);
  *
  * Log: /home/divezone/_diag/railway_monitor_YYYYMMDD.log (dopisywany).
  * Uruchomienie: pod nohup + cron-guard (railway_monitor_guard.sh) — patrz raport CHAT-T-108.
+ *
+ * CHAT-T-109 (anty-zawieszenie, incydent 29-06 cichy zgon o 23:33):
+ *   - connect_timeout 8->5 (spojnie z CHAT-T-107 backend) — wiszacy CONNECT odpada po 5s.
+ *   - SET statement_timeout=6000 na sesji — PG ubija zapytanie po 6s i zwraca blad,
+ *     wiec klient sie ODBLOKOWUJE (zamiast wisiec na query() jak 28/29-06).
+ *   - kooperatywny budzet ~7s w pgProbe: po przekroczeniu pozostale metryki = FAIL bez
+ *     wykonania, zeby pojedynczy cykl domykal sie w ~6-7s niezaleznie od stanu Railway.
+ *   - log ZAWSZE sie zapisuje (skok latencji widoczny jako FAIL/wysokie ms, nie cisza).
+ *   - twardy backstop na wiszace polaczenie sieciowe (blackhole, gdy nawet statement_timeout
+ *     nie dochodzi): cron-guard wykrywa stary log (>60s) i wskrzesza monitor (kill -9 + restart).
  */
 
 $BASE = '/home/divezone/public_html/chat.divezone.pl';
@@ -38,7 +48,8 @@ parse_str($p['query'] ?? '', $q);
 $ssl   = $q['sslmode'] ?? 'disable';
 $RHOST = $p['host'] ?? 'switchback.proxy.rlwy.net';
 $RPORT = (int)($p['port'] ?? 14368);
-$DSN = sprintf('pgsql:host=%s;port=%d;dbname=%s;sslmode=%s;user=%s;password=%s;connect_timeout=8',
+// connect_timeout=5 (CHAT-T-109): wiszacy CONNECT do Railway odpada po 5s, nie zamraza petli.
+$DSN = sprintf('pgsql:host=%s;port=%d;dbname=%s;sslmode=%s;user=%s;password=%s;connect_timeout=5',
     $RHOST, $RPORT, ltrim($p['path'] ?? '', '/'), $ssl, $p['user'] ?? '', $p['pass'] ?? '');
 
 $WAW = new DateTimeZone('Europe/Warsaw');
@@ -70,17 +81,31 @@ function tcp(string $host, int $port, int $tmo): array {
 /**
  * Jeden connect na cykl + 4 realne zapytania mierzone osobno.
  * Connect padl -> wszystkie PG metryki FAIL. Zwraca [metryka => [ok, ms]].
+ *
+ * CHAT-T-109 — anty-zawieszenie:
+ *  - connect_timeout=5 (w DSN) ogranicza wiszacy connect.
+ *  - SET statement_timeout=6000 -> PG ubija dlugie zapytanie i odblokowuje klienta.
+ *  - $budgetMs (~7s): po przekroczeniu lacznego czasu pozostale metryki = FAIL bez wykonania,
+ *    zeby cykl domykal sie w ~6-7s niezaleznie od stanu Railway.
+ * (Wiszace polaczenie sieciowe / blackhole, gdy nawet statement_timeout nie dochodzi -> lapie cron-guard
+ *  po swiezosci logu; tu chronimy przed typowa degradacja, gdy serwer PG odpowiada wolno albo bledem.)
  */
-function pgProbe(string $dsn, string $probeKey, array $metrics): array {
+function pgProbe(string $dsn, string $probeKey, array $metrics, int $budgetMs = 7000): array {
     $res = [];
     foreach ($metrics as $m) { $res[$m] = [false, 0.0]; }
     $pdo = null;
+    $t0 = microtime(true);
+    $budgetLeft = static fn() => ($budgetMs - (microtime(true) - $t0) * 1000) > 0;
     try {
         $tc = microtime(true);
-        $pdo = new PDO($dsn, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 8]);
+        $pdo = new PDO($dsn, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 5]);
+        // Twardy limit zapytania po stronie PG: serwer przerywa query po 6s i zwraca blad,
+        // dzieki czemu klient sie odblokowuje (zamiast wisiec w libpq jak podczas incydentu 29-06).
+        $pdo->exec('SET statement_timeout = 6000');
         $connMs = (microtime(true) - $tc) * 1000;
 
-        $timed = function (string $name, callable $fn) use (&$res) {
+        $timed = function (string $name, callable $fn) use (&$res, $budgetLeft) {
+            if (!$budgetLeft()) { $res[$name] = [false, 0.0]; return; } // budzet wyczerpany -> FAIL bez wykonania
             $t = microtime(true);
             try { $fn(); $res[$name][0] = true; }
             catch (\Throwable $e) { $res[$name][0] = false; }
@@ -119,7 +144,8 @@ function pgProbe(string $dsn, string $probeKey, array $metrics): array {
 
 function cleanupProbe(string $dsn, string $probeKey): void {
     try {
-        $pdo = new PDO($dsn, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 8]);
+        $pdo = new PDO($dsn, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 5]);
+        $pdo->exec('SET statement_timeout = 6000');
         $st = $pdo->prepare("DELETE FROM divechat_rate_limit WHERE key = ?");
         $st->execute([$probeKey]);
         $pdo = null;
@@ -162,9 +188,9 @@ while (true) {
         $mailAt->modify('+1 day');
     }
 
-    [$rtok, $rtms, $errno] = tcp($RHOST, $RPORT, 8);
+    [$rtok, $rtms, $errno] = tcp($RHOST, $RPORT, 5);   // connect TCP — limit 5s (CHAT-T-109)
     $pg = pgProbe($DSN, $PROBE_KEY, $PG_METRICS);
-    [$ghok, $ghms, $ge] = tcp('api.github.com', 443, 8);
+    [$ghok, $ghms, $ge] = tcp('api.github.com', 443, 5);
 
     $cell = function (string $name) use ($pg) {
         return sprintf("%s %-4s %6.0fms", $name, $pg[$name][0] ? 'OK' : 'FAIL', $pg[$name][1]);

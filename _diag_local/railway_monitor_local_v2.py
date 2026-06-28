@@ -33,7 +33,8 @@ PROJ = os.path.dirname(BASE)                            # katalog projektu
 ENV_PATH = os.path.join(PROJ, '.env')
 
 INTERVAL = 5            # gesto (P35c)
-TMO = 8                 # connect/query timeout
+TMO = 5                 # connect timeout (CHAT-T-109: spojnie z serwerem connect_timeout=5)
+STATEMENT_TIMEOUT_MS = 6000  # CHAT-T-109: PG ubija query po 6s -> klient sie odblokowuje
 PROBE_KEY = '__monitor_probe__'
 ALERT_STREAK = 3        # >=3 FAIL z rzedu => alert
 RECOVERY_OK = 3         # tyle pelnych OK cykli => recovery
@@ -106,7 +107,8 @@ def pg_probe(tmo):
             import psycopg2
             c = psycopg2.connect(host=RHOST, port=RPORT, dbname=DBNAME,
                                  user=DBUSER, password=DBPASS, sslmode=SSL,
-                                 connect_timeout=tmo)
+                                 connect_timeout=tmo,
+                                 options=f'-c statement_timeout={STATEMENT_TIMEOUT_MS}')
             c.autocommit = True
             cur = c.cursor()
 
@@ -156,7 +158,8 @@ def cleanup_probe():
         try:
             import psycopg2
             c = psycopg2.connect(host=RHOST, port=RPORT, dbname=DBNAME,
-                                 user=DBUSER, password=DBPASS, sslmode=SSL, connect_timeout=TMO)
+                                 user=DBUSER, password=DBPASS, sslmode=SSL, connect_timeout=TMO,
+                                 options=f'-c statement_timeout={STATEMENT_TIMEOUT_MS}')
             c.autocommit = True
             cur = c.cursor()
             cur.execute("DELETE FROM divechat_rate_limit WHERE key = %s", [PROBE_KEY])
