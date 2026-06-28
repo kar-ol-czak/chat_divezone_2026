@@ -47,6 +47,9 @@ final class AdminConversationReviewController
 
         try {
             $result = $this->repo->listByStatus($status, $limit, $offset);
+            // CHAT-T-106: liczniki per status ZAWSZE (niezaleznie od filtra) —
+            // dane dla segmentowanego przelacznika CHAT-T-107.
+            $result['counts'] = $this->repo->countsByStatus();
         } catch (InvalidReviewValueException $e) {
             Response::json(['error' => 'Unprocessable Entity', 'reason' => $e->getMessage()], 422);
             return;

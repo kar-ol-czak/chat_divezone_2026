@@ -112,6 +112,50 @@ final class ConversationReviewRepository
     }
 
     /**
+     * Liczniki recenzji per status (CHAT-T-106) — jedno GROUP BY, zwracane
+     * niezaleznie od aktywnego filtra (segmentowany przelacznik CHAT-T-107
+     * pokazuje pelny obraz kolejki).
+     *
+     * Gwarantuje KOMPLET czterech kluczy (statusy bez wierszy → 0; front
+     * potrzebuje wszystkich, by segment pokazal "0" zamiast zniknac). Klucze
+     * seedowane z ReviewStatus::cases() (jedno zrodlo prawdy z enumem).
+     *
+     * GRANICA SEMANTYCZNA (ADR-102 D3): liczy WYLACZNIE istniejace wiersze.
+     * Licznik `nowy` = rozmowy z JAWNYM status='nowy', NIE wszystkie
+     * nierecenzowane rozmowy katalogu (stan "nowy" implicytny bez wiersza NIE
+     * jest doliczany — to stan KOLEJKI recenzji, nie calego katalogu).
+     *
+     * @return array<string, int> Mapa status => liczba, zawsze 4 klucze.
+     */
+    public function countsByStatus(): array
+    {
+        // Wszystkie dozwolone statusy zerami — komplet kluczy dla frontu.
+        $counts = [];
+        foreach (ReviewStatus::cases() as $case) {
+            $counts[$case->value] = 0;
+        }
+
+        $rows = $this->db->fetchAll(
+            'SELECT status, COUNT(*) AS c
+             FROM divechat_conversation_review
+             GROUP BY status',
+        );
+
+        foreach ($rows as $row) {
+            $status = (string) $row['status'];
+            // Nieznany status w bazie (poza enumem) NIE przecieka do API — pomijamy
+            // i logujemy (CHECK constraint nie powinien na to pozwolic; defensywnie).
+            if (!array_key_exists($status, $counts)) {
+                error_log("[ConversationReviewRepository] countsByStatus: nieznany status w bazie pominiety: {$status}");
+                continue;
+            }
+            $counts[$status] = (int) $row['c'];
+        }
+
+        return $counts;
+    }
+
+    /**
      * Upsert recenzji. Tworzy wiersz jesli nie istnieje (status default
      * 'do_weryfikacji' gdy nie podano), w przeciwnym razie aktualizuje TYLKO
      * podane pola. Zawsze ustawia updated_by=idEmployee, updated_at=now().
