@@ -33,9 +33,9 @@ class AdminDivezoneChatController extends ModuleAdminController
     const ENDPOINT_WHOAMI          = '/api/admin/whoami';
     const ENDPOINT_RECOMMENDATIONS = '/api/admin/recommendations';
     const ENDPOINT_SETTINGS        = '/api/settings';
-    // CHAT-T-048: lista/szczegoly/status rozmow (any-role, CHAT-T-046 backend).
+    // CHAT-T-048: lista/szczegoly rozmow (any-role, CHAT-T-046 backend).
     // Szczegoly: ENDPOINT_CONVERSATIONS . '/' . rawurlencode($sessionId).
-    // Status:    ENDPOINT_CONVERSATIONS . '/' . rawurlencode($sessionId) . '/status'.
+    // CHAT-T-105: zapis statusu .../status USUNIETY (zastapiony osia recenzji /api/admin/review).
     const ENDPOINT_CONVERSATIONS   = '/api/conversations';
     // CHAT-T-105 (ADR-102): system recenzji rozmow (CHAT-T-104 backend, any-role).
     // Lista:   ENDPOINT_REVIEW . '?status=&limit=&offset='.
@@ -133,11 +133,10 @@ class AdminDivezoneChatController extends ModuleAdminController
             $activeTab = self::TAB_CONFIG;
         }
 
-        // 2c. Submit zmiany statusu rozmowy -> POST .../status, zostan na Rozmowach (CHAT-T-048).
-        if (Tools::isSubmit('submitDivezoneChatConvStatus')) {
-            $this->handleConvStatusSave($employeeId);
-            $activeTab = self::TAB_CONVERSATIONS;
-        }
+        // 2c. CHAT-T-105 (ADR-102): stary jednoosiowy status rozmowy (CHAT-T-048,
+        // POST /api/conversations/{sid}/status) USUNIETY — zastapiony dwuosiowym
+        // panelem recenzji (submitDivezoneChatReview nizej). ADR-102 swiadomie unika
+        // mieszania osi pracy/jakosci, wiec nie zostawiamy starego mechanizmu obok.
 
         // 2c-bis. Submit panelu recenzji (CHAT-T-105, ADR-102) -> POST /api/admin/review/:convId
         // z {status, verdict, note, id_employee}. id_employee z sesji PS (NIGDY z inputu).
@@ -244,11 +243,7 @@ class AdminDivezoneChatController extends ModuleAdminController
         $css .= '.dz-conv-bubble--user{background:#e8f0fe;align-self:flex-end;margin-left:auto;border:1px solid #c9d7f0;}';
         $css .= '.dz-conv-bubble--ai{background:#f5f5f5;align-self:flex-start;margin-right:auto;border:1px solid #e2e2e2;}';
         $css .= '.dz-conv-bubble .role{font-size:11px;color:#666;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;}';
-        $css .= '.dz-status-badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:0.85em;color:#fff;font-weight:600;}';
-        $css .= '.dz-status-new{background:#5680b8;}';
-        $css .= '.dz-status-reviewed{background:#5cb85c;}';
-        $css .= '.dz-status-knowledge_created{background:#1a5e5a;}';
-        $css .= '.dz-status-ignored{background:#999;}';
+        // CHAT-T-105: stary .dz-status-badge/.dz-status-* (CHAT-T-048) USUNIETE — bez uzycia.
         // CHAT-T-105 (ADR-102): badge statusu recenzji + chip werdyktu + pasek filtra + panel.
         $css .= '.dz-review-badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:0.85em;color:#fff;font-weight:600;}';
         $css .= '.dz-review-nowy{background:#5680b8;}';
@@ -1276,13 +1271,9 @@ class AdminDivezoneChatController extends ModuleAdminController
             $perPage = 20;
         }
         $search       = trim((string) Tools::getValue('search', ''));
-        $adminStatus  = trim((string) Tools::getValue('admin_status', ''));
         $knowledgeGap = (int) Tools::getValue('knowledge_gap', 0) === 1;
 
-        // Whitelist statusu w queryString — nieznane wartosci -> ignorowane lokalnie.
-        if ($adminStatus !== '' && !array_key_exists($adminStatus, $this->convStatusOptions())) {
-            $adminStatus = '';
-        }
+        // CHAT-T-105: filtr starego admin_status USUNIETY (zastapiony osia recenzji).
 
         $filters = array(
             'page'     => $page,
@@ -1290,9 +1281,6 @@ class AdminDivezoneChatController extends ModuleAdminController
         );
         if ($search !== '') {
             $filters['search'] = $search;
-        }
-        if ($adminStatus !== '') {
-            $filters['admin_status'] = $adminStatus;
         }
         if ($knowledgeGap) {
             $filters['knowledge_gap'] = 'true';
@@ -1317,7 +1305,7 @@ class AdminDivezoneChatController extends ModuleAdminController
             $html .= '</div>';
         }
 
-        $html .= $this->renderConvFilters($search, $adminStatus, $knowledgeGap);
+        $html .= $this->renderConvFilters($search, $knowledgeGap);
 
         if (isset($resp['error'])) {
             $html .= '<p style="color:#a94442;background:#f2dede;padding:10px;margin:14px;border:1px solid #ebccd1;border-radius:3px;">';
@@ -1350,15 +1338,14 @@ class AdminDivezoneChatController extends ModuleAdminController
         return $html;
     }
 
-    private function renderConvFilters($search, $adminStatus, $knowledgeGap)
+    private function renderConvFilters($search, $knowledgeGap)
     {
         // GET form: empty action -> obecny URL. Hidden controller+token+tab
         // sa potrzebne zeby PS routowal prawidlowo (GET form strippuje query string z action).
         $token = Tools::getAdminTokenLite('AdminDivezoneChat');
 
-        // CHAT-T-052 (poprawka 3): jedna linia bez labeli, placeholder w inpucie,
-        // pierwsza opcja "— Wyświetlane wszystkie —". CSS w renderTabsStyles nadpisuje
-        // domyslny flex-direction:column dla .dz-conv-list-col .dz-conv-filters.
+        // CHAT-T-105: select starego admin_status USUNIETY (os recenzji go zastapila).
+        // Zostaje wyszukiwarka + filtr luk wiedzy (sygnal niezalezny od osi recenzji).
         $html  = '<form method="get" class="dz-conv-filters" action="">';
         $html .= '<input type="hidden" name="controller" value="AdminDivezoneChat">';
         $html .= '<input type="hidden" name="token" value="' . htmlspecialchars($token, ENT_QUOTES) . '">';
@@ -1367,14 +1354,6 @@ class AdminDivezoneChatController extends ModuleAdminController
         $html .= '<input type="hidden" name="review_status" value="wszystkie">';
 
         $html .= '<div><input type="text" id="dz-conv-search" name="search" value="' . htmlspecialchars($search, ENT_QUOTES) . '" placeholder="' . $this->l('Szukaj konwersacji') . '"></div>';
-
-        $html .= '<div><select id="dz-conv-status" name="admin_status">';
-        $html .= '<option value="">' . $this->l('— Wyswietlane wszystkie —') . '</option>';
-        foreach ($this->convStatusOptions() as $k => $label) {
-            $sel = $adminStatus === $k ? ' selected' : '';
-            $html .= '<option value="' . htmlspecialchars($k, ENT_QUOTES) . '"' . $sel . '>' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
-        }
-        $html .= '</select></div>';
 
         $html .= '<div class="check-row"><label><input type="checkbox" name="knowledge_gap" value="1"' . ($knowledgeGap ? ' checked' : '') . '> ' . $this->l('Luki wiedzy') . '</label></div>';
 
@@ -1398,9 +1377,6 @@ class AdminDivezoneChatController extends ModuleAdminController
         $startedAt    = isset($conv['started_at']) ? (string) $conv['started_at'] : '';
         $firstMessage = isset($conv['first_message']) ? $conv['first_message'] : null;
         $knowledgeGap = !empty($conv['knowledge_gap']);
-        $adminStatus  = (isset($conv['admin_status']) && $conv['admin_status'] !== null && $conv['admin_status'] !== '')
-            ? (string) $conv['admin_status']
-            : 'new';
 
         $url = $this->context->link->getAdminLink('AdminDivezoneChat')
             . '&tab=' . self::TAB_CONVERSATIONS
@@ -1409,7 +1385,7 @@ class AdminDivezoneChatController extends ModuleAdminController
         // Zachowaj filtry i strone w linkach — klik nie zeruje kontekstu wyszukiwania.
         // CHAT-T-105: review_status='wszystkie' tez utrzymany (inaczej klik wracalby
         // do domyslnego trybu 'do_weryfikacji').
-        foreach (array('page', 'per_page', 'search', 'admin_status', 'knowledge_gap', 'review_status') as $k) {
+        foreach (array('page', 'per_page', 'search', 'knowledge_gap', 'review_status') as $k) {
             $v = Tools::getValue($k, '');
             if ($v !== '' && $v !== null) {
                 $url .= '&' . $k . '=' . rawurlencode((string) $v);
@@ -1419,14 +1395,14 @@ class AdminDivezoneChatController extends ModuleAdminController
         $activeClass = ($sessionId !== '' && $sessionId === $activeSessionId) ? ' is-active' : '';
         $msgPreview  = $this->truncateFirstMessage($firstMessage);
 
-        // CHAT-T-052 (poprawka 1): JEDEN div meta — data lewo, klient|status|⚠ prawo
-        // (klasa .dz-conv-item-meta ma justify-content:space-between).
+        // CHAT-T-052 (poprawka 1): JEDEN div meta — data lewo, klient|⚠ prawo.
+        // CHAT-T-105: badge starego admin_status USUNIETY (os recenzji w trybie recenzji).
         $html  = '<li><a href="' . htmlspecialchars($url, ENT_QUOTES) . '" class="dz-conv-item' . $activeClass . '">';
         $html .= '<div class="dz-conv-item-msg">' . htmlspecialchars($msgPreview, ENT_QUOTES) . '</div>';
         $html .= '<div class="dz-conv-item-meta">';
         $html .= '<span>' . htmlspecialchars($this->formatConvDate($startedAt), ENT_QUOTES) . '</span>';
         $html .= '<span>';
-        $html .= ($customerId > 0 ? '#' . $customerId : '<em>' . $this->l('gosc') . '</em>') . ' | ' . $this->renderStatusBadge($adminStatus);
+        $html .= ($customerId > 0 ? '#' . $customerId : '<em>' . $this->l('gosc') . '</em>');
         if ($knowledgeGap) {
             $html .= ' <span title="' . $this->l('luka wiedzy') . '" style="color:#d9534f;font-weight:bold;">&#9888;</span>';
         }
@@ -1532,10 +1508,8 @@ class AdminDivezoneChatController extends ModuleAdminController
         $updatedAt    = isset($resp['updated_at']) ? (string) $resp['updated_at'] : '';
         $closedAt     = isset($resp['closed_at']) ? (string) $resp['closed_at'] : '';
         $knowledgeGap = !empty($resp['knowledge_gap']);
-        $adminStatus  = (isset($resp['admin_status']) && $resp['admin_status'] !== null && $resp['admin_status'] !== '')
-            ? (string) $resp['admin_status']
-            : 'new';
-        $adminNotes   = isset($resp['admin_notes']) && $resp['admin_notes'] !== null ? (string) $resp['admin_notes'] : '';
+        // CHAT-T-105: stary admin_status/admin_notes USUNIETE — stan rozmowy prowadzi
+        // teraz dwuosiowy panel recenzji (nizej, pod trescia rozmowy).
 
         // CHAT-T-052 (poprawka 4): meta i koszty obok siebie — 2 kolumny w jednym wierszu.
         $html .= '<div class="dz-conv-meta-row">';
@@ -1549,13 +1523,13 @@ class AdminDivezoneChatController extends ModuleAdminController
             $html .= '<dt>' . $this->l('Zamknieto') . '</dt><dd>' . htmlspecialchars($this->formatConvDate($closedAt), ENT_QUOTES) . '</dd>';
         }
         $html .= '<dt>' . $this->l('Luka wiedzy') . '</dt><dd>' . ($knowledgeGap ? '<strong style="color:#d9534f">TAK</strong>' : 'nie') . '</dd>';
-        $html .= '<dt>' . $this->l('Status') . '</dt><dd>' . $this->renderStatusBadge($adminStatus) . '</dd>';
         $html .= '</dl></div>';
 
         $html .= $this->renderConvCosts($resp);
         $html .= '</div>';
 
-        $html .= $this->renderConvStatusForm($sessionId, $adminStatus, $adminNotes);
+        // CHAT-T-105: stary formularz statusu (renderConvStatusForm) USUNIETY — zastapiony
+        // panelem recenzji pod trescia rozmowy (renderReviewPanel nizej).
 
         $messages = isset($resp['messages']) && is_array($resp['messages']) ? $resp['messages'] : array();
         $html .= '<h3 style="margin:24px 0 8px;border-bottom:1px solid #ddd;padding-bottom:6px;">' . $this->l('Przebieg rozmowy') . '</h3>';
@@ -1603,45 +1577,6 @@ class AdminDivezoneChatController extends ModuleAdminController
         }
 
         $html .= '</div>';
-        return $html;
-    }
-
-    private function renderConvStatusForm($sessionId, $currentStatus, $currentNotes)
-    {
-        // POST form — action zachowuje query string (POST nie strippuje action params jak GET).
-        $action = $this->context->link->getAdminLink('AdminDivezoneChat')
-            . '&tab=' . self::TAB_CONVERSATIONS
-            . '&session_id=' . rawurlencode($sessionId);
-
-        // CHAT-T-052 (poprawka 5): 2 KOLUMNY obok siebie.
-        //  LEWA: Status (select) + przycisk "Zapisz status" pod selectem.
-        //  PRAWA: Notatki (textarea, rows=2 — nizej, dzieki przyciskowi w lewej kolumnie).
-        $html  = '<form method="post" action="' . htmlspecialchars($action, ENT_QUOTES) . '" style="margin:14px 0;padding:14px;background:#f7f9fa;border:1px solid #e2e6e8;border-radius:4px;">';
-        $html .= '<input type="hidden" name="session_id" value="' . htmlspecialchars($sessionId, ENT_QUOTES) . '">';
-
-        $html .= '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;">';
-
-        // LEWA kolumna: Status + przycisk
-        $html .= '<div>';
-        $html .= '<label style="font-weight:600;display:block;margin-bottom:4px;font-size:13px;">' . $this->l('Status') . '</label>';
-        $html .= '<select name="status" style="width:100%;padding:7px 10px;border:1px solid #ccc;border-radius:3px;background:#fff;font-size:13px;">';
-        foreach ($this->convStatusOptions() as $k => $label) {
-            $sel = $k === $currentStatus ? ' selected' : '';
-            $html .= '<option value="' . htmlspecialchars($k, ENT_QUOTES) . '"' . $sel . '>' . htmlspecialchars($label, ENT_QUOTES) . '</option>';
-        }
-        $html .= '</select>';
-        $html .= '<div style="margin-top:10px;"><button type="submit" name="submitDivezoneChatConvStatus" class="btn btn-primary" style="padding:9px 22px;background:#1a5e5a;color:#fff;border:0;border-radius:4px;font-weight:600;cursor:pointer;font-size:13px;">' . $this->l('Zapisz status') . '</button></div>';
-        $html .= '</div>';
-
-        // PRAWA kolumna: Notatki (nizsze pole, rows=2)
-        $html .= '<div>';
-        $html .= '<label style="font-weight:600;display:block;margin-bottom:4px;font-size:13px;">' . $this->l('Notatki') . '</label>';
-        $html .= '<textarea name="notes" rows="2" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #ccc;border-radius:3px;background:#fff;font-size:13px;">';
-        $html .= htmlspecialchars($currentNotes, ENT_QUOTES);
-        $html .= '</textarea>';
-        $html .= '</div>';
-
-        $html .= '</div></form>';
         return $html;
     }
 
@@ -1744,88 +1679,9 @@ class AdminDivezoneChatController extends ModuleAdminController
         return $html;
     }
 
-    /**
-     * Handler zapisu statusu rozmowy: POST /api/conversations/{sid}/status z body
-     * {status, notes}. Wynik (sukces/blad) ustawia $this->convFlash + Type dla
-     * wyswietlenia w renderConversationDetail (oraz fallback w renderConversationsList).
-     *
-     * Whitelist 4 statusow lokalnie (decyzja 105a) — odrzucamy zanim poleci POST.
-     */
-    private function handleConvStatusSave($employeeId)
-    {
-        $sessionId = trim((string) Tools::getValue('session_id', ''));
-        $status    = trim((string) Tools::getValue('status', ''));
-        $notesRaw  = Tools::getValue('notes', null);
-        $notes     = null;
-        if (is_string($notesRaw)) {
-            $notesTrim = trim($notesRaw);
-            if ($notesTrim !== '') {
-                $notes = $notesTrim;
-            }
-        }
-
-        if ($sessionId === '') {
-            $this->convFlash     = $this->l('Brak session_id — zmiana statusu nie wykonana.');
-            $this->convFlashType = 'error';
-            return;
-        }
-
-        if (!array_key_exists($status, $this->convStatusOptions())) {
-            $this->convFlash     = $this->l('Nieprawidlowy status (dozwolone: new, reviewed, knowledge_created, ignored).');
-            $this->convFlashType = 'error';
-            return;
-        }
-
-        $body     = json_encode(array('status' => $status, 'notes' => $notes));
-        $endpoint = self::ENDPOINT_CONVERSATIONS . '/' . rawurlencode($sessionId) . '/status';
-        $resp     = $this->callBackend($endpoint, $employeeId, 'POST', $body);
-
-        if (isset($resp['error'])) {
-            $httpStatus = isset($resp['http_status']) ? (int) $resp['http_status'] : 0;
-            if ($httpStatus === 401) {
-                $this->convFlash = $this->l('Brak/nieprawidlowy token kanalu serwerowego. Sprawdz konfiguracje modulu (Sekret SERWEROWY).');
-            } elseif ($httpStatus === 403) {
-                $this->convFlash = $this->l('Brak roli (no_role): konto nie ma roli w divechat_admin_roles. Operator/admin moze zmieniac status rozmow.');
-            } else {
-                $this->convFlash = $this->l('Blad zapisu statusu:') . ' ' . (string) $resp['error'];
-            }
-            $this->convFlashType = 'error';
-            return;
-        }
-
-        if (isset($resp['success']) && $resp['success']) {
-            $this->convFlash     = $this->l('Status rozmowy zapisany.');
-            $this->convFlashType = 'success';
-        } else {
-            $this->convFlash     = $this->l('Zapisano, ale backend nie potwierdzil success.');
-            $this->convFlashType = 'success';
-        }
-    }
-
-    /**
-     * Mapowanie statusow (decyzja 105a): wartosci EN = klucz wysylany do backendu,
-     * etykiety PL = wyswietlane operatorowi. NIE zmieniac wartosci EN — backend
-     * waliduje whitelist ['new','reviewed','knowledge_created','ignored'].
-     */
-    private function convStatusOptions()
-    {
-        return array(
-            'new'               => $this->l('nowa'),
-            'reviewed'          => $this->l('przejrzana'),
-            'knowledge_created' => $this->l('wiedza utworzona'),
-            'ignored'           => $this->l('zignorowana'),
-        );
-    }
-
-    private function renderStatusBadge($status)
-    {
-        $opts  = $this->convStatusOptions();
-        $label = isset($opts[$status]) ? $opts[$status] : $status;
-        // Klucz CSS = oczyszczony status (only a-z + _).
-        $cssKey = preg_replace('/[^a-z_]/', '', strtolower((string) $status));
-        $class  = 'dz-status-badge dz-status-' . ($cssKey !== '' ? $cssKey : 'new');
-        return '<span class="' . $class . '">' . htmlspecialchars($label, ENT_QUOTES) . '</span>';
-    }
+    // CHAT-T-105 (ADR-102): handleConvStatusSave + convStatusOptions + renderStatusBadge
+    // (stary jednoosiowy status CHAT-T-048) USUNIETE. Os pracy/jakosci prowadzi teraz
+    // wylacznie panel recenzji (renderReviewPanel/handleReviewSave, sekcja nizej).
 
     private function formatConvDate($iso)
     {
