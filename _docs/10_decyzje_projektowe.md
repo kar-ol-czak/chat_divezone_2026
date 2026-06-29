@@ -3192,3 +3192,44 @@ Po CHAT-T-089 liść `ai` wysyłał do LLM samą etykietę chipa (np. „Kaptur"
 - Ryzyko: część liści (jacket 13, niektóre rozmiary) ma mało danych — `ai_prompt` oparty na regułach domenowych, nie na bogatej próbce; do rewizji za ~3 mies. na większym zbiorze. „Zestaw maska z fajką" może się mylić z „Sprzęt na start" — rozdzielone w `ai_prompt`.
 
 **Do rewizji (~3 mies.):** przegląd `ai_prompt` wszystkich liści na większym zbiorze rozmów (dziś 772 → wtedy kilka×). Wtedy też decyzja, czy któryś liść AI zasługuje na Level 3 (np. komputer wg poziomu), gdy pojawi się wyraźny wzorzec.
+
+
+---
+
+### ADR-104: Odporność backendu na niedostępność Railway — retry/reconnect (SOFT/HARD) + fallback-cache
+
+**Data:** 2026-06-29 | **Status:** PRZYJĘTA | **Powiązane:** ADR-019 (migracja Aiven→Railway), ADR-089 (deploy STOP), CHAT-T-107 (implementacja), CHAT-T-108 (monitoring). **Decyzje Karola:** P34a (zakres), P36c (rozróżnienie błędów), P37c (trzy komunikaty), P46b (czat wraca po wdrożeniu odporności, bez czekania 72h). **Incydent:** 2026-06-28, godzinna seria błędów połączenia z Railway (16:23–17:15 UTC).
+
+**Problem:** Gdy Railway zrywa/odrzuca połączenia (`could not connect`, `server closed the connection unexpectedly`, `no connection to the server`), backend NIE degradował — `PostgresConnection` wypuszczał goły `PDOException` (fatal w `:51`), kładąc całe żądanie. RateLimiter był fail-open (dobrze), ale `SettingsStore`, `ChipTreeService` i `ChatController` nie miały fallbacku → czat na stronie nie działał ~godzinę.
+
+**Decyzja:**
+
+1. **Rozróżnienie dwóch klas błędu połączenia (P36c)** — różny optymalny czas reakcji dla klienta:
+   - **ZERWANIE (SOFT):** połączenie żyło, padło mid-query (`server closed the connection`, `57P01`, `no connection to the server`, `08006`). → retry MA SENS: max 3 próby, backoff 100/300 ms, zerowanie `pdo=null` + reconnect.
+   - **NIEOSIĄGALNE (HARD):** host leży (`could not connect`, `Connection timed out/refused`, DNS). → retry nie pomoże: TYLKO 1 próba z `connect_timeout=2s`, od razu breaker. Nie marnujemy 15s klienta na 3×5s.
+   - Błędy nie-połączeniowe (składnia/constraint) → rzucane od razu, bez retry. Klasyfikacja: komunikat PRZED SQLSTATE (08006 występuje i przy refused, i przy dropie).
+
+2. **`DbUnavailableException` z flagą SOFT/HARD** zamiast gołego `PDOException` — sygnalizuje warstwie wyżej „baza chwilowo niedostępna" + zasila komunikat klienta. **Circuit-breaker per-request:** pierwsze zapytanie płaci pełny koszt, kolejne w tym żądaniu fail-fast (zapamiętana flaga) — bez tego N odczytów configu × timeout = dziesiątki sekund.
+
+3. **Trzy komunikaty dla klienta wg stanu (P37c)**, trzymane jako stałe w `ChatController` (łatwa edycja tekstu):
+   - **retry-success** (połączenie wróciło w 2-3 próbie): odpowiedź normalna + opcjonalna flaga `delayed_retry` (front może pokazać „chwilę to zajęło").
+   - **SOFT** (zerwanie, retry nie pomógł): „Mamy chwilowy problem z połączeniem. Spróbuj wysłać wiadomość ponownie za moment." (dane z cache działają).
+   - **HARD** (Railway nieosiągalne): uczciwie + KONTAKT DO CZŁOWIEKA — `dive@divezone.pl` / `56 307 03 03` (żeby klient nie utknął w martwym czacie). W SSE emitowane jako `event: done` (wiadomość bota), NIE `event: error`.
+
+4. **Fallback-cache dla odczytów krytycznych** (`FileCache`, plikowy — APCu brak na ea-php84; `var/cache/` poza docrootem + `.htaccess deny`). `SettingsStore` i `ChipTreeService`: po udanym odczycie cache'ują wynik; przy `DbUnavailableException` degradują: świeży TTL 300s → last-known-good (dowolny wiek) → default/[] (settings) / puste drzewo (chip-tree). Zapisy są write-through (admin widzi błąd przy padzie — nie udajemy udanego zapisu).
+
+5. **Zasada twarda: żaden odczyt konfiguracji nie kładzie czata.** Ścieżka `/api/chat` (stream) degraduje z właściwym komunikatem zamiast 500/fatal nawet przy 100% niedostępności Railway. Zapisy (nudge, rate-limit, cost-guard) zostają fail-open (logują, nie przerywają).
+
+6. **Smoke z rozróżnieniem źródła (Sprawa 3):** `/api/chip-tree` zwraca nagłówek `X-DiveChat-Chip-Source: db|cache`. „Smoke OK" = „z DB OK", nie „cache zamaskował leżącą bazę" — jeśli flaga = cache podczas deployu, to możliwe trafienie w okno zrywania Railway (zgłoś, nie raportuj jako pełny sukces).
+
+**Alternatywy rozważane:**
+- Jednolite traktowanie wszystkich błędów połączenia (3 próby zawsze): odrzucone — przy host-down marnuje ~15s klienta na pewną degradację (P36c).
+- Jeden uniwersalny komunikat degradacji: odrzucone — SOFT (przejściowe, „spróbuj ponownie") i HARD (twarda awaria, kontakt do człowieka) wymagają innej reakcji klienta (P37c).
+- Lokalny bufor zapisów / warstwa lokalnej bazy (P34b/P34c): odrzucone teraz — poza zakresem; monitoring = CHAT-T-108.
+
+**Konsekwencje:**
+- Pozytywne: pojedynczy epizod zrywania Railway nie kładzie czata; degradacja przy host-down w ~2-3s, nie 15s; klient w twardej awarii dostaje drogę do człowieka; chip-tree i settings działają z cache nawet przy leżącej bazie.
+- Koszt: nowe klasy (`DbUnavailableException`, `FileCache`); `PostgresConnection.query/fetchAll/fetchOne` opakowane w `executeWithRetry`; cache plikowy do utrzymania (TTL 300s, `var/cache/` na serwerze).
+- Ryzyko: TTL 300s = w skrajnym oknie tuż po zmianie settings i jednoczesnym padzie bazy klient może dostać wartość sprzed ≤5 min (akceptowalne — to bezpiecznik awaryjny, nie ścieżka normalna). Pad zapisu mid-stream (po udanym LLM) zwraca komunikat degradacji mimo poniesionego kosztu LLM — rzadki edge case.
+
+**Implementacja:** CHAT-T-107 — `PostgresConnection`, `DbUnavailableException`, `FileCache`, `SettingsStore`, `ChipTreeService`, `ChipTreeController`, `ChatController`, test izolowany `DbResilienceTest` (35/35, zahardkodowany zły DSN). Regresja CHAT-T-106 41/41.
