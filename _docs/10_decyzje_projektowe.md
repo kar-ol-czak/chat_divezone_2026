@@ -3301,3 +3301,16 @@ Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?sta
 **Konsekwencje:** czyste ceny w JSON do modelu (i każdego klienta API). Globalny zasięg — dotyczy wszystkich endpointów przez index.php.
 
 **Implementacja:** CHAT-T-118, commit `37aa2f6`, deploy na prod (`chat.divezone.pl/public/index.php`, md5 `19d4cadc`, `php -l` ea-php84 czysto). Smoke: `/api/health` 200; real-path z `ini_set(-1)` → `ProductDetails` 5986 = `{"price":2380,"price_eur":566.28,"price_before_discount_eur":641.71}` (bez ogona); `ini_get('serialize_precision')`=-1 (serwer honoruje w runtime).
+
+
+---
+
+### ADR-107: Paczkomat NIE jako sposób odsyłania sprzętu DO nas (serwis/zwrot/reklamacja) — kurier na adres
+
+**Data:** 2026-06-29 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-117 (implementacja), ADR-105 (poprzednie poprawki promptu z analizy czatów). **Decyzje Karola:** 45b, 46a. **Źródło:** analiza czatów 2026-06-29 wzorzec P7 (czat 442).
+
+**Problem:** W czacie 442 (serwis automatu) bot napisał, że automat do serwisu można odesłać „dowolną paczkomatą — jak Ci wygodniej". BŁĄD: NIE odbieramy paczek z paczkomatów. Przesyłka DO nas (serwis, zwrot, reklamacja) musi przyjść KURIEREM pod adres ul. Storczykowa 5, 87-100 Toruń.
+
+**Decyzja (45b):** każda przesyłka DO nas (serwis/zwrot/reklamacja) → KURIER na adres, NIGDY paczkomat. **Krytyczne rozróżnienie kierunku:** paczkomat InPost jako DOSTAWA ZAKUPÓW DO KLIENTA pozostaje prawidłową, oferowaną metodą (SystemPrompt l.108 doręczenia sobotnie, l.146 InPost EU, l.647 get_shipping_info) — NIETKNIĘTE. Poprawka dotyczy WYŁĄCZNIE kierunku odwrotnego (klient → sklep). Decyzja 46a: na teraz bot mówi po prostu „kurier na adres", BEZ wprowadzania usługi „InPost Paczkomat Kurier" (do ewentualnego dodania później po potwierdzeniu Karola).
+
+**Implementacja:** CHAT-T-117 (`SystemPrompt.php`, +2/-1): blok ZWROTY — nowy bullet (zwrot/reklamacja kurierem na adres, nie paczkomat); blok SERWIS AUTOMATU — „dowolnym kurierem" → „WYŁĄCZNIE kurierem" + jawny zakaz paczkomatu. Commit `d720e8e`, deploy na prod (md5 `ba028f92`, `php -l` ea-php84 czysto, `/api/health` 200). grep `paczkomat`: 3 miejsca DOSTAWY do klienta nietknięte; 2 nowe reguły kierunku DO nas.
