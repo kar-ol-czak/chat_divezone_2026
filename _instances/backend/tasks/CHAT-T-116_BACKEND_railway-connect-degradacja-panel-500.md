@@ -28,11 +28,24 @@ Panel recenzji (zakładka Rozmowy, domyślny widok `nowy`): „Blad pobrania lis
 
 **Wniosek:** degradacja ścieżki sieciowej hosting (smarthost.pl) → Railway TCP proxy. Railway żyje (lokalnie szybkie), ale połączenie z serwera jest wolne/zrywane. CHAT-T-107 (circuit-breaker) działa zgodnie z projektem (fail-fast), ale underlying connect ciągle pada.
 
+### POTWIERDZENIE: test RÓWNOLEGŁY local vs server (2026-06-29 18:58–18:59) — to HOSTING, NIE Railway
+TCP connect do `switchback.proxy.rlwy.net:14368`, te same sekundy:
+- **LOCAL (komp Karola):** 12/12 OK, 29–38 ms, ZERO degradacji w całym oknie.
+- **SERVER (smarthost):** OK ~38 ms → potem 1059/1061/1088 ms → **2× FAIL „Connection timed out" 7094 ms**.
+- W tych samych znacznikach czasu LOCAL=30 ms gdy SERVER=1000 ms+/timeout.
+
+→ Railway sprawne i szybkie z innej sieci w tym samym momencie. **Problem jest po stronie hostingu smarthost.pl (egress/routing/throttling do Railway), NIE Railway, NIE kod aplikacji, NIE connection-pooling.** `08006 timeout expired` to skutek tego, że serwer nie potrafi otworzyć socketu TCP (warstwa PG nie może być szybsza niż TCP).
+
 ## Co już zrobione (frontend, CHAT-T-113, NIE ruszać — to nie fix infra)
 - Moduł PS: czytelny komunikat „Baza chwilowo niedostępna (Railway) — odśwież panel" zamiast surowego błędu JSON (5xx/timeout/puste). Commit `cd4c152`, na PROD.
 - Repo: mniej round-tripów do Railway — `COUNT(*) OVER()` w listach (2→1 zapytanie) + `countsByStatus` w 1 zapytaniu (2→1). Widok `nowy` z ~5 do ~3 zapytań/request. Pomaga gdy połączenie wolne, NIE gdy zrywa na connectcie.
 
-## Kierunki do rozważenia (backend — wybierz/zmierz)
+## Kierunki do rozważenia
+
+### PRIORYTET 0 — HOSTING (to jest root cause, poza kodem)
+0. **Zgłoszenie do smarthost.pl** z dowodem z testu równoległego: „serwer nie potrafi stabilnie otworzyć TCP do `switchback.proxy.rlwy.net:14368` (1–7 s, timeouty), podczas gdy z innej sieci ten sam endpoint odpowiada w 30 ms w tym samym czasie". Pytania: throttling/limit połączeń wychodzących? routing/MTU do regionu Railway? firewall/conntrack? Możliwy traceroute/mtr z serwera do endpointu Railway w załączniku. **To naprawia problem u źródła — reszta poniżej to tylko łagodzenie skutków.**
+
+### Łagodzenie w kodzie (band-aid, NIE usuwa przyczyny)
 1. **Reuse połączenia / persistent.** Zweryfikować, czy `PostgresConnection` (singleton per-request) otwiera 1 połączenie i reużywa je dla wszystkich zapytań requestu — czy `executeWithRetry` przy zerwaniu NIE reconnectuje wielokrotnie (1–3 s connect każdorazowo → stackuje do 30–120 s). Rozważyć `PDO::ATTR_PERSISTENT` (UWAGA: limity połączeń Railway) lub świadome ograniczenie reconnectów.
 2. **connect_timeout / statement_timeout.** Sprawdzić aktualne wartości w DSN/PDO. 30 s connect timeout × retry = 90–120 s (widziane). Krótszy connect_timeout + szybszy fail + czytelny 503 zamiast wiszenia.
 3. **Backoff/retry w `executeWithRetry`.** Czy retry nie pogarsza (każda próba = nowy wolny connect)? Może mniej prób, szybszy hard-fail → 503 z JSON `{error:...}` (NIE puste body — moduł i tak teraz to obsłuży, ale czysty JSON 503 lepszy).
