@@ -31,6 +31,13 @@ final class ChipTreeController
             Response::error('Chip tree unavailable', 503);
         }
 
+        // CHAT-T-107 (P36c/Sprawa 3): sygnalizuj zrodlo dla smoke — naglowkiem,
+        // bez zmiany ksztaltu body (zero ryzyka dla widgetu/ETag). 'db' = swiezo
+        // z Railway, 'cache' = degradacja (Railway niedostepne → cache/puste).
+        // "Smoke OK" znaczy "z DB OK", nie "cache zamaskowal lezaca baze".
+        $degraded = $this->service->wasDegraded();
+        header('X-DiveChat-Chip-Source: ' . ($degraded ? 'cache' : 'db'));
+
         Response::jsonCached(
             ['tree' => $tree],
             $request->getHeader('if-none-match'),

@@ -9,6 +9,8 @@ use DiveChat\Chat\ChatService;
 use DiveChat\Chat\ConversationStore;
 use DiveChat\Chat\SettingsStore;
 use DiveChat\Config;
+use DiveChat\Database\PostgresConnection;
+use DiveChat\Exception\DbUnavailableException;
 use DiveChat\Http\Request;
 use DiveChat\Http\Response;
 use DiveChat\Usage\CostGuard;
@@ -98,6 +100,18 @@ final class ChatController
     private const RATE_LIMIT_MESSAGE = 'Wysłałeś wiele wiadomości w krótkim czasie. Odczekaj chwilę albo napisz na dive@divezone.pl / 56 307 03 03.';
 
     /**
+     * Komunikaty degradacji przy niedostępności bazy (Railway) — CHAT-T-107 (P37c).
+     * Trzymane w jednym miejscu (łatwa edycja tekstu bez grzebania w logice).
+     * Zamiast 500/fatal zwracamy grzeczną wiadomość bota (HTTP 200 / SSE done).
+     *
+     * SOFT = zerwanie przejściowe (retry nie pomógł, ale dane z cache działają).
+     * HARD = Railway nieosiągalne (twarda awaria) → uczciwie + kontakt do człowieka.
+     */
+    private const DB_SOFT_MESSAGE = 'Mamy chwilowy problem z połączeniem. Spróbuj wysłać wiadomość ponownie za moment.';
+
+    private const DB_HARD_MESSAGE = 'Mamy przejściowe problemy techniczne i czat może teraz nie odpowiadać w pełni. Jeśli sprawa jest pilna, napisz na dive@divezone.pl lub zadzwoń 56 307 03 03 — chętnie pomożemy.';
+
+    /**
      * Sprawdza cap kosztow + ewentualnie wysyla alert. Idempotentnie.
      * Zwraca true jesli cap PRZEKROCZONY (caller ma NIE wolac LLM).
      */
@@ -180,6 +194,36 @@ final class ChatController
             'conversation_cost' => null,
             'diagnostics' => [$reasonKey => true],
         ];
+    }
+
+    /**
+     * Payload degradacji DB wg flagi wyjątku (CHAT-T-107 P37c): HARD → komunikat
+     * z kontaktem, SOFT → "spróbuj za moment". Reason-key rozróżnia oba na froncie.
+     */
+    private function dbDegradePayload(DbUnavailableException $e, string $sessionId): array
+    {
+        $hard = $e->isHard();
+        return $this->gatePayload(
+            $hard ? self::DB_HARD_MESSAGE : self::DB_SOFT_MESSAGE,
+            $sessionId,
+            $hard ? 'db_unavailable_hard' : 'db_unavailable_soft',
+        );
+    }
+
+    /**
+     * Dokleja flagę `delayed_retry` gdy odpowiedź udała się dopiero po reconnect
+     * (CHAT-T-107 P37c — retry-success). Front może opcjonalnie pokazać krótką
+     * notkę "Chwilę to zajęło"; funkcjonalnie wszystko działa, był tylko lag.
+     *
+     * @param array<string, mixed> $diagnostics
+     * @return array<string, mixed>
+     */
+    private function mergeDelayed(array $diagnostics): array
+    {
+        if (PostgresConnection::getInstance()->wasDelayed()) {
+            $diagnostics['delayed_retry'] = true;
+        }
+        return $diagnostics;
     }
 
     /**
@@ -288,8 +332,13 @@ final class ChatController
                 'products' => $result['products'],
                 'usage' => $result['usage'],
                 'conversation_cost' => $result['conversation_cost'],
-                'diagnostics' => $result['diagnostics'],
+                'diagnostics' => $this->mergeDelayed($result['diagnostics']),
             ]);
+        } catch (DbUnavailableException $e) {
+            // CHAT-T-107 (P37c): Railway niedostepne — grzeczna wiadomosc bota
+            // (HTTP 200), NIE 500/fatal. Komunikat wg flagi SOFT/HARD.
+            error_log('[ChatController] Railway niedostepne (handle, ' . $e->kind() . '): ' . $e->getMessage());
+            Response::json($this->dbDegradePayload($e, $sessionId));
         } catch (\Throwable $e) {
             $errorMessage = Config::isDebug()
                 ? $e->getMessage()
@@ -403,8 +452,17 @@ final class ChatController
                 'products' => $result['products'],
                 'usage' => $result['usage'],
                 'conversation_cost' => $result['conversation_cost'],
-                'diagnostics' => $result['diagnostics'],
+                'diagnostics' => $this->mergeDelayed($result['diagnostics']),
             ], JSON_UNESCAPED_UNICODE) . "\n\n";
+            flush();
+        } catch (DbUnavailableException $e) {
+            // CHAT-T-107 (P37c): Railway niedostepne — emituj `done` z wiadomoscia bota
+            // (NIE `error`), front pokaze jako odpowiedz. Komunikat wg flagi SOFT/HARD.
+            error_log('[ChatController] Railway niedostepne (stream, ' . $e->kind() . '): ' . $e->getMessage());
+            echo "event: done\ndata: " . json_encode(
+                $this->dbDegradePayload($e, $sessionId),
+                JSON_UNESCAPED_UNICODE,
+            ) . "\n\n";
             flush();
         } catch (\Throwable $e) {
             $errorMessage = Config::isDebug()

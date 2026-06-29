@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace DiveChat\Chip;
 
+use DiveChat\Support\FileCache;
 use DiveChat\Database\PostgresConnection;
+use DiveChat\Exception\DbUnavailableException;
 
 /**
  * Odczyt drzewa chipów z PG i złożenie zagnieżdżenia po parent_id (ADR-096).
@@ -19,25 +21,61 @@ use DiveChat\Database\PostgresConnection;
  */
 final class ChipTreeService
 {
+    private const TTL = 300;
+    private const CACHE_KEY = 'chip_tree';
+
+    private bool $degraded = false;
+
     public function __construct(
         private readonly PostgresConnection $db,
+        private readonly ?FileCache $cache = null,
     ) {}
 
     /**
      * Całe aktywne drzewo od korzeni (parent_id IS NULL), zagnieżdżone.
      *
+     * CHAT-T-107: drzewo to dane rzadko zmienne — po udanym zbudowaniu cache'ujemy
+     * cały wynik. Przy niedostepnosci Railway (DbUnavailableException) degradujemy:
+     * cache swiezy (TTL 300s) → last-known-good → puste drzewo (widget toleruje
+     * puste — istniejacy kontrakt). NIGDY nie rzucamy do uzytkownika.
+     *
      * @return list<array<string, mixed>>
      */
     public function getTree(): array
     {
-        $rows = $this->db->fetchAll(
-            "SELECT id, node_key, parent_id, level, sort_order, label, bot_text, buttons, context_hint, model_level, ai_prompt
-             FROM divechat_chip_nodes
-             WHERE active = TRUE
-             ORDER BY parent_id NULLS FIRST, sort_order, id",
-        );
+        $this->degraded = false;
+        $cache = $this->cache ?? new FileCache();
+        try {
+            $rows = $this->db->fetchAll(
+                "SELECT id, node_key, parent_id, level, sort_order, label, bot_text, buttons, context_hint, model_level, ai_prompt
+                 FROM divechat_chip_nodes
+                 WHERE active = TRUE
+                 ORDER BY parent_id NULLS FIRST, sort_order, id",
+            );
 
-        return self::buildTree($rows, $this->loadLinkMap());
+            $tree = self::buildTree($rows, $this->loadLinkMap());
+            $cache->set(self::CACHE_KEY, $tree);
+            return $tree;
+        } catch (DbUnavailableException $e) {
+            $this->degraded = true;
+            [$fresh, $val] = $cache->getFresh(self::CACHE_KEY, self::TTL);
+            if ($fresh) {
+                return $val;
+            }
+            [$any, $lkg] = $cache->getAny(self::CACHE_KEY);
+            if ($any) {
+                error_log('[ChipTreeService] Railway down — last-known-good drzewa chipow');
+                return $lkg;
+            }
+            error_log('[ChipTreeService] Railway down + brak cache → puste drzewo (degradacja)');
+            return [];
+        }
+    }
+
+    /** Czy ostatni getTree() zwrocil dane z degradacji (Railway niedostepne). */
+    public function wasDegraded(): bool
+    {
+        return $this->degraded;
     }
 
     /**
