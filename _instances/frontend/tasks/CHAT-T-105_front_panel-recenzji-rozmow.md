@@ -2,8 +2,21 @@
 
 **Instancja:** frontend (panel admina PS, moduł `divezone_chat`)
 **ADR:** ADR-102 | **Powiązane:** ADR-070 (panel PS = jedyny front admina)
-**Status:** DO WYKONANIA — **START po dostarczeniu kontraktu API z CHAT-T-104.**
-**Zależność:** kształt odpowiedzi endpointów `/api/admin/review` (CHAT-T-104, KROK 7).
+**Status:** KOD GOTOWY (commit 86c75de na main, php -l clean), MODUŁ NIE WGRANY — czeka na ręczny upload Karola + test ręczny KROK 4. Kontrakt API z CHAT-T-104 DOSTARCZONY (niżej), backend wdrożony.
+**Zależność:** SPEŁNIONA — endpointy `/api/admin/review` działają na produkcji (zweryfikowane 2026-06-29).
+
+## Kontrakt API (CHAT-T-104, zweryfikowany na prod 2026-06-29)
+
+Enumy (muszą pasować do CHECK constraint migracji 037):
+- `status` (oś pracy): `nowy` / `do_weryfikacji` / `w_trakcie` / `zamkniety`. DEFAULT = `do_weryfikacji`.
+- `verdict` (oś jakości): `ok` / `problem_do_rozwiazania` / `problem_rozwiazany`. NULL dopóki recenzent nie domknie.
+
+Endpointy (kanał uwierzytelniony `DIVECHAT_SERVER_SECRET`, jak reszta admin API):
+- `GET /api/admin/review?status=&limit=&offset=` — lista rozmów o danym statusie (default `do_weryfikacji`), sort malejąco po `updated_at`, paginacja. ZAWSZE zwraca też `counts` (liczniki per status, CHAT-T-106) niezależnie od filtra. 422 przy złym enumie statusu.
+- `GET /api/admin/review/{conversationId}` — pojedyncza recenzja.
+- `POST /api/admin/review/{conversationId}` — upsert (`status?`, `verdict?`, `note?`, `id_employee`). Pola opcjonalne (można zmienić sam status bez notatki).
+
+UWAGA: panel obecnie pokazuje STARY dropdown z CHAT-T-048 (`new/reviewed/knowledge_created/ignored`, endpoint `/api/conversations/{sid}/status`). CHAT-T-105 ma go ZASTĄPIĆ dwuosiowym review wołającym `/api/admin/review`. Stary mechanizm CHAT-T-048 → do usunięcia/zastąpienia (nie zostawiać obok — pomieszanie osi, którego ADR-102 świadomie unika).
 
 ## Kontekst
 
@@ -46,9 +59,11 @@ Miejsce: zakładka rozmów panelu PS (ADR-070, struktura 3-zakładkowa: Rozmowy 
 
 **KROK 7 — raport.** Zwięźle: co dodane na liście i w modalu, jak rozwiązane mapowanie `id_employee→nazwa`, wynik testu ręcznego, info że moduł czeka na ręczny upload Karola.
 
-## Wynik (2026-06-28)
+## Wynik (2026-06-28, iter.2 2026-06-29)
 
-**Status:** KOD GOTOWY, `php -l` clean. Moduł NIE wgrany — czeka na ręczny upload Karola (KROK 5, rsync port 5739 → `~/public_html/newtmp2`, `--exclude config_pl.xml`, bez `--delete`). Test ręczny (KROK 4) wykonuje Karol po uploadzie (wymaga żywego panelu PS).
+**Status:** KOD GOTOWY, `php -l` clean (commity `86c75de` + `83fbea2` + `75f2940`). Moduł NIE wgrany — czeka na ręczny upload Karola (KROK 5, rsync port 5739 → `~/public_html/newtmp2`, `--exclude config_pl.xml`, bez `--delete`). Granica 116b/ADR-089: CC NIE dotyka żywego docrootu PS bez explicit zgody per plik. Test ręczny (KROK 4) wykonuje Karol po uploadzie (wymaga żywego panelu PS).
+
+**iter.2 (commit `75f2940`) — usunięcie starego jednoosiowego statusu CHAT-T-048** (wg UWAGA w nagłówku tasku, ADR-102 unika mieszania osi): usunięty formularz `admin_status` w modalu (`renderConvStatusForm`) + handler + dispatch + wiersz „Status" w meta + `POST /api/conversations/{sid}/status`; usunięty filtr `admin_status` i badge statusu na liście + martwe `convStatusOptions`/`renderStatusBadge`/CSS `.dz-status-*`. Zostaje: wyszukiwarka + filtr luk wiedzy (sygnał niezależny od osi recenzji) + dwuosiowy panel recenzji. `counts` per status (CHAT-T-106) NIE użyte — to osobny task.
 
 Wszystko w JEDNYM pliku: `modules/divezone_chat/controllers/admin/AdminDivezoneChatController.php` (zakładka „Rozmowy", render natywny PS, bez JS/iframe — wzorzec server-side full-reload jak reszta panelu; ZERO sendBeacon, więc reguła Blob/x-www-form-urlencoded nie dotyczy).
 
