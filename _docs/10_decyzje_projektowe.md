@@ -3237,3 +3237,25 @@ Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?sta
 - Ryzyko: TTL 300s = w skrajnym oknie tuż po zmianie settings i jednoczesnym padzie bazy klient może dostać wartość sprzed ≤5 min (akceptowalne — to bezpiecznik awaryjny, nie ścieżka normalna). Pad zapisu mid-stream (po udanym LLM) zwraca komunikat degradacji mimo poniesionego kosztu LLM — rzadki edge case.
 
 **Implementacja:** CHAT-T-107 — `PostgresConnection`, `DbUnavailableException`, `FileCache`, `SettingsStore`, `ChipTreeService`, `ChipTreeController`, `ChatController`, test izolowany `DbResilienceTest` (35/35, zahardkodowany zły DSN). Regresja CHAT-T-106 41/41.
+
+
+---
+
+### ADR-105: Trzy poprawki SystemPrompt z analizy czatów — cena (bez proaktywnego disclaimera), serwis@ + link serwisu, B2B = link zamiast odmowy
+
+**Data:** 2026-06-29 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-114 (implementacja), CHAT-T-091 (WCHŁONIĘTY — serwis@), decyzja 27 (serwis@ dla spraw serwisowych), decyzja 29a (stałe zaszyte w prompcie, bez configu), CHAT-T-063 (blok CENY — UCZCIWA NIEPEWNOŚĆ). **Źródło:** analiza 27 czatów `do_weryfikacji` + przeszukanie korpusu 2026-06-29.
+
+**Problem:** Analiza realnych rozmów ujawniła trzy powtarzalne wzorce słabej odpowiedzi bota: (1) proaktywny disclaimer „Aktualną cenę potwierdź na karcie produktu" pojawiał się w prawie każdej odpowiedzi produktowej (44 czaty) — szum, którego klient nie potrzebuje; (2) sprawy serwisowe kierowały na ogólny `dive@divezone.pl` bez linku do strony serwisu (10 czatów); (3) pytania B2B/hurt/współpraca dostawały twardą odmowę „nie zajmujemy się tym" (21 czatów) — mimo że program B2B realnie istnieje.
+
+**Decyzja (3 niezależne poprawki, 1 plik `SystemPrompt.php`, 1 deploy):**
+1. **Cena — usunąć proaktywny disclaimer.** Zniknął punkt „DISCLAIMER CENY" ze STRUKTURY ODPOWIEDZI oraz proaktywna instrukcja w bloku CENY. **ZOSTAJE:** zakaz deklarowania „cena na pewno aktualna" (ochrona przed odwrotnym błędem) oraz uczciwa odpowiedź GDY KLIENT PYTA WPROST „czy cena aktualna?". Bot przestaje wstawiać disclaimer z automatu, ale nadal odpowiada uczciwie na bezpośrednie pytanie.
+2. **Serwis — `serwis@divezone.pl` + link strony serwisu (PL/EN wg języka).** W trzech kontekstach serwisowych (SERWIS AUTOMATU, SCOPE-004 części serwisowe, DOMAIN-006 konserwacja): `dive@` → `serwis@divezone.pl` + link do strony serwisu. Reguła językowa: rozmowa PL → link PL (`/serwis-automatow-oddechowych-i-innego-sprzetu-nurkowego`), rozmowa EN → link EN (`/en/scuba-regulators-and-other-diving-equipment-service`). Stałe zaszyte w prompcie (29a). **Pozostałe ~28 wystąpień `dive@`** (zamówienia, dobór, godziny, zwroty, dziennikarz) — NIETKNIĘTE; NIE globalny find-replace.
+3. **B2B — link zamiast odmowy.** Reguła JAIL-002 przestaje odmawiać istnienia programu: pytanie o współpracę B2B/hurt/cennik hurtowy/program dla instruktorów → link `https://divezone.pl/b2b`. NADAL: nie negocjujemy konkretnych warunków/cenników w czacie. **ROZRÓŻNIENIE (krytyczne):** reguła „NIE polecamy KONKRETNYCH instruktorów/szkół" (ocena osób) — BEZ ZMIAN; B2B-program ≠ ocena instruktora.
+
+**Konsekwencje:**
+- Pozytywne: odpowiedzi produktowe czystsze (bez powtarzalnego disclaimera); sprawy serwisowe trafiają na właściwy adres + stronę z procedurą i cennikiem; B2B to teraz lead, nie odbicie.
+- Wchłonięcie: **CHAT-T-091 ZAMKNIĘTY** (jego zakres = serwis@ w SystemPrompt — zrealizowany tutaj; jego założenie o `sql/035` było nieaktualne).
+- Uwaga językowa: reguła PL/EN linku serwisu to lokalny zalążek — pełna obsługa EN całego prompta to osobny task językowy.
+- Odchył od pierwotnej treści taska: punkt B2B miał dodatkowo kierować na `dive@`; pominięto, by utrzymać twardy warunek „`dive@` ubywa dokładnie 3" (31→28) — szczegóły kontaktu B2B są na stronie `/b2b`.
+
+**Implementacja:** CHAT-T-114, commit `ca71d43`, deploy na prod (chat.divezone.pl, md5 `1456ca6`, `php -l` ea-php84 czysto). `dive@` 31→28, „Aktualną cenę potwierdź" proaktywne → 0.
