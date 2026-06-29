@@ -1545,8 +1545,13 @@ JS;
         $html .= $this->renderConvFilters($search, $knowledgeGap);
 
         if (isset($resp['error'])) {
+            $httpStatus = isset($resp['http_status']) ? (int) $resp['http_status'] : 0;
             $html .= '<p style="color:#a94442;background:#f2dede;padding:10px;margin:14px;border:1px solid #ebccd1;border-radius:3px;">';
-            $html .= '<strong>' . $this->l('Blad pobrania listy:') . '</strong> ' . htmlspecialchars((string) $resp['error'], ENT_QUOTES);
+            if ($this->isBackendDown($resp, $httpStatus)) {
+                $html .= '<strong>' . htmlspecialchars($this->backendDownMessage(), ENT_QUOTES) . '</strong>';
+            } else {
+                $html .= '<strong>' . $this->l('Blad pobrania listy:') . '</strong> ' . htmlspecialchars((string) $resp['error'], ENT_QUOTES);
+            }
             $html .= '</p>';
             $html .= '</div></div>';
             return $html;
@@ -1736,8 +1741,13 @@ JS;
         }
 
         if (isset($resp['error'])) {
+            $httpStatus = isset($resp['http_status']) ? (int) $resp['http_status'] : 0;
             $html .= '<p style="color:#a94442;background:#f2dede;padding:10px;border:1px solid #ebccd1;border-radius:3px;">';
-            $html .= '<strong>' . $this->l('Blad pobrania szczegolow:') . '</strong> ' . htmlspecialchars((string) $resp['error'], ENT_QUOTES);
+            if ($this->isBackendDown($resp, $httpStatus)) {
+                $html .= '<strong>' . htmlspecialchars($this->backendDownMessage(), ENT_QUOTES) . '</strong>';
+            } else {
+                $html .= '<strong>' . $this->l('Blad pobrania szczegolow:') . '</strong> ' . htmlspecialchars((string) $resp['error'], ENT_QUOTES);
+            }
             $html .= '</p>';
             $html .= '</div></div>';
             return $html;
@@ -2188,6 +2198,12 @@ JS;
      */
     private function reviewErrorMessage($resp, $httpStatus, $prefix)
     {
+        // CHAT-T-113: 500/brak odpowiedzi/timeout = baza (Railway) chwilowo niedostepna.
+        // Czytelny komunikat zamiast surowego "Niepoprawna odpowiedz JSON" (puste 500
+        // z circuit-breakera PostgresConnection przy zrywaniu polaczenia z Railway).
+        if ($this->isBackendDown($resp, $httpStatus)) {
+            return $this->backendDownMessage();
+        }
         if ($httpStatus === 401) {
             return $this->l('Brak/nieprawidlowy token kanalu serwerowego (TTL 900s). Sprawdz Sekret SERWEROWY w konfiguracji modulu.');
         }
@@ -2206,6 +2222,29 @@ JS;
         }
         $err = isset($resp['error']) ? (string) $resp['error'] : $this->l('nieznany blad');
         return $prefix . ' ' . $err . $reason;
+    }
+
+    /**
+     * CHAT-T-113: czy odpowiedz backendu to "baza niedostepna" — 5xx, brak odpowiedzi
+     * (timeout, http_status 0) albo niepoprawny/pusty JSON przy bledzie serwera.
+     * Przyczyna na PROD: zrywanie polaczenia standalone->Railway (circuit-breaker
+     * PostgresConnection zwraca puste 500). Patrz ADR-104 / CHAT-T-107.
+     */
+    private function isBackendDown($resp, $httpStatus)
+    {
+        if ($httpStatus >= 500) {
+            return true;
+        }
+        if ($httpStatus === 0) {
+            // brak odpowiedzi / timeout polaczenia z backendem
+            return true;
+        }
+        return false;
+    }
+
+    private function backendDownMessage()
+    {
+        return $this->l('Baza chwilowo niedostepna (Railway) — odswiez panel za chwile. To przejsciowa niestabilnosc polaczenia z baza, nie blad konfiguracji.');
     }
 
     // ============================================================================

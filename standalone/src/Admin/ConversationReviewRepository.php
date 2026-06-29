@@ -71,14 +71,10 @@ final class ConversationReviewRepository
             return $this->listNewInbox($limit, $offset);
         }
 
-        $total = (int) $this->db->fetchOne(
-            'SELECT COUNT(*) AS c FROM divechat_conversation_review WHERE status = ?',
-            [$status],
-        )['c'];
-
+        // CHAT-T-113: COUNT(*) OVER() w jednym zapytaniu (zamiast osobnego COUNT) —
+        // mniej round-tripow do Railway (odpornosc na wolne/zrywajace polaczenie).
         // Lekki zestaw do listy: pola recenzji + skrot rozmowy (started_at,
         // model_used, liczba wiadomosci, pierwsza wiadomosc uzytkownika).
-        // messages JSONB to kanoniczny store (jak w AdminNudgeCtrController).
         $rows = $this->db->fetchAll(
             "SELECT r.conversation_id, r.status, r.verdict, r.updated_by, r.updated_at,
                     c.session_id, c.started_at, c.model_used,
@@ -86,7 +82,8 @@ final class ConversationReviewRepository
                     (SELECT m->>'content'
                        FROM jsonb_array_elements(c.messages) m
                       WHERE m->>'role' = 'user'
-                      LIMIT 1) AS first_user_message
+                      LIMIT 1) AS first_user_message,
+                    COUNT(*) OVER() AS total_count
              FROM divechat_conversation_review r
              JOIN divechat_conversations c ON c.id = r.conversation_id
              WHERE r.status = ?
@@ -97,7 +94,7 @@ final class ConversationReviewRepository
 
         return [
             'items'  => array_map([$this, 'mapListRow'], $rows),
-            'total'  => $total,
+            'total'  => !empty($rows) ? (int) $rows[0]['total_count'] : 0,
             'limit'  => $limit,
             'offset' => $offset,
         ];
@@ -113,13 +110,8 @@ final class ConversationReviewRepository
      */
     private function listNewInbox(int $limit, int $offset): array
     {
-        $total = (int) $this->db->fetchOne(
-            "SELECT COUNT(*) AS c
-             FROM divechat_conversations c
-             LEFT JOIN divechat_conversation_review r ON r.conversation_id = c.id
-             WHERE r.id IS NULL OR r.status = 'nowy'",
-        )['c'];
-
+        // CHAT-T-113: COUNT(*) OVER() w jednym zapytaniu (zamiast osobnego COUNT) —
+        // mniej round-tripow do Railway przy wolnym/zrywajacym polaczeniu.
         $rows = $this->db->fetchAll(
             "SELECT c.id AS conversation_id,
                     COALESCE(r.status, 'nowy') AS status,
@@ -129,7 +121,8 @@ final class ConversationReviewRepository
                     (SELECT m->>'content'
                        FROM jsonb_array_elements(c.messages) m
                       WHERE m->>'role' = 'user'
-                      LIMIT 1) AS first_user_message
+                      LIMIT 1) AS first_user_message,
+                    COUNT(*) OVER() AS total_count
              FROM divechat_conversations c
              LEFT JOIN divechat_conversation_review r ON r.conversation_id = c.id
              WHERE r.id IS NULL OR r.status = 'nowy'
@@ -140,7 +133,7 @@ final class ConversationReviewRepository
 
         return [
             'items'  => array_map([$this, 'mapListRow'], $rows),
-            'total'  => $total,
+            'total'  => !empty($rows) ? (int) $rows[0]['total_count'] : 0,
             'limit'  => $limit,
             'offset' => $offset,
         ];
@@ -193,39 +186,26 @@ final class ConversationReviewRepository
      */
     public function countsByStatus(): array
     {
-        // Wszystkie dozwolone statusy zerami — komplet kluczy dla frontu.
-        $counts = [];
-        foreach (ReviewStatus::cases() as $case) {
-            $counts[$case->value] = 0;
-        }
-
-        // Kolejka robocza: liczba wierszy per status (w tym ewentualne jawne 'nowy').
-        $rows = $this->db->fetchAll(
-            'SELECT status, COUNT(*) AS c
-             FROM divechat_conversation_review
-             GROUP BY status',
+        // CHAT-T-113: JEDNO zapytanie (4 podzapytania) zamiast GROUP BY + osobny COUNT
+        // skrzynki — mniej round-tripow do Railway (odpornosc na zrywanie polaczenia).
+        // Komplet 4 kluczy enuma gwarantowany przez stale kolumny. 'nowy' = skrzynka
+        // katalogu (rozmowy bez wiersza + jawne 'nowy'); reszta = liczba wierszy kolejki.
+        $row = $this->db->fetchOne(
+            "SELECT
+                (SELECT COUNT(*) FROM divechat_conversation_review WHERE status = 'do_weryfikacji') AS do_weryfikacji,
+                (SELECT COUNT(*) FROM divechat_conversation_review WHERE status = 'w_trakcie') AS w_trakcie,
+                (SELECT COUNT(*) FROM divechat_conversation_review WHERE status = 'zamkniety') AS zamkniety,
+                (SELECT COUNT(*) FROM divechat_conversations c
+                   LEFT JOIN divechat_conversation_review r ON r.conversation_id = c.id
+                   WHERE r.id IS NULL OR r.status = 'nowy') AS nowy",
         );
 
-        foreach ($rows as $row) {
-            $status = (string) $row['status'];
-            // Nieznany status w bazie (poza enumem) NIE przecieka do API — pomijamy
-            // i logujemy (CHECK constraint nie powinien na to pozwolic; defensywnie).
-            if (!array_key_exists($status, $counts)) {
-                error_log("[ConversationReviewRepository] countsByStatus: nieznany status w bazie pominiety: {$status}");
-                continue;
-            }
-            $counts[$status] = (int) $row['c'];
-        }
-
-        // Nadpisz 'nowy' rozmiarem skrzynki katalogu (bez wiersza + jawne 'nowy').
-        $counts[ReviewStatus::NOWY->value] = (int) $this->db->fetchOne(
-            "SELECT COUNT(*) AS c
-             FROM divechat_conversations c
-             LEFT JOIN divechat_conversation_review r ON r.conversation_id = c.id
-             WHERE r.id IS NULL OR r.status = 'nowy'",
-        )['c'];
-
-        return $counts;
+        return [
+            ReviewStatus::NOWY->value           => (int) $row['nowy'],
+            ReviewStatus::DO_WERYFIKACJI->value => (int) $row['do_weryfikacji'],
+            ReviewStatus::W_TRAKCIE->value      => (int) $row['w_trakcie'],
+            ReviewStatus::ZAMKNIETY->value      => (int) $row['zamkniety'],
+        ];
     }
 
     /**
