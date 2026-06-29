@@ -151,7 +151,9 @@ final class CuratedRecommendations implements ToolInterface
                 'priority' => (int) $row['priority'],
                 'rationale_pl' => $row['rationale_pl'],
                 'price' => $data['price'],
+                'price_eur' => $data['price_eur'] ?? null, // CHAT-T-115: dla rozmow EN
                 'price_before_discount' => $data['price_before_discount'] ?? null,
+                'price_before_discount_eur' => $data['price_before_discount_eur'] ?? null,
                 'availability' => $data['availability'],
                 'verified_at' => $row['verified_at'],
             ];

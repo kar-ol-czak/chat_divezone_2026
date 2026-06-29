@@ -156,9 +156,11 @@ final class ProductDetails implements ToolInterface
             'price' => $enrich !== null
                 ? $enrich['price']
                 : round((float) $product['price'] * 1.23, 2),
+            'price_eur' => $enrich['price_eur'] ?? null, // CHAT-T-115: dla rozmow EN
             'availability' => $availability,
             'quantity' => $quantity,
             'url' => $productUrl,
+            'url_en' => $enrich['url_en'] ?? null, // CHAT-T-115: link /en/ (null gdy brak slugu EN)
             'image_url' => $imageUrl,
             'features' => array_map(fn(array $f) => [
                 'name' => $f['feature_name'],
@@ -169,6 +171,7 @@ final class ProductDetails implements ToolInterface
         // Cena przed rabatem — model moze powiedziec "przeceniony z X na Y".
         if ($enrich !== null && isset($enrich['price_before_discount'])) {
             $result['price_before_discount'] = $enrich['price_before_discount'];
+            $result['price_before_discount_eur'] = $enrich['price_before_discount_eur'] ?? null;
         }
 
         if ($specialPrice) {

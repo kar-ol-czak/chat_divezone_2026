@@ -24,15 +24,25 @@ use DiveChat\Database\MysqlConnection;
 final class MysqlProductEnrichmentService
 {
     /**
+     * Kurs PLN→EUR (id_currency=2) z pr_currency — czytany RAZ, cache per instancja
+     * (CHAT-T-115, ADR-106). NIE zaszyty w kodzie. null = EUR niedostepne.
+     */
+    private ?float $eurRate = null;
+    private bool $eurRateLoaded = false;
+
+    /**
      * @param list<int> $productIds
      * @return array<int, array{
      *     price: float,
+     *     price_eur: float|null,
      *     in_stock: bool,
      *     availability: string,
      *     quantity: int,
      *     active: bool,
      *     visible: bool,
-     *     price_before_discount?: float
+     *     url_en: string|null,
+     *     price_before_discount?: float,
+     *     price_before_discount_eur?: float|null
      * }>
      */
     public function enrich(array $productIds): array
@@ -75,7 +85,8 @@ final class MysqlProductEnrichmentService
                     ELSE 'unavailable'
                 END AS availability,
                 ps.active,
-                ps.visibility
+                ps.visibility,
+                plen.link_rewrite AS link_rewrite_en
             FROM pr_product p
             JOIN pr_product_shop ps ON p.id_product = ps.id_product AND ps.id_shop = 1
             LEFT JOIN (
@@ -88,11 +99,14 @@ final class MysqlProductEnrichmentService
             LEFT JOIN pr_tax_rule tr ON p.id_tax_rules_group = tr.id_tax_rules_group
                 AND tr.id_country = 14
             LEFT JOIN pr_tax t ON tr.id_tax = t.id_tax
+            LEFT JOIN pr_product_lang plen ON p.id_product = plen.id_product
+                AND plen.id_lang = 3 AND plen.id_shop = 1
             WHERE p.id_product IN ({$placeholders})",
             array_merge([$globalAllowOos], $productIds),
         );
 
         $specificPrices = $this->fetchSpecificPrices($mysql, $productIds);
+        $eurRate = $this->eurRate($mysql); // CHAT-T-115: jeden kurs dla calej puli (nie per produkt)
 
         $dataById = [];
         foreach ($rows as $row) {
@@ -107,23 +121,61 @@ final class MysqlProductEnrichmentService
                 $specificPrices[$productId] ?? null,
             );
 
+            // CHAT-T-115: link EN z pr_product_lang id_lang=3. Brak slugu -> null
+            // (NIE budujemy martwego /en/ z PL slugu — slug EN jest INNY niz PL).
+            $slugEn = $row['link_rewrite_en'] ?? null;
+            $urlEn = ($slugEn !== null && $slugEn !== '')
+                ? 'https://divezone.pl/en/' . $slugEn . '.html'
+                : null;
+
             $entry = [
                 'price' => $priced['price'],
+                // CHAT-T-115: cena EUR = brutto PLN * kurs z bazy, half-up 2 miejsca (jak strona /en).
+                'price_eur' => $eurRate !== null ? round($priced['price'] * $eurRate, 2) : null,
                 'in_stock' => $availability !== 'unavailable',
                 'availability' => $availability,
                 'quantity' => (int) $row['quantity'],
                 'active' => (bool) $row['active'],
                 'visible' => $row['visibility'] !== 'none',
+                'url_en' => $urlEn,
             ];
 
             if ($priced['has_promo'] && $priced['base_brutto'] > $priced['price']) {
                 $entry['price_before_discount'] = $priced['base_brutto'];
+                $entry['price_before_discount_eur'] = $eurRate !== null
+                    ? round($priced['base_brutto'] * $eurRate, 2)
+                    : null;
             }
 
             $dataById[$productId] = $entry;
         }
 
         return $dataById;
+    }
+
+    /**
+     * Kurs PLN→EUR z pr_currency (id_currency=2), czytany RAZ (cache per instancja,
+     * CHAT-T-115/ADR-106). NIE zaszyty w kodzie — ma nadążać za zmianami kursu w PS.
+     * Zwraca null gdy EUR niedostepne -> price_eur=null (NIE pokazujemy blednej ceny 0).
+     */
+    private function eurRate(MysqlConnection $mysql): ?float
+    {
+        if (!$this->eurRateLoaded) {
+            $this->eurRateLoaded = true;
+            try {
+                $row = $mysql->fetchOne(
+                    "SELECT conversion_rate FROM pr_currency WHERE id_currency = 2 LIMIT 1"
+                );
+                $this->eurRate = ($row !== null && $row['conversion_rate'] !== null)
+                    ? (float) $row['conversion_rate']
+                    : null;
+            } catch (\Throwable $e) {
+                error_log("[DiveChat] EUR rate read failed: {$e->getMessage()}");
+                $this->eurRate = null;
+            }
+        }
+
+        return $this->eurRate;
     }
 
     /**

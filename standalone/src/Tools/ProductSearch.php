@@ -353,13 +353,16 @@ final class ProductSearch implements ToolInterface
                 'brand' => $row['brand_name'],
                 'category' => $row['category_name'],
                 'price' => $mysqlData[$id]['price'],
+                'price_eur' => $mysqlData[$id]['price_eur'] ?? null, // CHAT-T-115: dla rozmow EN
                 'in_stock' => $mysqlData[$id]['in_stock'],
                 'availability' => $mysqlData[$id]['availability'],
                 'url' => $row['product_url'],
+                'url_en' => $mysqlData[$id]['url_en'] ?? null, // CHAT-T-115: link /en/ (null gdy brak slugu EN)
                 'image_url' => $row['image_url'],
             ];
             if (isset($mysqlData[$id]['price_before_discount'])) {
                 $product['price_before_discount'] = $mysqlData[$id]['price_before_discount'];
+                $product['price_before_discount_eur'] = $mysqlData[$id]['price_before_discount_eur'] ?? null;
             }
             $products[] = $product;
 
@@ -915,9 +918,11 @@ final class ProductSearch implements ToolInterface
                 'category' => $row['category_name'],
                 // Real-time z MySQL (fallback na pgvector jeśli brak)
                 'price' => $mysqlData[$id]['price'] ?? (float) $row['price'],
+                'price_eur' => $mysqlData[$id]['price_eur'] ?? null, // CHAT-T-115: dla rozmow EN
                 'in_stock' => $mysqlData[$id]['in_stock'] ?? (bool) $row['in_stock'],
                 'availability' => $mysqlData[$id]['availability'] ?? ((bool) $row['in_stock'] ? 'in_stock' : 'unavailable'),
                 'url' => $row['product_url'],
+                'url_en' => $mysqlData[$id]['url_en'] ?? null, // CHAT-T-115: link /en/ (null gdy brak slugu EN)
                 'image_url' => $row['image_url'],
                 'similarity' => round($rrfScore, 4),
             ];
@@ -925,6 +930,7 @@ final class ProductSearch implements ToolInterface
             // Cena przed rabatem — AI może powiedzieć "przeceniony z X na Y"
             if (isset($mysqlData[$id]['price_before_discount'])) {
                 $product['price_before_discount'] = $mysqlData[$id]['price_before_discount'];
+                $product['price_before_discount_eur'] = $mysqlData[$id]['price_before_discount_eur'] ?? null;
             }
 
             $products[] = $product;
