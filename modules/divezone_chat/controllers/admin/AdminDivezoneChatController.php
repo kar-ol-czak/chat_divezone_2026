@@ -113,6 +113,14 @@ class AdminDivezoneChatController extends ModuleAdminController
             return; // ajaxConvDetail konczy die()
         }
 
+        // CHAT-T-113 iter.2: zapis recenzji przez AJAX — zapisz + zwroc SAM odswiezony
+        // fragment detalu (z flashem i zaktualizowana metadana recenzji), bez reloadu
+        // powloki. POST (form recenzji). Fallback bez JS = pelny POST (submitDivezoneChatReview nizej).
+        if (Tools::getValue('dzAjax') === 'reviewSave') {
+            $this->ajaxReviewSave((int) $this->context->employee->id);
+            return; // ajaxReviewSave konczy die()
+        }
+
         parent::initContent();
 
         $employeeId = (int) $this->context->employee->id;
@@ -1144,6 +1152,33 @@ class AdminDivezoneChatController extends ModuleAdminController
     }
 
     /**
+     * CHAT-T-113 iter.2: zapis recenzji przez AJAX. Wykonuje ten sam handler co
+     * pelny POST (handleReviewSave — ustawia convFlash, woła backend z id_employee
+     * z sesji PS), nastepnie zwraca SAM odswiezony fragment detalu (renderConversationDetail
+     * zawiera flash + panel recenzji z nowa metadana). Konczy die().
+     */
+    private function ajaxReviewSave($employeeId)
+    {
+        $this->handleReviewSave($employeeId);
+        $sessionId = trim((string) Tools::getValue('session_id', ''));
+
+        if (!headers_sent()) {
+            header('Content-Type: text/html; charset=utf-8');
+            header('Cache-Control: no-store');
+        }
+
+        if ($sessionId === '') {
+            if (!headers_sent()) {
+                header('HTTP/1.1 400 Bad Request');
+            }
+            die('<div class="panel" style="border-top-left-radius:0;"><div style="padding:18px;color:#a94442;">'
+                . $this->l('Brak session_id.') . '</div></div>');
+        }
+
+        die($this->renderConversationDetail($employeeId, $sessionId));
+    }
+
+    /**
      * CHAT-T-113: JS przelaczajacy detal rozmowy bez przeladowania strony.
      * Klik w pozycje listy (a.dz-conv-item[data-dz-detail]) -> fetch fragmentu ->
      * podmiana .dz-conv-detail-col w miejscu + pushState(href) dla deep-linka.
@@ -1157,6 +1192,10 @@ class AdminDivezoneChatController extends ModuleAdminController
   if (window.__dzConvAjaxBound) { return; }
   window.__dzConvAjaxBound = true;
 
+  var prefetchCache = {}; // data-dz-detail URL -> html (iter.2: prefetch na hover)
+  var hoverTimer = null;
+  var XHR = { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } };
+
   function closestItem(node){
     while (node && node !== document) {
       if (node.nodeType === 1 && node.classList
@@ -1167,50 +1206,130 @@ class AdminDivezoneChatController extends ModuleAdminController
     return null;
   }
 
-  document.addEventListener('click', function(e){
-    if (e.defaultPrevented) { return; }
-    // nowa karta / srodkowy przycisk / modyfikatory -> zostaw normalna nawigacje
-    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) { return; }
+  function setLoading(col, on){
+    col.style.opacity = on ? '0.45' : '';
+    col.style.pointerEvents = on ? 'none' : '';
+  }
 
-    var a = closestItem(e.target);
-    if (!a) { return; }
+  function swapDetail(col, html, navUrl){
+    col.innerHTML = html;
+    setLoading(col, false);
+    if (navUrl && window.history && window.history.pushState) {
+      window.history.pushState({ dzConv: 1 }, '', navUrl);
+    }
+    if (window.innerWidth < 1024 && col.scrollIntoView) {
+      col.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
 
+  function detailError(col, navUrl, msg){
+    setLoading(col, false);
+    col.innerHTML = '<div class="panel" style="border-top-left-radius:0;">'
+      + '<div style="padding:18px;color:#a94442;">Nie udalo sie zaladowac rozmowy (' + msg + '). '
+      + '<a href="' + (navUrl || '#') + '">Otworz w pelni</a>.</div></div>';
+  }
+
+  function loadDetail(a){
     var ajaxUrl = a.getAttribute('data-dz-detail');
     var navUrl  = a.getAttribute('href');
     var col = document.querySelector('.dz-conv-detail-col');
-    if (!ajaxUrl || !col) { return; } // brak warunkow -> normalna nawigacja
-
-    e.preventDefault();
+    if (!ajaxUrl || !col) { return; }
 
     var actives = document.querySelectorAll('a.dz-conv-item.is-active');
     for (var i = 0; i < actives.length; i++) { actives[i].classList.remove('is-active'); }
     a.classList.add('is-active');
 
-    col.style.opacity = '0.45';
-    col.style.pointerEvents = 'none';
+    if (prefetchCache[ajaxUrl]) { // iter.2: cache z hover -> natychmiast
+      swapDetail(col, prefetchCache[ajaxUrl], navUrl);
+      return;
+    }
 
-    fetch(ajaxUrl, { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    setLoading(col, true);
+    fetch(ajaxUrl, XHR)
+      .then(function(r){ if (!r.ok) { throw new Error('HTTP ' + r.status); } return r.text(); })
+      .then(function(html){ prefetchCache[ajaxUrl] = html; swapDetail(col, html, navUrl); })
+      .catch(function(err){ detailError(col, navUrl, (err && err.message) ? err.message : 'blad'); });
+  }
+
+  // --- Klik w pozycje listy -> AJAX detalu (cache-first) ---
+  document.addEventListener('click', function(e){
+    if (e.defaultPrevented) { return; }
+    // nowa karta / srodkowy przycisk / modyfikatory -> zostaw normalna nawigacje
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) { return; }
+    var a = closestItem(e.target);
+    if (!a) { return; }
+    if (!a.getAttribute('data-dz-detail') || !document.querySelector('.dz-conv-detail-col')) { return; }
+    e.preventDefault();
+    loadDetail(a);
+  }, false);
+
+  // --- Prefetch na hover (debounce 150ms; best-effort, cicho ignoruje bledy) ---
+  document.addEventListener('mouseover', function(e){
+    var a = closestItem(e.target);
+    if (!a) { return; }
+    var url = a.getAttribute('data-dz-detail');
+    if (!url || prefetchCache[url]) { return; }
+    if (hoverTimer) { clearTimeout(hoverTimer); }
+    hoverTimer = setTimeout(function(){
+      if (prefetchCache[url]) { return; }
+      fetch(url, XHR)
+        .then(function(r){ if (!r.ok) { throw new Error('x'); } return r.text(); })
+        .then(function(html){ prefetchCache[url] = html; })
+        .catch(function(){ /* prefetch best-effort */ });
+    }, 150);
+  }, false);
+
+  // --- Zapis recenzji przez AJAX (delegacja submit; fallback bez JS = zwykly POST) ---
+  document.addEventListener('submit', function(e){
+    var form = e.target;
+    if (!form || form.nodeType !== 1 || form.getAttribute('data-dz-review-form') !== '1') { return; }
+    var ajaxAction = form.getAttribute('data-dz-ajax-action');
+    var col = document.querySelector('.dz-conv-detail-col');
+    if (!ajaxAction || !col || !window.FormData || !window.fetch) { return; } // -> zwykly POST
+
+    e.preventDefault();
+
+    var statusSel = form.querySelector('select[name="status"]');
+    var newStatus = statusSel ? statusSel.value : '';
+    var btn = form.querySelector('button[type="submit"]') || form.querySelector('button');
+    if (btn) { btn.disabled = true; }
+    setLoading(col, true);
+
+    fetch(ajaxAction, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: new FormData(form)
+    })
       .then(function(r){ if (!r.ok) { throw new Error('HTTP ' + r.status); } return r.text(); })
       .then(function(html){
-        col.innerHTML = html;
-        col.style.opacity = '';
-        col.style.pointerEvents = '';
-        if (navUrl && window.history && window.history.pushState) {
-          window.history.pushState({ dzConv: 1 }, '', navUrl);
-        }
-        if (window.innerWidth < 1024 && col.scrollIntoView) {
-          col.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        col.innerHTML = html; // odswiezony detal: flash + nowa metadana recenzji
+        setLoading(col, false);
+        updateListAfterSave(newStatus);
       })
       .catch(function(err){
-        col.style.opacity = '';
-        col.style.pointerEvents = '';
-        var msg = (err && err.message) ? err.message : 'blad';
-        col.innerHTML = '<div class="panel" style="border-top-left-radius:0;">'
-          + '<div style="padding:18px;color:#a94442;">Nie udalo sie zaladowac rozmowy (' + msg + '). '
-          + '<a href="' + (navUrl || '#') + '">Otworz w pelni</a>.</div></div>';
+        setLoading(col, false);
+        if (btn) { btn.disabled = false; }
+        alert('Nie udalo sie zapisac recenzji (' + ((err && err.message) ? err.message : 'blad') + '). Sprobuj ponownie.');
       });
   }, false);
+
+  // Po zapisie: gdy nowy status nie pasuje juz do aktywnego filtra listy -> usun pozycje
+  // ("znika z kolejki"). Filtr 'wszystkie' -> nie ruszamy. Uniewaznij cache aktywnej pozycji.
+  function updateListAfterSave(newStatus){
+    var active = document.querySelector('a.dz-conv-item.is-active');
+    if (active) {
+      var au = active.getAttribute('data-dz-detail');
+      if (au && prefetchCache[au]) { delete prefetchCache[au]; }
+    }
+    var ul = document.querySelector('ul.dz-conv-items[data-dz-review-filter]');
+    var filter = ul ? ul.getAttribute('data-dz-review-filter') : null;
+    if (!ul || !filter || filter === 'wszystkie' || !newStatus || !active) { return; }
+    if (newStatus !== filter) {
+      var li = active.parentNode; // <li>
+      if (li && li.parentNode === ul) { ul.removeChild(li); }
+    }
+  }
 
   // Back/forward: wroc do spojnego stanu server-side (taniej i pewniej niz odtwarzac DOM).
   window.addEventListener('popstate', function(){ window.location.reload(); });
@@ -1319,7 +1438,9 @@ JS;
             return $html;
         }
 
-        $html .= '<ul class="dz-conv-items">';
+        // CHAT-T-113 iter.2: data-dz-review-filter -> JS po zapisie recenzji usuwa pozycje
+        // gdy nowy status nie pasuje juz do aktywnego filtra ("znika z kolejki").
+        $html .= '<ul class="dz-conv-items" data-dz-review-filter="' . htmlspecialchars($reviewStatus, ENT_QUOTES) . '">';
         foreach ($items as $item) {
             $html .= $this->renderReviewListItem($item, $activeSessionId, $reviewStatus);
         }
@@ -1442,7 +1563,8 @@ JS;
 
         // CHAT-T-051 (113a + spec listy): waska kolumna z pozycjami zamiast tabeli.
         // Kazda pozycja: pierwsza wiadomosc (skrocona) + data + "Klient | Status".
-        $html .= '<ul class="dz-conv-items">';
+        // CHAT-T-113 iter.2: filtr 'wszystkie' -> JS nie usuwa pozycji po zapisie (tryb przegladu).
+        $html .= '<ul class="dz-conv-items" data-dz-review-filter="wszystkie">';
         foreach ($convs as $conv) {
             $html .= $this->renderConvListItem($conv, $activeSessionId);
         }
@@ -1946,7 +2068,12 @@ JS;
             $html .= '<div class="dz-flash error" style="margin-bottom:12px;">' . htmlspecialchars($loadErr, ENT_QUOTES) . '</div>';
         }
 
-        $html .= '<form method="post" action="' . htmlspecialchars($action, ENT_QUOTES) . '">';
+        // CHAT-T-113 iter.2: data-dz-review-form + data-dz-ajax-action -> JS przechwytuje
+        // submit i POST-uje fetch-em (bez reloadu). Brak JS -> zwykly POST na `action`.
+        $ajaxAction = $action . '&dzAjax=reviewSave';
+        $html .= '<form method="post" action="' . htmlspecialchars($action, ENT_QUOTES) . '"'
+              . ' data-dz-review-form="1"'
+              . ' data-dz-ajax-action="' . htmlspecialchars($ajaxAction, ENT_QUOTES) . '">';
         $html .= '<input type="hidden" name="conversation_id" value="' . (int) $convId . '">';
         $html .= '<input type="hidden" name="session_id" value="' . htmlspecialchars($sessionId, ENT_QUOTES) . '">';
 
