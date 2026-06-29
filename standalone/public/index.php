@@ -2,6 +2,13 @@
 
 declare(strict_types=1);
 
+// CHAT-T-118 (ADR-108): najkrotsza poprawna reprezentacja floatow w json_encode.
+// Serwer (ea-php84) ma serialize_precision=100 -> ogony typu 566.2799999... w JSON
+// (tool_result do modelu). -1 = algorytm najkrotszej reprezentacji (wartosc
+// produkcyjna). Krytyczne po CHAT-T-115: ceny EUR sa ZAWSZE nie-okragle. NIE dotykac
+// dyrektywy `precision` (osobna, dla obliczen).
+ini_set('serialize_precision', -1);
+
 /**
  * DiveChat API - Front Controller
  *
