@@ -1079,11 +1079,13 @@ class AdminDivezoneChatController extends ModuleAdminController
         $sessionId = trim((string) Tools::getValue('session_id', ''));
 
         // CHAT-T-105 (ADR-102): filtr recenzji steruje trybem listy.
-        //  - status recenzji ('nowy'/'do_weryfikacji'/'w_trakcie'/'zamkniety') ->
-        //    lista robocza z /api/admin/review (sort po updated_at recenzji DESC).
+        //  - 'nowy' -> SKRZYNKA: rozmowy bez wiersza recenzji + jawne 'nowy'
+        //    (ADR-102 D3 rewizja 2026-06-29 — workflow Karola: skrzynka -> obrabiam -> znika).
+        //  - 'do_weryfikacji'/'w_trakcie'/'zamkniety' -> kolejka robocza z istniejacych
+        //    wierszy (/api/admin/review, sort po updated_at recenzji DESC).
         //  - 'wszystkie' -> klasyczna lista wszystkich rozmow (/api/conversations).
-        // Default = 'do_weryfikacji' (ADR-102 D3: lista robocza domyslnie pokazuje
-        // wpisy flagowane do weryfikacji).
+        // Default = 'nowy' (skrzynka nieobrobionych — pierwsze lądowanie pokazuje rozmowy
+        // do przejrzenia; oznaczenie dowolnym statusem usuwa je ze skrzynki).
         $reviewStatus = $this->resolveReviewFilter();
 
         $listHtml  = $this->renderReviewFilterBar($reviewStatus, $sessionId);
@@ -1113,11 +1115,11 @@ class AdminDivezoneChatController extends ModuleAdminController
      */
     private function resolveReviewFilter()
     {
-        $rs    = trim((string) Tools::getValue('review_status', 'do_weryfikacji'));
+        $rs    = trim((string) Tools::getValue('review_status', 'nowy'));
         $valid = array_keys($this->reviewStatusOptions());
         $valid[] = 'wszystkie';
         if (!in_array($rs, $valid, true)) {
-            $rs = 'do_weryfikacji';
+            $rs = 'nowy';
         }
         return $rs;
     }

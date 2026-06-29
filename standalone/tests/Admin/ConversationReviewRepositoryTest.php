@@ -96,6 +96,21 @@ try {
     // === brak wiersza -> null (D3) ===
     assertT('getByConversation brak wiersza -> null', $repo->getByConversation($convId) === null);
 
+    // === ADR-102 D3 rewizja (2026-06-29): skrzynka 'nowy' obejmuje rozmowy BEZ
+    // wiersza recenzji. Swiezo wstawiona rozmowa (started_at=now -> gora sortu DESC)
+    // jest w skrzynce ze statusem 'nowy' (COALESCE). ===
+    $findInList = static function (array $list, int $cid): ?array {
+        foreach ($list['items'] as $it) {
+            if ($it['conversation_id'] === $cid) { return $it; }
+        }
+        return null;
+    };
+    $nowyBefore = $findInList($repo->listByStatus('nowy', 200, 0), $convId);
+    assertT('skrzynka nowy: rozmowa bez wiersza obecna', $nowyBefore !== null);
+    assertT('skrzynka nowy: status=nowy (COALESCE)', $nowyBefore !== null && $nowyBefore['status'] === 'nowy', json_encode($nowyBefore));
+    assertT('skrzynka nowy: first_user_message', $nowyBefore !== null && $nowyBefore['first_user_message'] === 'testowe pytanie recenzji');
+    $nowyCountBefore = $repo->countsByStatus()['nowy'];
+
     // === upsert tworzy z defaultem ===
     $r1 = $repo->upsert($convId, [], 101);
     assertT('upsert create: status default do_weryfikacji', $r1['status'] === 'do_weryfikacji', json_encode($r1));
@@ -103,6 +118,10 @@ try {
     assertT('upsert create: note null', $r1['note'] === null);
     assertT('upsert create: updated_by=101', $r1['updated_by'] === 101);
     assertT('upsert create: conversation_id', $r1['conversation_id'] === $convId);
+
+    // === po oznaczeniu (do_weryfikacji) rozmowa OPUSZCZA skrzynke 'nowy' ===
+    assertT('skrzynka nowy: po oznaczeniu znika', $findInList($repo->listByStatus('nowy', 200, 0), $convId) === null);
+    assertT('skrzynka nowy: licznik zmalal o 1', $repo->countsByStatus()['nowy'] === $nowyCountBefore - 1);
 
     // === upsert aktualizuje TYLKO podane pola + zmienia updated_by ===
     $r2 = $repo->upsert($convId, ['note' => '  pierwsza notatka  '], 202);

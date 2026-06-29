@@ -12,10 +12,16 @@ declare(strict_types=1);
  *
  * Podejscie delta (odporne na istniejace wiersze prod): snapshot counts ->
  * wstaw rozmowy o znanych statusach -> assert dokladne delty per status +
- * niezmiennik 4 kluczy + sum(counts)==COUNT(*) -> sprzatanie (cascade).
+ * niezmiennik 4 kluczy -> sprzatanie (cascade).
  *
- * Pokrycie: komplet 4 kluczy zawsze; brakujacy status -> 0; suma == liczba
- * wierszy; nieznany status nie przecieka (brak dodatkowych kluczy).
+ * ADR-102 D3 REWIZJA (2026-06-29): licznik 'nowy' = SKRZYNKA katalogu (rozmowy
+ * bez wiersza recenzji + jawny status='nowy'), NIE liczba wierszy tabeli. Stad
+ * niezmiennik nie jest juz sum(counts)==COUNT(*) tabeli, tylko:
+ *  - 3 statusy robocze (do_weryfikacji/w_trakcie/zamkniety) == wiersze tabeli non-nowy,
+ *  - nowy == COUNT rozmow bez wiersza LUB z r.status='nowy'.
+ *
+ * Pokrycie: komplet 4 kluczy zawsze; brakujacy status -> 0; niezmiennik osi
+ * roboczej vs skrzynki; nieznany status nie przecieka (brak dodatkowych kluczy).
  *
  * Uruchomienie: php standalone/tests/Admin/ConversationReviewCountsTest.php
  */
@@ -55,8 +61,17 @@ $repo = new ConversationReviewRepository($db);
 $EXPECTED_KEYS = array_map(static fn(ReviewStatus $s): string => $s->value, ReviewStatus::cases());
 sort($EXPECTED_KEYS);
 
-// Helper: COUNT(*) calej tabeli.
-$tableCount = static fn(): int => (int) $pdo->query('SELECT COUNT(*) FROM divechat_conversation_review')->fetchColumn();
+// Helpers (ADR-102 D3 rewizja): wiersze tabeli o statusie roboczym (non-nowy) +
+// rozmiar skrzynki 'nowy' (rozmowy bez wiersza LUB z r.status='nowy').
+$nonNowyRows = static fn(): int => (int) $pdo->query(
+    "SELECT COUNT(*) FROM divechat_conversation_review WHERE status <> 'nowy'"
+)->fetchColumn();
+$inboxCount = static fn(): int => (int) $pdo->query(
+    "SELECT COUNT(*) FROM divechat_conversations c
+     LEFT JOIN divechat_conversation_review r ON r.conversation_id = c.id
+     WHERE r.id IS NULL OR r.status = 'nowy'"
+)->fetchColumn();
+$workSum = static fn(array $c): int => $c['do_weryfikacji'] + $c['w_trakcie'] + $c['zamkniety'];
 
 // === Niezmienniki na stanie BAZOWYM (przed wstawieniem czegokolwiek) ===
 $before = $repo->countsByStatus();
@@ -64,7 +79,8 @@ $keys = array_keys($before);
 sort($keys);
 assertT('counts: dokladnie 4 klucze enuma (brak przeciekow)', $keys === $EXPECTED_KEYS, 'got ' . json_encode($keys));
 assertT('counts: wszystkie wartosci int >= 0', count(array_filter($before, static fn($v) => is_int($v) && $v >= 0)) === 4);
-assertT('counts: suma == COUNT(*) tabeli (baza)', array_sum($before) === $tableCount(), 'sum=' . array_sum($before) . ' count=' . $tableCount());
+assertT('counts: 3 statusy robocze == wiersze tabeli non-nowy (baza)', $workSum($before) === $nonNowyRows(), 'work=' . $workSum($before) . ' rows=' . $nonNowyRows());
+assertT('counts: nowy == skrzynka katalogu (baza)', $before['nowy'] === $inboxCount(), 'nowy=' . $before['nowy'] . ' inbox=' . $inboxCount());
 
 // === Wstaw 3 rozmowy o znanych, ROZNYCH statusach (delta) ===
 $ids = [];
@@ -98,9 +114,10 @@ try {
     assertT('delta zamkniety = +1',      $after['zamkniety']      - $before['zamkniety']      === 1);
     assertT('delta nowy = 0 (nie wstawialismy)', $after['nowy'] - $before['nowy'] === 0);
 
-    // Suma rosnie o 3 i nadal == COUNT(*).
+    // Os robocza rosnie o 3, skrzynka nowy bez zmian, niezmienniki trzymaja.
     assertT('suma po insert = baza + 3', array_sum($after) === array_sum($before) + 3);
-    assertT('counts: suma == COUNT(*) tabeli (po insert)', array_sum($after) === $tableCount());
+    assertT('counts po insert: 3 statusy robocze == wiersze tabeli non-nowy', $workSum($after) === $nonNowyRows());
+    assertT('counts po insert: nowy == skrzynka katalogu', $after['nowy'] === $inboxCount());
 } finally {
     // Sprzatanie: usun rozmowy -> ON DELETE CASCADE usuwa wiersze recenzji.
     if ($ids !== []) {

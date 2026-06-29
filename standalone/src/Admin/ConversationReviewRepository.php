@@ -44,8 +44,16 @@ final class ConversationReviewRepository
     }
 
     /**
-     * Lista recenzji o danym statusie + lekki skrot rozmowy, sort malejaco po
-     * updated_at. Paginacja przez limit/offset.
+     * Lista rozmow do recenzji o danym statusie + lekki skrot rozmowy. Paginacja
+     * przez limit/offset.
+     *
+     * ADR-102 D3 — REWIZJA 2026-06-29 (workflow Karola, CHAT-T-105 feedback):
+     * status 'nowy' = SKRZYNKA KATALOGU, nie tylko jawne wiersze. Pokazuje rozmowy
+     * BEZ wiersza recenzji (stan "nowy" implicytny) ORAZ z jawnym status='nowy',
+     * sort malejaco po started_at. Oznaczenie rozmowy dowolnym innym statusem
+     * (upsert) tworzy wiersz i USUWA ja ze skrzynki 'nowy'. Pozostale statusy
+     * (do_weryfikacji/w_trakcie/zamkniety) = TYLKO istniejace wiersze (kolejka
+     * robocza), sort malejaco po updated_at recenzji.
      *
      * @return array{items: array<int, array<string, mixed>>, total: int, limit: int, offset: int}
      */
@@ -58,6 +66,10 @@ final class ConversationReviewRepository
 
         $limit = max(1, min(200, $limit));
         $offset = max(0, $offset);
+
+        if ($status === ReviewStatus::NOWY->value) {
+            return $this->listNewInbox($limit, $offset);
+        }
 
         $total = (int) $this->db->fetchOne(
             'SELECT COUNT(*) AS c FROM divechat_conversation_review WHERE status = ?',
@@ -83,31 +95,82 @@ final class ConversationReviewRepository
             [$status, $limit, $offset],
         );
 
-        $items = array_map(static function (array $r): array {
-            $first = $r['first_user_message'];
-            if (is_string($first) && mb_strlen($first) > 200) {
-                $first = mb_substr($first, 0, 200) . '…';
-            }
-
-            return [
-                'conversation_id'    => (int) $r['conversation_id'],
-                'status'             => (string) $r['status'],
-                'verdict'            => $r['verdict'] !== null ? (string) $r['verdict'] : null,
-                'updated_by'         => $r['updated_by'] !== null ? (int) $r['updated_by'] : null,
-                'updated_at'         => $r['updated_at'],
-                'session_id'         => $r['session_id'],
-                'started_at'         => $r['started_at'],
-                'model_used'         => $r['model_used'],
-                'message_count'      => (int) $r['message_count'],
-                'first_user_message' => $first,
-            ];
-        }, $rows);
-
         return [
-            'items'  => $items,
+            'items'  => array_map([$this, 'mapListRow'], $rows),
             'total'  => $total,
             'limit'  => $limit,
             'offset' => $offset,
+        ];
+    }
+
+    /**
+     * Skrzynka 'nowy' (ADR-102 D3 rewizja): rozmowy bez wiersza recenzji LUB z
+     * jawnym status='nowy'. LEFT JOIN z anti-warunkiem; sort malejaco po started_at
+     * rozmowy (najnowsze czaty na gorze). status zawsze 'nowy' (COALESCE), verdict/
+     * updated_by/updated_at z wiersza gdy istnieje (zwykle NULL dla swiezych).
+     *
+     * @return array{items: array<int, array<string, mixed>>, total: int, limit: int, offset: int}
+     */
+    private function listNewInbox(int $limit, int $offset): array
+    {
+        $total = (int) $this->db->fetchOne(
+            "SELECT COUNT(*) AS c
+             FROM divechat_conversations c
+             LEFT JOIN divechat_conversation_review r ON r.conversation_id = c.id
+             WHERE r.id IS NULL OR r.status = 'nowy'",
+        )['c'];
+
+        $rows = $this->db->fetchAll(
+            "SELECT c.id AS conversation_id,
+                    COALESCE(r.status, 'nowy') AS status,
+                    r.verdict, r.updated_by, r.updated_at,
+                    c.session_id, c.started_at, c.model_used,
+                    COALESCE(jsonb_array_length(c.messages), 0) AS message_count,
+                    (SELECT m->>'content'
+                       FROM jsonb_array_elements(c.messages) m
+                      WHERE m->>'role' = 'user'
+                      LIMIT 1) AS first_user_message
+             FROM divechat_conversations c
+             LEFT JOIN divechat_conversation_review r ON r.conversation_id = c.id
+             WHERE r.id IS NULL OR r.status = 'nowy'
+             ORDER BY c.started_at DESC
+             LIMIT ? OFFSET ?",
+            [$limit, $offset],
+        );
+
+        return [
+            'items'  => array_map([$this, 'mapListRow'], $rows),
+            'total'  => $total,
+            'limit'  => $limit,
+            'offset' => $offset,
+        ];
+    }
+
+    /**
+     * Mapowanie wiersza listy (recenzja + skrot rozmowy) do ksztaltu API. Wspolne
+     * dla kolejki roboczej i skrzynki 'nowy'.
+     *
+     * @param array<string, mixed> $r
+     * @return array<string, mixed>
+     */
+    private function mapListRow(array $r): array
+    {
+        $first = $r['first_user_message'];
+        if (is_string($first) && mb_strlen($first) > 200) {
+            $first = mb_substr($first, 0, 200) . '…';
+        }
+
+        return [
+            'conversation_id'    => (int) $r['conversation_id'],
+            'status'             => (string) $r['status'],
+            'verdict'            => $r['verdict'] !== null ? (string) $r['verdict'] : null,
+            'updated_by'         => $r['updated_by'] !== null ? (int) $r['updated_by'] : null,
+            'updated_at'         => $r['updated_at'],
+            'session_id'         => $r['session_id'],
+            'started_at'         => $r['started_at'],
+            'model_used'         => $r['model_used'],
+            'message_count'      => (int) $r['message_count'],
+            'first_user_message' => $first,
         ];
     }
 
@@ -120,10 +183,11 @@ final class ConversationReviewRepository
      * potrzebuje wszystkich, by segment pokazal "0" zamiast zniknac). Klucze
      * seedowane z ReviewStatus::cases() (jedno zrodlo prawdy z enumem).
      *
-     * GRANICA SEMANTYCZNA (ADR-102 D3): liczy WYLACZNIE istniejace wiersze.
-     * Licznik `nowy` = rozmowy z JAWNYM status='nowy', NIE wszystkie
-     * nierecenzowane rozmowy katalogu (stan "nowy" implicytny bez wiersza NIE
-     * jest doliczany — to stan KOLEJKI recenzji, nie calego katalogu).
+     * ADR-102 D3 — REWIZJA 2026-06-29: licznik `nowy` = SKRZYNKA katalogu (rozmowy
+     * bez wiersza recenzji + jawny status='nowy'), spojnie z listByStatus('nowy').
+     * Pozostale statusy (do_weryfikacji/w_trakcie/zamkniety) = liczba istniejacych
+     * wierszy (kolejka robocza). Dzieki temu segment 'nowy' (CHAT-T-110) pokazuje
+     * realny rozmiar skrzynki, a nie ~0.
      *
      * @return array<string, int> Mapa status => liczba, zawsze 4 klucze.
      */
@@ -135,6 +199,7 @@ final class ConversationReviewRepository
             $counts[$case->value] = 0;
         }
 
+        // Kolejka robocza: liczba wierszy per status (w tym ewentualne jawne 'nowy').
         $rows = $this->db->fetchAll(
             'SELECT status, COUNT(*) AS c
              FROM divechat_conversation_review
@@ -151,6 +216,14 @@ final class ConversationReviewRepository
             }
             $counts[$status] = (int) $row['c'];
         }
+
+        // Nadpisz 'nowy' rozmiarem skrzynki katalogu (bez wiersza + jawne 'nowy').
+        $counts[ReviewStatus::NOWY->value] = (int) $this->db->fetchOne(
+            "SELECT COUNT(*) AS c
+             FROM divechat_conversations c
+             LEFT JOIN divechat_conversation_review r ON r.conversation_id = c.id
+             WHERE r.id IS NULL OR r.status = 'nowy'",
+        )['c'];
 
         return $counts;
     }
