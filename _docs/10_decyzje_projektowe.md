@@ -3161,6 +3161,10 @@ Po CHAT-T-089 liść `ai` wysyłał do LLM samą etykietę chipa (np. „Kaptur"
 1. CHAT-T-104 (backend): migracja tabeli `divechat_conversation_review` + endpointy `/api/admin/review` (GET lista, GET/POST per conversation) + rozszerzenie `ConversationViewer`. STOP przed deploy (ADR-089).
 2. CHAT-T-105 (frontend/panel PS): kolumna statusu na liście rozmów + pole notatki + kontrolki status/werdykt w modalu rozmowy. Po merge kontraktu z CHAT-T-104.
 
+**REWIZJA D3 (2026-06-29, feedback Karola po teście CHAT-T-105):** Pierwotne D3 („kolejka pokazuje WYŁĄCZNIE istniejące wiersze; stan `nowy` implicytny bez wiersza NIE jest listowany ani liczony") nie pasowało do realnego workflow: domyślne filtry (`do_weryfikacji`/`nowy`) były puste, bo wiersz powstaje dopiero przy akcji, a auto-flagowanie (P15c) nie istnieje — narzędzie pokazywało „brak rozmów", pracownik musiał ręcznie wybrać „wszystkie".
+
+Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?status=nowy` listuje rozmowy BEZ wiersza recenzji (LEFT JOIN, stan nowy implicytny) ORAZ z jawnym `status='nowy'`, sort malejąco po `started_at`. Domyślne lądowanie panelu = `nowy` (skrzynka nieobrobionych). Oznaczenie rozmowy dowolnym innym statusem (upsert tworzy wiersz) USUWA ją ze skrzynki `nowy` → trafia do kolejki roboczej `do_weryfikacji`/`w_trakcie`/`zamkniety` (te nadal = tylko istniejące wiersze). `counts.nowy` też liczy skrzynkę katalogu (nie ~0). Realizacja: `ConversationReviewRepository::listByStatus('nowy')` + `countsByStatus()` (CHAT-T-105 iter.3, backend), default frontu w `resolveReviewFilter()`. Testy real-path: 35/35 repo + 13/13 counts. **Niezmiennik pętli domknięcia bez zmian** — osie status/verdict identyczne; zmienia się tylko semantyka źródła listy dla `nowy`.
+
 
 ---
 
