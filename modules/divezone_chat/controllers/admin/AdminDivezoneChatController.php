@@ -104,6 +104,15 @@ class AdminDivezoneChatController extends ModuleAdminController
 
     public function initContent()
     {
+        // CHAT-T-113: AJAX detalu rozmowy — zwroc TYLKO fragment (renderConversationDetail),
+        // bez powloki back-office, bez re-fetchu listy i bez whoami. Klik w liscie podmienia
+        // panel w miejscu zamiast pelnego ~4s reloadu strony. Auth/token sprawdza PS w init()
+        // PRZED initContent() (URL niesie token admina), wiec ekspozycja bez zmian.
+        if (Tools::getValue('dzAjax') === 'convDetail') {
+            $this->ajaxConvDetail((int) $this->context->employee->id);
+            return; // ajaxConvDetail konczy die()
+        }
+
         parent::initContent();
 
         $employeeId = (int) $this->context->employee->id;
@@ -1105,7 +1114,109 @@ class AdminDivezoneChatController extends ModuleAdminController
         $html .= '<aside class="dz-conv-list-col">' . $listHtml . '</aside>';
         $html .= '<section class="dz-conv-detail-col">' . $detailHtml . '</section>';
         $html .= '</div>';
+        $html .= $this->renderConvAjaxScript(); // CHAT-T-113: klik = AJAX detalu w miejscu
         return $html;
+    }
+
+    /**
+     * CHAT-T-113: obsluga AJAX detalu rozmowy. Zwraca TYLKO HTML panelu detalu
+     * (renderConversationDetail) — bez powloki PS, nawigacji i re-fetchu listy.
+     * Wywolanie z initContent() gdy ?dzAjax=convDetail. Konczy die().
+     */
+    private function ajaxConvDetail($employeeId)
+    {
+        $sessionId = trim((string) Tools::getValue('session_id', ''));
+
+        if (!headers_sent()) {
+            header('Content-Type: text/html; charset=utf-8');
+            header('Cache-Control: no-store');
+        }
+
+        if ($sessionId === '') {
+            if (!headers_sent()) {
+                header('HTTP/1.1 400 Bad Request');
+            }
+            die('<div class="panel" style="border-top-left-radius:0;"><div style="padding:18px;color:#a94442;">'
+                . $this->l('Brak session_id.') . '</div></div>');
+        }
+
+        die($this->renderConversationDetail($employeeId, $sessionId));
+    }
+
+    /**
+     * CHAT-T-113: JS przelaczajacy detal rozmowy bez przeladowania strony.
+     * Klik w pozycje listy (a.dz-conv-item[data-dz-detail]) -> fetch fragmentu ->
+     * podmiana .dz-conv-detail-col w miejscu + pushState(href) dla deep-linka.
+     * Progressive enhancement: bez JS / ctrl+klik / blad fetch -> normalna nawigacja.
+     */
+    private function renderConvAjaxScript()
+    {
+        return <<<'JS'
+<script>
+(function(){
+  if (window.__dzConvAjaxBound) { return; }
+  window.__dzConvAjaxBound = true;
+
+  function closestItem(node){
+    while (node && node !== document) {
+      if (node.nodeType === 1 && node.classList
+          && node.classList.contains('dz-conv-item')
+          && node.getAttribute('data-dz-detail')) { return node; }
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  document.addEventListener('click', function(e){
+    if (e.defaultPrevented) { return; }
+    // nowa karta / srodkowy przycisk / modyfikatory -> zostaw normalna nawigacje
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) { return; }
+
+    var a = closestItem(e.target);
+    if (!a) { return; }
+
+    var ajaxUrl = a.getAttribute('data-dz-detail');
+    var navUrl  = a.getAttribute('href');
+    var col = document.querySelector('.dz-conv-detail-col');
+    if (!ajaxUrl || !col) { return; } // brak warunkow -> normalna nawigacja
+
+    e.preventDefault();
+
+    var actives = document.querySelectorAll('a.dz-conv-item.is-active');
+    for (var i = 0; i < actives.length; i++) { actives[i].classList.remove('is-active'); }
+    a.classList.add('is-active');
+
+    col.style.opacity = '0.45';
+    col.style.pointerEvents = 'none';
+
+    fetch(ajaxUrl, { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function(r){ if (!r.ok) { throw new Error('HTTP ' + r.status); } return r.text(); })
+      .then(function(html){
+        col.innerHTML = html;
+        col.style.opacity = '';
+        col.style.pointerEvents = '';
+        if (navUrl && window.history && window.history.pushState) {
+          window.history.pushState({ dzConv: 1 }, '', navUrl);
+        }
+        if (window.innerWidth < 1024 && col.scrollIntoView) {
+          col.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      })
+      .catch(function(err){
+        col.style.opacity = '';
+        col.style.pointerEvents = '';
+        var msg = (err && err.message) ? err.message : 'blad';
+        col.innerHTML = '<div class="panel" style="border-top-left-radius:0;">'
+          + '<div style="padding:18px;color:#a94442;">Nie udalo sie zaladowac rozmowy (' + msg + '). '
+          + '<a href="' + (navUrl || '#') + '">Otworz w pelni</a>.</div></div>';
+      });
+  }, false);
+
+  // Back/forward: wroc do spojnego stanu server-side (taniej i pewniej niz odtwarzac DOM).
+  window.addEventListener('popstate', function(){ window.location.reload(); });
+})();
+</script>
+JS;
     }
 
     /**
@@ -1249,7 +1360,10 @@ class AdminDivezoneChatController extends ModuleAdminController
         $activeClass = ($sessionId !== '' && $sessionId === $activeSessionId) ? ' is-active' : '';
         $msgPreview  = $this->truncateFirstMessage($firstMsg);
 
-        $html  = '<li><a href="' . htmlspecialchars($url, ENT_QUOTES) . '" class="dz-conv-item' . $activeClass . '">';
+        // CHAT-T-113: href = fallback bez JS (pelna nawigacja); data-dz-detail = URL
+        // fragmentu AJAX, ktory JS laduje w miejscu (bez reloadu powloki PS).
+        $ajaxUrl = $url . '&dzAjax=convDetail';
+        $html  = '<li><a href="' . htmlspecialchars($url, ENT_QUOTES) . '" data-dz-detail="' . htmlspecialchars($ajaxUrl, ENT_QUOTES) . '" class="dz-conv-item' . $activeClass . '">';
         $html .= '<div class="dz-conv-item-msg">' . htmlspecialchars($msgPreview, ENT_QUOTES) . '</div>';
         $html .= '<div class="dz-conv-item-meta">';
         $html .= '<span>' . htmlspecialchars($this->formatConvDate($startedAt), ENT_QUOTES) . '</span>';
@@ -1399,7 +1513,10 @@ class AdminDivezoneChatController extends ModuleAdminController
 
         // CHAT-T-052 (poprawka 1): JEDEN div meta — data lewo, klient|⚠ prawo.
         // CHAT-T-105: badge starego admin_status USUNIETY (os recenzji w trybie recenzji).
-        $html  = '<li><a href="' . htmlspecialchars($url, ENT_QUOTES) . '" class="dz-conv-item' . $activeClass . '">';
+        // CHAT-T-113: href = fallback bez JS (pelna nawigacja); data-dz-detail = URL
+        // fragmentu AJAX, ktory JS laduje w miejscu (bez reloadu powloki PS).
+        $ajaxUrl = $url . '&dzAjax=convDetail';
+        $html  = '<li><a href="' . htmlspecialchars($url, ENT_QUOTES) . '" data-dz-detail="' . htmlspecialchars($ajaxUrl, ENT_QUOTES) . '" class="dz-conv-item' . $activeClass . '">';
         $html .= '<div class="dz-conv-item-msg">' . htmlspecialchars($msgPreview, ENT_QUOTES) . '</div>';
         $html .= '<div class="dz-conv-item-meta">';
         $html .= '<span>' . htmlspecialchars($this->formatConvDate($startedAt), ENT_QUOTES) . '</span>';

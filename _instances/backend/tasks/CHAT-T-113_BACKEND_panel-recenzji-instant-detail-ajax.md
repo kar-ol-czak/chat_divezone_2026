@@ -38,3 +38,19 @@ Klik w rozmowę → detal+recenzja podmieniają się **w miejscu** (bez reloadu 
 
 ## POZA ZAKRESEM
 Przepisanie panelu na SPA standalone (zakładka „Rozmowy" w chat.divezone.pl/admin jest „Wkrótce"); to osobna, większa decyzja architektoniczna. Tu: minimalny, wysokoefektowny lifting istniejącego panelu PS.
+
+## WYNIK — iteracja 1 (2026-06-29, kod gotowy, NIEDEPLOYOWANY)
+Zaimplementowane (tylko `modules/divezone_chat/controllers/admin/AdminDivezoneChatController.php`, PHP 7.2):
+- **AJAX detalu:** `initContent()` rozpoznaje `?dzAjax=convDetail` i zwraca SAM fragment `renderConversationDetail` (`ajaxConvDetail()` → `die()`), bez powłoki back-office, bez re-fetchu listy i bez `whoami`. Auth/token sprawdza PS w `init()` przed `initContent()` — ekspozycja bez zmian.
+- **Lista (oba tryby — recenzja `renderReviewListItem` i pełna `renderConvListItem`):** anchor dostaje `data-dz-detail` (URL fragmentu). `href` zostaje jako fallback bez JS.
+- **JS (`renderConvAjaxScript`, nowdoc):** klik w pozycję → `fetch` fragmentu → podmiana `.dz-conv-detail-col` w miejscu + `pushState(href)` (deep-link, refresh działa). Progressive enhancement: bez JS / ctrl+klik / błąd fetch → normalna nawigacja. `popstate` → `reload` (spójny stan).
+- **Efekt:** znika pełny reload powłoki PS i 2 z 4 wywołań cross-domain na klik (whoami + lista). Zostają 2 (detal + recenzja) w jednym żądaniu AJAX.
+- php -l clean (lokalny 8.5); nowdoc zamknięty w kol. 0 (7.2-safe); brak wzorców 8.x w dodanym kodzie.
+
+Deploy: **moduł PS = ręczny upload przez Karola** na VPS divezone.pl (nie rsync na chat.divezone.pl). STOP — czekam na upload + test szybkości.
+
+### Iteracja 2 (pending — jeśli iter.1 nie wystarczy do „instant")
+- Zbić detal + stan recenzji w 1 endpoint standalone (`…/full`) → 1 wywołanie cross-domain zamiast 2.
+- „Zapisz recenzję" przez AJAX (bez reloadu).
+- Prefetch detalu na `hover` (debounce) → odczuwalnie natychmiast.
+- Detal z `divechat_messages` po CHAT-T-111 (wariant A).
