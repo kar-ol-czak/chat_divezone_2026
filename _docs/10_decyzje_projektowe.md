@@ -3259,3 +3259,28 @@ Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?sta
 - Odchył od pierwotnej treści taska: punkt B2B miał dodatkowo kierować na `dive@`; pominięto, by utrzymać twardy warunek „`dive@` ubywa dokładnie 3" (31→28) — szczegóły kontaktu B2B są na stronie `/b2b`.
 
 **Implementacja:** CHAT-T-114, commit `ca71d43`, deploy na prod (chat.divezone.pl, md5 `1456ca6`, `php -l` ea-php84 czysto). `dive@` 31→28, „Aktualną cenę potwierdź" proaktywne → 0.
+
+
+---
+
+### ADR-106: Wielojęzyczność narzędzi produktowych — link EN (`url_en`) + cena EUR (`price_eur`) dla rozmów po angielsku
+
+**Data:** 2026-06-29 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-115 (implementacja), CHAT-T-114/ADR-105 (link serwisu PL/EN — lokalny zalążek tej samej sprawy), reguła JĘZYK ODPOWIEDZI (SystemPrompt l.126-138). **Źródło:** analiza czatów 2026-06-29, wzorzec P4 (8+ czatów: klient pisze EN, bot odpowiada EN, ale linkuje do PL karty i podaje PLN).
+
+**Problem:** Reguła JĘZYK ODPOWIEDZI działa (bot odpowiada po EN), ALE narzędzia produktowe zwracały tylko polski link (slug PL) i cenę w PLN. Klient EN dostawał polską kartę produktu i złotówki.
+
+**Diagnoza danych (MySQL `divezone_2025`):** EN = `id_lang=3` (aktywny). Slug EN jest INNY niż PL (np. `maska-tecline-frameless…` vs `tecline-mask-frameless…`) → NIE da się zbudować z PL przez doklejenie `/en/`; MUSI być pobrany z `pr_product_lang`. EUR = `id_currency=2`, `conversion_rate=0.237934` w `pr_currency`. BRAK zapisanych cen EUR per produkt (`pr_specific_price` id_currency=2 = 0) — EUR jest WYLICZANA kursem (jak robi to /en).
+
+**Decyzja:**
+1. **Cena EUR wyliczana, kurs Z BAZY.** `price_eur` = round(brutto_PLN × `conversion_rate`, 2) half-up (jak strona /en, co do grosza — decyzja 39a). Kurs czytany z `pr_currency` (NIE zaszyty w kodzie — ma nadążać za zmianami), RAZ na request (cache per instancja). `price_before_discount_eur` analogicznie gdy promo. PLN zostaje.
+2. **Link EN z bazy.** `link_rewrite` dla `id_lang=3` → `url_en` = `https://divezone.pl/en/<slug-en>.html`. Brak slugu EN → `url_en=null` (NIE martwy link, NIE fallback PL z `/en/`).
+3. **Oba warianty zawsze.** Narzędzia zwracają `url`(PL)+`url_en` oraz `price`(PLN)+`price_eur`. Model wybiera wariant wg języka rozmowy — tą samą wiedzą, którą już ma (BEZ nowego parametru `lang`, BEZ zmiany sygnatur — decyzja 35a).
+4. **Centralizacja w enrichment.** `url_en`+`price_eur` liczone w `MysqlProductEnrichmentService` (JOIN `pr_product_lang` id_lang=3 + odczyt kursu) — jedno źródło dla `ProductSearch` + `CuratedRecommendations` + `ProductDetails`. SystemPrompt: rozszerzenie ISTNIEJĄCEJ reguły JĘZYK ODPOWIEDZI (EN→`url_en`+`price_eur`; `url_en`=null→PL link+uprzedzenie); logika wykrywania języka nietknięta.
+
+**Konsekwencje:**
+- Pozytywne: klient EN dostaje angielską kartę + cenę EUR zgodną co do grosza ze stroną /en.
+- Koszt: +1 JOIN + 1 zapytanie kursu w enrichment (per request, nie per produkt).
+- Znane (do follow-up): `serialize_precision=100` w php.ini serwera → `json_encode` floatów daje formę długą (`566.2799…`) — dotyczy też nie-okrągłych cen PLN (istniejące). Model formatuje per reguła ("566.28 EUR"), więc działa, ale czysty fix globalny = `ini_set('serialize_precision', -1)` w bootstrapie (poza zakresem CHAT-T-115). EUR są ZAWSZE nie-okrągłe, więc warto.
+- Poza zakresem: inne języki niż EN (DE nieaktywny); dłuższy cache kursu (TTL w settings) — osobny task jeśli potrzebny.
+
+**Implementacja:** CHAT-T-115, commit `4847315`, deploy na prod (5 plików, md5 5/5, `php -l` ea-php84 czysto). Weryfikacja 5986: `price`=2380, `price_eur`=566.28, `url_en`=`…/en/shearwater-peregrine-dive-computer.html` (rzeczywisty kod na serwerze).
