@@ -3284,3 +3284,20 @@ Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?sta
 - Poza zakresem: inne języki niż EN (DE nieaktywny); dłuższy cache kursu (TTL w settings) — osobny task jeśli potrzebny.
 
 **Implementacja:** CHAT-T-115, commit `4847315`, deploy na prod (5 plików, md5 5/5, `php -l` ea-php84 czysto). Weryfikacja 5986: `price`=2380, `price_eur`=566.28, `url_en`=`…/en/shearwater-peregrine-dive-computer.html` (rzeczywisty kod na serwerze).
+
+
+---
+
+### ADR-108: `serialize_precision=-1` w bootstrapie — poprawna reprezentacja floatów w JSON
+
+**Data:** 2026-06-29 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-118 (implementacja), CHAT-T-115/ADR-106 (price_eur — ceny EUR zawsze nie-okrągłe, co uaktywniło bug). **Decyzje Karola:** 47a/48a.
+
+**Problem:** Serwer (ea-php84) ma `serialize_precision = 100` w php.ini. `json_encode` floatów zwraca formę długą zamiast najkrótszej poprawnej: `json_encode(566.28)` → `566.279999999999972715...`. Te wartości trafiają w `tool_result` do modelu. Marginalne przy PLN (często okrągłe), ale ADR-106 wprowadził regułę „podawaj `price_eur` w formacie 566.28 EUR" — a ceny EUR są ZAWSZE nie-okrągłe (kurs 0.237934). Ryzyko: model przepisze ogon do odpowiedzi klienta.
+
+**Decyzja:** `ini_set('serialize_precision', -1);` w `standalone/public/index.php`, na górze bootstrapu (PO `declare(strict_types=1)`, PRZED `require_once vendor/autoload.php`). `-1` = algorytm najkrótszej reprezentacji zachowującej wartość (domyślna w nowoczesnym PHP; 100 to relikt). Naprawia GLOBALNIE wszystkie floaty (PLN + EUR + inne pola, np. `similarity`). NIE dotykać dyrektywy `precision` (osobna, dla obliczeń).
+
+**Alternatywy odrzucone:** rzutowanie ceny na string per pole w narzędziu — długie floaty wracają też w innych polach (similarity), więc fix kategorii > łatanie per pole; `-1` to zalecana wartość produkcyjna (naprawa złej konfiguracji, nie ryzykowna zmiana).
+
+**Konsekwencje:** czyste ceny w JSON do modelu (i każdego klienta API). Globalny zasięg — dotyczy wszystkich endpointów przez index.php.
+
+**Implementacja:** CHAT-T-118, commit `37aa2f6`, deploy na prod (`chat.divezone.pl/public/index.php`, md5 `19d4cadc`, `php -l` ea-php84 czysto). Smoke: `/api/health` 200; real-path z `ini_set(-1)` → `ProductDetails` 5986 = `{"price":2380,"price_eur":566.28,"price_before_discount_eur":641.71}` (bez ogona); `ini_get('serialize_precision')`=-1 (serwer honoruje w runtime).
