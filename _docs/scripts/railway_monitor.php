@@ -33,6 +33,15 @@ declare(strict_types=1);
  *   - log ZAWSZE sie zapisuje (skok latencji widoczny jako FAIL/wysokie ms, nie cisza).
  *   - twardy backstop na wiszace polaczenie sieciowe (blackhole, gdy nawet statement_timeout
  *     nie dochodzi): cron-guard wykrywa stary log (>60s) i wskrzesza monitor (kill -9 + restart).
+ *
+ * CHAT-T-119 (diagnostyka sieciowa w chwili epizodu — dowod dla Smarthost #167585):
+ *   - captureNetworkDiag(): ping x4 (Railway/Leaseweb-AMS/1.1.1.1/8.8.8.8) + traceroute Railway,
+ *     kazde owiniete w `timeout`, uruchamiane W TLE (nohup ... &), zeby petla monitora szla dalej
+ *     i cron-guard (prog swiezosci 60s) NIE uznal monitora za martwy podczas ~90s zrzutu.
+ *   - wpiete w START epizodu (>=ALERT_STREAK FAIL) i przy RECOVERY (trasa na starcie i koncu).
+ *   - zrzut -> ~/_diag/incident_YYYYMMDD_HHMMSS.txt (jeden plik per epizod, timestamp startu).
+ *   - pomiar OKNA niedostepnosci: od 1. FAIL epizodu do powrotu OK (kluczowa liczba dla Smarthost).
+ *   - FAZA 1: tylko plik + istniejacy mail do Karola. BEZ wysylki SMTP do Smarthost (faza 2 pozniej).
  */
 
 $BASE = '/home/divezone/public_html/chat.divezone.pl';
@@ -76,6 +85,54 @@ function tcp(string $host, int $port, int $tmo): array {
     $ms = (microtime(true) - $t) * 1000;
     if ($s !== false) { fclose($s); return [true, $ms, 0]; }
     return [false, $ms, $e];
+}
+
+/**
+ * CHAT-T-119 — diagnostyka sieciowa w chwili epizodu (dowod dla Smarthost #167585).
+ * Odpala ping x4 + traceroute do celow diagnostycznych i DOPISUJE surowe wyniki do pliku incydentu.
+ *
+ * KRYTYCZNE: uruchamiane W TLE (nohup bash -c '...' &). Petla monitora wraca NATYCHMIAST i loguje
+ * dalej, wiec cron-guard (CHAT-T-109, prog swiezosci 60s) nie uzna monitora za martwy podczas ~90s
+ * zrzutu. Diag jako osobny proces przezyje nawet ubicie monitora przez guard.
+ *
+ * Kazde polecenie owiniete w `timeout` — wiszacy traceroute przy blackhole nie zablokuje nawet
+ * procesu w tle. Brak inputu uzytkownika (stale IP) -> sanitizacja nie jest potrzebna.
+ *
+ * Cele (patrz KONTEKST DIAGNOSTYCZNY taska):
+ *   66.33.22.230  switchback.proxy.rlwy.net — Railway EU West/Amsterdam (oczekiwane STRATY w epizodzie)
+ *   5.79.108.33   Leaseweb Amsterdam — kontrola EU, INNA trasa niz twelve99 (oczekiwane CZYSTO)
+ *   1.1.1.1 / 8.8.8.8 — kontrola globalna (oczekiwane CZYSTO)
+ */
+function captureNetworkDiag(string $incidentFile, string $reason, DateTimeZone $waw, DateTimeZone $utc, string $preface = ''): void {
+    $hdr = "\n############################################################\n"
+         . "### DIAG: {$reason}\n"
+         . "### czas: " . (new DateTime('now', $utc))->format('Y-m-d H:i:s') . " UTC / "
+         . (new DateTime('now', $waw))->format('H:i:s') . " WAW\n"
+         . "### host: " . gethostname() . "\n"
+         . "### Cel: switchback.proxy.rlwy.net (66.33.22.230), baza Railway region EU West/Amsterdam. Trasa przez twelve99/Arelion.\n"
+         . "############################################################\n";
+    // Naglowek (i opcjonalny $preface, np. linia OKNA) wypisujemy WEWNATRZ zablokowanego (flock) bloku w tle
+    // — nie z procesu glownego. Inaczej synchroniczny zapis PHP wpadlby w srodek strumienia pingow diagu,
+    //   ktory jeszcze pisze (przeplot przy krotkim epizodzie). Teraz KOMPLET (naglowek+dane) idzie pod jedna blokada.
+    $textBlock = $preface . $hdr;
+
+    // Payload w tle: naglowek (printf) + sekwencja pingow + traceroute, kazde z twardym `timeout`.
+    // ping -c 15 -W 2: worst-case ~30s przy 100% strat; timeout 40 daje margines. traceroute: timeout 50.
+    $payload =
+          'printf %s ' . escapeshellarg($textBlock) . '; '
+        . 'echo "=== ping Railway 66.33.22.230 (oczekiwane STRATY w epizodzie) ==="; timeout 40 ping -c 15 -W 2 66.33.22.230; echo; '
+        . 'echo "=== ping Leaseweb AMS 5.79.108.33 (kontrola EU, inna trasa niz twelve99) ==="; timeout 40 ping -c 15 -W 2 5.79.108.33; echo; '
+        . 'echo "=== ping Cloudflare 1.1.1.1 (kontrola globalna) ==="; timeout 40 ping -c 15 -W 2 1.1.1.1; echo; '
+        . 'echo "=== ping Google 8.8.8.8 (kontrola globalna) ==="; timeout 40 ping -c 15 -W 2 8.8.8.8; echo; '
+        . 'echo "=== traceroute Railway 66.33.22.230 (hop gdzie gina pakiety) ==="; timeout 50 traceroute -w 2 -m 20 66.33.22.230; echo; '
+        . 'echo "=== DIAG koniec ($(date -u)) ===";';
+    // Grupujemy w { ...; } i przekierowujemy CALOSC do pliku incydentu, potem calosc w tle (nohup &).
+    // flock: gdy epizod-start (~90s w tle) jeszcze pisze, a nastapi recovery, epizod-koniec CZEKA na
+    // zwolnienie blokady zamiast przeplatac wyjscie w tym samym pliku (proces w tle => blokowanie OK).
+    $group = '( flock -x 9; { ' . $payload . ' } >> ' . escapeshellarg($incidentFile) . ' 2>&1 ) 9>'
+           . escapeshellarg($incidentFile . '.lock');
+    $cmd = 'nohup bash -c ' . escapeshellarg($group) . ' >/dev/null 2>&1 &';
+    shell_exec($cmd);
 }
 
 /**
@@ -171,6 +228,10 @@ wlog($DIAG, $WAW, "# metryki: railway_tcp, " . implode(', ', $PG_METRICS) . ", g
 // --- alert state ---
 $streak = array_fill_keys($PG_METRICS, 0);
 $okStreak = 0; $alertActive = false; $lastAlertTs = 0.0; $episodeInfo = '';
+// CHAT-T-119 — pomiar okna + plik incydentu per epizod
+$firstFailW = null;      // DateTime 1. FAIL biezacej serii (reset przy pelnym OK) — start okna niedostepnosci
+$episodeStartW = null;   // zamrozony start okna epizodu (kopia $firstFailW w chwili alertu)
+$incidentFile = '';      // ~/_diag/incident_YYYYMMDD_HHMMSS.txt biezacego epizodu
 $i = 0;
 
 while (true) {
@@ -211,6 +272,9 @@ while (true) {
             if ($worst === null || $streak[$m] > $streak[$worst]) { $worst = $m; }
         }
     }
+    // CHAT-T-119 — start okna niedostepnosci = 1. FAIL serii (przed osiagnieciem progu alertu).
+    if ($allPgOk) { $firstFailW = null; }
+    elseif ($firstFailW === null) { $firstFailW = clone $nowW; }
     $okStreak = $allPgOk ? $okStreak + 1 : 0;
     $nowTs = microtime(true);
 
@@ -225,16 +289,46 @@ while (true) {
             $ok = sendAlertMail($MAIL_TO, $subj, $body);
             wlog($DIAG, $WAW, "### ALERT {$ts} | {$episodeInfo} | mail=" . ($ok ? 'sent' : 'FAILED') . "\n");
             $alertActive = true; $lastAlertTs = $nowTs;
+
+            // CHAT-T-119 — zamroz start okna, zaloz plik incydentu, odpal diag w tle (start epizodu)
+            $episodeStartW = ($firstFailW instanceof DateTime) ? clone $firstFailW : clone $nowW;
+            $incidentFile = $DIAG . '/incident_' . $episodeStartW->format('Ymd_His') . '.txt';
+            file_put_contents($incidentFile, sprintf(
+                "### EPIZOD START (1. FAIL): %s WAW | metryka %s FAIL x%d | prog alertu osiagniety %s\n",
+                $episodeStartW->format('Y-m-d H:i:s'), $worst, $streak[$worst], $nowW->format('H:i:s')), FILE_APPEND);
+            captureNetworkDiag($incidentFile, "epizod-start {$worst}", $WAW, $UTC);
+            wlog($DIAG, $WAW, "### DIAG zapisano: " . basename($incidentFile) . " (epizod-start {$worst})\n");
         }
     }
     if ($alertActive && $okStreak >= $RECOVERY_OK) {
         $ts = (new DateTime('now', $UTC))->format('H:i:s') . ' UTC / ' . $nowW->format('H:i:s') . ' WAW';
+
+        // CHAT-T-119 — pomiar OKNA niedostepnosci (od 1. FAIL do powrotu OK). Kluczowa liczba dla Smarthost.
+        $windowStr = '';
+        if ($episodeStartW instanceof DateTime) {
+            $durSec = max(0, $nowW->getTimestamp() - $episodeStartW->getTimestamp());
+            $windowStr = sprintf("### OKNO NIEDOSTEPNOSCI: start %s, koniec %s, czas trwania %dm %ds\n",
+                $episodeStartW->format('H:i:s'), $nowW->format('H:i:s'), intdiv($durSec, 60), $durSec % 60);
+        }
+
         $subj = "[DIVECHAT MONITOR] Railway recovery: PG znow OK ({$ts})";
         $body = "TRASA PRODUKCYJNA serwer->Railway.\n"
-              . "Po epizodzie [{$episodeInfo}] wszystkie metryki PG OK przez {$okStreak} cykli.\nPowrot: {$ts}\n";
+              . "Po epizodzie [{$episodeInfo}] wszystkie metryki PG OK przez {$okStreak} cykli.\nPowrot: {$ts}\n"
+              . ($windowStr !== '' ? $windowStr : '');
         $ok = sendAlertMail($MAIL_TO, $subj, $body);
         wlog($DIAG, $WAW, "### RECOVERY {$ts} | po [{$episodeInfo}] | mail=" . ($ok ? 'sent' : 'FAILED') . "\n");
+        if ($windowStr !== '') { wlog($DIAG, $WAW, $windowStr); }
+
+        // CHAT-T-119 — druga diag (trasa na koncu epizodu) do TEGO SAMEGO pliku incydentu.
+        // Linia OKNA idzie jako $preface -> wypisana pod flock RAZEM z naglowkiem epizod-koniec,
+        // wiec czeka az diag epizod-start zwolni blokade (brak przeplotu przy krotkim epizodzie).
+        if ($incidentFile !== '') {
+            captureNetworkDiag($incidentFile, 'epizod-koniec', $WAW, $UTC, ($windowStr !== '' ? "\n" . $windowStr : ''));
+            wlog($DIAG, $WAW, "### DIAG zapisano: " . basename($incidentFile) . " (epizod-koniec)\n");
+        }
+
         $alertActive = false;
+        $episodeStartW = null; $incidentFile = '';
     }
 
     if ($i % $HEARTBEAT_EVERY === 0) {
