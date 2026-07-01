@@ -288,6 +288,10 @@ final class ChatController
         // chipStack. Defensywny cap długości; brak/pusty -> null.
         $chipContext = $this->resolveChipContext($body['chip_context'] ?? null);
 
+        // CHAT-T-122 (ADR-110): strukturalna ścieżka chipów do UTRWALENIA (jsonb).
+        // Rozłączna z chip_context (string dla LLM). Utrwalana raz na rozmowę.
+        $chipPath = $this->resolveChipPath($body['chip_path'] ?? null);
+
         if ($message === '') {
             Response::error('Pole "message" jest wymagane i nie może być puste', 400);
         }
@@ -322,6 +326,7 @@ final class ChatController
                 customerId: (int) $customerId ?: null,
                 nudgeSid: $nudgeSid,
                 chipContext: $chipContext,
+                chipPath: $chipPath,
             );
 
             Response::json([
@@ -387,6 +392,9 @@ final class ChatController
         // CHAT-T-088e (ADR-097, decyzja 65b): kontekst ścieżki chipów (osobny od message).
         $chipContext = $this->resolveChipContext($body['chip_context'] ?? null);
 
+        // CHAT-T-122 (ADR-110): strukturalna ścieżka chipów do UTRWALENIA (jsonb).
+        $chipPath = $this->resolveChipPath($body['chip_path'] ?? null);
+
         if ($message === '') {
             Response::error('Pole "message" jest wymagane i nie może być puste', 400);
         }
@@ -441,6 +449,7 @@ final class ChatController
                 onStatus: $emitStatus,
                 nudgeSid: $nudgeSid,
                 chipContext: $chipContext,
+                chipPath: $chipPath,
             );
 
             // event: done z pełną odpowiedzią
@@ -620,6 +629,73 @@ final class ChatController
             $trimmed = mb_substr($trimmed, 0, 2000);
         }
         return $trimmed;
+    }
+
+    /**
+     * Wyłuskaj strukturalną ścieżkę chipów `chip_path` z body (CHAT-T-122, ADR-110).
+     *
+     * ROZŁĄCZNE z `chip_context` (string dla LLM tej tury): tu walidujemy tablicę
+     * węzłów `[{node_key, label, level}]` do UTRWALENIA w kolumnie jsonb (analityka
+     * klikalności). Kontrakt: `_instances/frontend/handoff/HANDOFF_chip_path_kontrakt.md`.
+     *
+     * Reguły (wg §Kontrakt backendu):
+     * - Wejście nie-tablica / puste → null (wolne pisanie bez chipów).
+     * - Każdy element MUSI mieć: node_key (string `^[a-z0-9_]+$`, cap 64),
+     *   label (string, cap 120), level (int 1..6). Element ze złym polem →
+     *   pominięty (defensywa, nie wywala całej ścieżki).
+     * - Cap długości tablicy 8 (nadmiarowe elementy ucinane).
+     * - Jeśli po walidacji nic nie zostało → null (nie zapisujemy pustej tablicy).
+     *
+     * @return list<array{node_key: string, label: string, level: int}>|null
+     */
+    private function resolveChipPath(mixed $clientChipPath): ?array
+    {
+        if (!is_array($clientChipPath) || $clientChipPath === []) {
+            return null;
+        }
+
+        $clean = [];
+        foreach ($clientChipPath as $node) {
+            if (count($clean) >= 8) {
+                break; // cap długości tablicy
+            }
+            if (!is_array($node)) {
+                continue;
+            }
+
+            $nodeKey = $node['node_key'] ?? null;
+            $label = $node['label'] ?? null;
+            $level = $node['level'] ?? null;
+
+            if (!is_string($nodeKey) || preg_match('/^[a-z0-9_]{1,64}$/', $nodeKey) !== 1) {
+                continue;
+            }
+            if (!is_string($label)) {
+                continue;
+            }
+            $label = trim($label);
+            if ($label === '') {
+                continue;
+            }
+            if (mb_strlen($label) > 120) {
+                $label = mb_substr($label, 0, 120);
+            }
+            // level: akceptuj int lub numeryczny string (JSON może przynieść "2").
+            if (!is_int($level)) {
+                if (is_string($level) && preg_match('/^\d+$/', $level) === 1) {
+                    $level = (int) $level;
+                } else {
+                    continue;
+                }
+            }
+            if ($level < 1 || $level > 6) {
+                continue;
+            }
+
+            $clean[] = ['node_key' => $nodeKey, 'label' => $label, 'level' => $level];
+        }
+
+        return $clean !== [] ? $clean : null;
     }
 
     /**

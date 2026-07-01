@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DiveChat\Admin;
 
+use DiveChat\Chip\ChipButtonLabels;
 use DiveChat\Database\PostgresConnection;
 use DiveChat\Enum\ReviewStatus;
 use DiveChat\Enum\ReviewVerdict;
@@ -75,6 +76,12 @@ final class ConversationReviewRepository
         // mniej round-tripow do Railway (odpornosc na wolne/zrywajace polaczenie).
         // Lekki zestaw do listy: pola recenzji + skrot rozmowy (started_at,
         // model_used, liczba wiadomosci, pierwsza wiadomosc uzytkownika).
+        // CHAT-T-122 (ADR-110 pkt 5): pomijaj etykiety przyciskow chipow target:ai
+        // w wyborze tytulu (pierwszej wiadomosci user) — chroni STARE rozmowy, gdzie
+        // klik przycisku zapisal etykiete jako pierwsza wiadomosc (np. "Napisz czego
+        // szukasz"). Zero migracji danych messages.
+        $excludeChipLabels = ChipButtonLabels::notInSql("m->>'content'");
+
         $rows = $this->db->fetchAll(
             "SELECT r.conversation_id, r.status, r.verdict, r.updated_by, r.updated_at,
                     c.session_id, c.started_at, c.model_used,
@@ -82,6 +89,7 @@ final class ConversationReviewRepository
                     (SELECT m->>'content'
                        FROM jsonb_array_elements(c.messages) m
                       WHERE m->>'role' = 'user'
+                        AND {$excludeChipLabels}
                       LIMIT 1) AS first_user_message,
                     COUNT(*) OVER() AS total_count
              FROM divechat_conversation_review r
@@ -112,6 +120,10 @@ final class ConversationReviewRepository
     {
         // CHAT-T-113: COUNT(*) OVER() w jednym zapytaniu (zamiast osobnego COUNT) —
         // mniej round-tripow do Railway przy wolnym/zrywajacym polaczeniu.
+        // CHAT-T-122 (ADR-110 pkt 5): pomijaj etykiety przyciskow chipow target:ai
+        // w wyborze tytulu (jak w listByStatus).
+        $excludeChipLabels = ChipButtonLabels::notInSql("m->>'content'");
+
         $rows = $this->db->fetchAll(
             "SELECT c.id AS conversation_id,
                     COALESCE(r.status, 'nowy') AS status,
@@ -121,6 +133,7 @@ final class ConversationReviewRepository
                     (SELECT m->>'content'
                        FROM jsonb_array_elements(c.messages) m
                       WHERE m->>'role' = 'user'
+                        AND {$excludeChipLabels}
                       LIMIT 1) AS first_user_message,
                     COUNT(*) OVER() AS total_count
              FROM divechat_conversations c

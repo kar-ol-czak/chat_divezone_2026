@@ -6,6 +6,7 @@ namespace DiveChat\Admin;
 
 use DiveChat\AI\ExchangeRateService;
 use DiveChat\AI\PricingService;
+use DiveChat\Chip\ChipButtonLabels;
 use DiveChat\Database\PostgresConnection;
 
 /**
@@ -126,6 +127,9 @@ final class CostAnalytics
     {
         $rate = $this->exchangeRates->getUsdToPln();
 
+        // CHAT-T-122 (ADR-110 pkt 5): pomijaj etykiety przyciskow chipow target:ai
+        // (np. "Napisz czego szukasz") w wyborze tytulu — chroni STARE rozmowy.
+        $excludeChipLabels = ChipButtonLabels::notInSql('m.content');
         $rows = $this->db->fetchAll(
             "SELECT
                 c.id,
@@ -137,6 +141,7 @@ final class CostAnalytics
                 jsonb_array_length(COALESCE(c.messages, '[]'::jsonb)) AS messages_count,
                 (SELECT m.content FROM divechat_messages m
                  WHERE m.conversation_id = c.id AND m.role = 'user'
+                   AND {$excludeChipLabels}
                  ORDER BY m.created_at, m.id LIMIT 1) AS first_user_message
              FROM divechat_conversations c
              WHERE c.started_at >= NOW() - (? || ' days')::interval

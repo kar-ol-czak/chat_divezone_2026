@@ -46,9 +46,14 @@ final class ChatService
      *   składany przez front z chipStack. Wstrzykiwany jako instrukcja systemowa
      *   TEJ TURY (prefiks do promptu), NIE jako wiadomość user — historia zostaje
      *   czysta (user message = realna treść klienta). Ulotny: nie zapisywany w bazie.
+     * @param ?list<array{node_key: string, label: string, level: int}> $chipPath
+     *   CHAT-T-122 / ADR-110 (8b/9a): strukturalna ścieżka chipów do UTRWALENIA
+     *   w kolumnie jsonb. ROZŁĄCZNA z $chipContext (który jest ulotny dla LLM):
+     *   zapisywana RAZ na rozmowę (przy INSERT lub gdy chip_path rozmowy NULL),
+     *   idempotentna na kolejnych turach. null = wolne pisanie bez chipów.
      * @return array{response: string, session_id: string, tools_used: string[], products: array, usage: array, diagnostics: array}
      */
-    public function handle(string $sessionId, string $message, ?int $customerId, ?callable $onStatus = null, ?string $nudgeSid = null, ?string $chipContext = null): array
+    public function handle(string $sessionId, string $message, ?int $customerId, ?callable $onStatus = null, ?string $nudgeSid = null, ?string $chipContext = null, ?array $chipPath = null): array
     {
         $startTime = microtime(true);
         $emit = $onStatus ?? static function (string $text): void {};
@@ -63,7 +68,9 @@ final class ChatService
         // mismatch (sekcja 3 spec) — przyjmujemy EFEKTYWNY id z wyniku.
         // CHAT-T-085: nudge_sid przekazywany dalej; zapis w bazie tylko przy
         // INSERT nowej rozmowy (resume istniejącej nie nadpisuje atrybucji).
-        $session = $this->conversationStore->startOrResume($sessionId, $customerId, $nudgeSid);
+        // CHAT-T-122 (ADR-110): chip_path utrwalany raz na rozmowę (INSERT lub gdy
+        // dotąd NULL) — idempotentny w startOrResume (warunek chip_path IS NULL).
+        $session = $this->conversationStore->startOrResume($sessionId, $customerId, $nudgeSid, $chipPath);
         $conversationId = $session['id'];
         $fullHistory = $session['history'];
         $sessionId = $session['session_id'];

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DiveChat\Chat;
 
+use DiveChat\Chip\ChipButtonLabels;
 use DiveChat\Database\PostgresConnection;
 
 /**
@@ -44,12 +45,20 @@ final class ConversationStore
      * istniejacej NIE nadpisujemy — atrybucja nalezy do momentu powstania
      * rozmowy. Klient bez ekspozycji nudge wysle null -> kolumna NULL.
      *
+     * CHAT-T-122 (ADR-110 pkt 3/4): opcjonalny $chipPath (strukturalna sciezka
+     * chipow). Utrwalany RAZ na rozmowe: przy INSERT nowej rozmowy oraz — na
+     * sciezce resume — gdy kolumna chip_path rozmowy jest jeszcze NULL (pierwsza
+     * wiadomosc doslana przez chip). Idempotentny: warunek `chip_path IS NULL`
+     * w UPDATE gwarantuje brak nadpisania na kolejnych turach. ROZLACZNY z
+     * chip_context (string dla LLM), ktory pozostaje efemeryczny (ADR-097).
+     *
+     * @param ?list<array{node_key: string, label: string, level: int}> $chipPath
      * @return array{id: int, history: array, session_id: string} `id` =
      *   klucz PK z divechat_conversations (FK divechat_message_usage).
      *   `session_id` = EFEKTYWNY sessionId (moze sie roznic od wejsciowego
      *   przy ownership mismatch — caller MUSI uzyc tego pola dalej).
      */
-    public function startOrResume(string $sessionId, ?int $customerId, ?string $nudgeSid = null): array
+    public function startOrResume(string $sessionId, ?int $customerId, ?string $nudgeSid = null, ?array $chipPath = null): array
     {
         $row = $this->db->fetchOne(
             'SELECT id, ps_customer_id, messages FROM divechat_conversations
@@ -67,6 +76,13 @@ final class ConversationStore
             if ($existingOwner === $requestOwner) {
                 // Resume istniejacej — NIE nadpisujemy nudge_sid (atrybucja
                 // nalezy do momentu powstania rozmowy, CHAT-T-085).
+                // CHAT-T-122: utrwal chip_path TYLKO gdy dotad NULL (idempotent).
+                // Typowo pierwsza wiadomosc chipowej tury = INSERT ponizej, ale
+                // gdy rozmowa juz istnieje bez sciezki (np. restore) — dopisz raz.
+                if ($chipPath !== null) {
+                    $this->persistChipPathIfEmpty((int) $row['id'], $chipPath);
+                }
+
                 return [
                     'id' => (int) $row['id'],
                     'history' => json_decode($row['messages'], true) ?: [],
@@ -86,11 +102,18 @@ final class ConversationStore
         // CHAT-T-085: nudge_sid zapisany przy INSERT (null gdy klient nie
         // miał ekspozycji nudge — kolumna ma DEFAULT NULL, ale explicit
         // dla czytelnosci kontraktu).
+        // CHAT-T-122 (ADR-110): chip_path zapisany przy INSERT (null gdy wolne
+        // pisanie bez chipow). json_encode z JSON_UNESCAPED_UNICODE — polskie
+        // etykiety (label) bez \uXXXX, spojnie z reszta zapisow jsonb w tym Store.
+        $chipPathJson = $chipPath !== null
+            ? json_encode($chipPath, JSON_UNESCAPED_UNICODE)
+            : null;
+
         $newRow = $this->db->fetchOne(
-            'INSERT INTO divechat_conversations (session_id, ps_customer_id, messages, nudge_sid)
-             VALUES (?, ?, ?::jsonb, ?)
+            'INSERT INTO divechat_conversations (session_id, ps_customer_id, messages, nudge_sid, chip_path)
+             VALUES (?, ?, ?::jsonb, ?, ?::jsonb)
              RETURNING id',
-            [$effectiveSessionId, $customerId, '[]', $nudgeSid],
+            [$effectiveSessionId, $customerId, '[]', $nudgeSid, $chipPathJson],
         );
 
         return [
@@ -98,6 +121,26 @@ final class ConversationStore
             'history' => [],
             'session_id' => $effectiveSessionId,
         ];
+    }
+
+    /**
+     * Utrwal chip_path rozmowy TYLKO gdy dotad NULL (CHAT-T-122, ADR-110 pkt 4).
+     *
+     * Idempotentny: warunek `chip_path IS NULL` w WHERE gwarantuje, ze kolejne
+     * tury tej samej rozmowy NIE nadpisza raz zapisanej sciezki (moment utrwalenia
+     * = pierwsza realna wiadomosc). Uzywany na sciezce resume; INSERT nowej rozmowy
+     * zapisuje chip_path bezposrednio.
+     *
+     * @param list<array{node_key: string, label: string, level: int}> $chipPath
+     */
+    private function persistChipPathIfEmpty(int $conversationId, array $chipPath): void
+    {
+        $this->db->query(
+            'UPDATE divechat_conversations
+             SET chip_path = ?::jsonb
+             WHERE id = ? AND chip_path IS NULL',
+            [json_encode($chipPath, JSON_UNESCAPED_UNICODE), $conversationId],
+        );
     }
 
     /**
@@ -198,6 +241,9 @@ final class ConversationStore
         // wzorzec z CostAnalytics::topConversations(). Alias tabeli list() to bare
         // `divechat_conversations` (nie `c.` jak w topConversations) — podzapytanie
         // odnosi sie do divechat_conversations.id, reszta bez zmian.
+        // CHAT-T-122 (ADR-110 pkt 5): pomijaj etykiety przyciskow chipow target:ai
+        // (np. "Napisz czego szukasz") w wyborze tytulu — chroni STARE rozmowy.
+        $excludeChipLabels = ChipButtonLabels::notInSql('m.content');
         $rows = $this->db->fetchAll(
             "SELECT id, session_id, ps_customer_id, model_used, tools_used,
                     tokens_input, tokens_output,
@@ -208,6 +254,7 @@ final class ConversationStore
                     started_at, updated_at,
                     (SELECT m.content FROM divechat_messages m
                      WHERE m.conversation_id = divechat_conversations.id AND m.role = 'user'
+                       AND {$excludeChipLabels}
                      ORDER BY m.created_at, m.id LIMIT 1) AS first_user_message
              FROM divechat_conversations
              {$where}
