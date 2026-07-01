@@ -92,6 +92,13 @@
     // CHAT-T-089b (51a): tryb nastepczy — po pierwszym bot_text chipy poziomu
     // doklejane POD bablem w messagesEl (inline), startowe menu (chipsEl) znika.
     chipsInline: false,
+    // CHAT-T-121 (ADR-110, decyzja 41a): klik przycisku target:ai NIE wysyla
+    // wiadomosci — odslania pole pisania. Tu zapamietujemy kontekst chipow do
+    // zuzycia przy PIERWSZEJ realnej wiadomosci klienta: { context, path }.
+    // context = string dla LLM (efemeryczny, ADR-097), path = strukturalna
+    // sciezka [{node_key,label,level}] do utrwalenia (kontrakt chip_path).
+    // One-shot: czyszczone po dolaczeniu do wysylki.
+    pendingChip: null,
     // CHAT-T-043 modal statusu zamowienia
     orderModalEl: null,
     orderModalOpen: false,
@@ -424,6 +431,36 @@
   }
 
   /**
+   * CHAT-T-121 (ADR-110, decyzja 8b): strukturalna, rozlaczna reprezentacja
+   * sciezki chipow do UTRWALENIA (kontrakt chip_path — handoff frontend→backend).
+   * Analogicznie do buildChipContext serializujemy zejscie z chipStack, pomijajac
+   * chipStack[0] = root (Level 1, nie niesie intencji). Kazdy element:
+   *   { node_key, label, level }.
+   *
+   * level: drzewo z /api/chip-tree NIE eksportuje kolumny `level` (ChipTreeService
+   *   celowo pomija id/parent_id/level). Wyprowadzamy go z GLEBOKOSCI stosu: root
+   *   to Level 1 na indeksie 0, kazdy push schodzi dokladnie o jeden poziom
+   *   (routeChipNode pcha tylko dzieci biezacego wezla), wiec chipStack[i] ma
+   *   level = i + 1. Niezmiennik trzyma sie tez po "← Wróć" (pop utrzymuje
+   *   ciagle indeksowanie od root).
+   *
+   * Zwraca [] gdy brak sciezki (klient nie zszedl ponizej root).
+   */
+  function buildChipPath() {
+    var path = [];
+    for (var i = 1; i < state.chipStack.length; i++) {
+      var node = state.chipStack[i];
+      if (!node) continue;
+      path.push({
+        node_key: (node.node_key != null) ? String(node.node_key) : '',
+        label: deriveChipLabel(node),
+        level: i + 1
+      });
+    }
+    return path;
+  }
+
+  /**
    * Wspolna logika renderu jednego poziomu chipow do dowolnego kontenera
    * (CHAT-T-089b refaktor): "← Wróć" (gdy nie Level 1) + dzieci (nawigacja,
    * limit mobilny) + przyciski (akcje). Uzywane DWOJAKO: startowy chipsEl (gora)
@@ -607,6 +644,16 @@
         enterInlineMode();
         state.chipStack.push(node);
         appendInlineChips(node);
+      } else {
+        // CHAT-T-121 (ADR-110, decyzja 8a): lisc z bot_text, bez dzieci i bez
+        // przyciskow — po usunieciu zbednego "Napisz czego szukasz" (seed 040)
+        // bot_text SAM zaprasza do pisania. Wchodzimy w tryb pisania: lisc na
+        // stos (zeby sciezka + ai_prompt objely ten lisc), potem enterWriteMode
+        // ustawia pendingChip i fokusuje input. Zachowanie zbiezne z dawnym
+        // klikiem przycisku target:ai na tym lisciu.
+        enterInlineMode();
+        state.chipStack.push(node);
+        enterWriteMode(buildChipContext(null, node.ai_prompt), buildChipPath());
       }
       return;
     }
@@ -633,9 +680,30 @@
   }
 
   /**
+   * CHAT-T-121 (ADR-110, decyzja 41a): wejscie w pisanie z chipa target:ai.
+   * Ukrywa chipy (startowe + wygasza inline), ustawia one-shot pendingChip i
+   * daje fokus na input. Bez wysylania wiadomosci — bot_text liscia juz zaprasza
+   * do pisania. Fokus przez state.inputEl.focus() (ten sam wzorzec co "Nowa
+   * rozmowa" / restore — mobile: przegladarka sama pokaze klawiature).
+   */
+  function enterWriteMode(context, path) {
+    if (state.chipsEl && state.chipsEl.parentNode) {
+      state.chipsEl.style.display = 'none';
+    }
+    spendPriorInlineChips();
+    state.pendingChip = {
+      context: context || null,
+      path: Array.isArray(path) ? path : []
+    };
+    if (state.inputEl) {
+      try { state.inputEl.focus(); } catch (_) { /* mobile/edge: no-op */ }
+    }
+  }
+
+  /**
    * Mapowanie target przycisku na akcje:
    *  - link (+url)    → otworz URL w nowej karcie (_blank, noopener)
-   *  - ai             → sendUserMessage(label) (→ LLM)
+   *  - ai             → wejscie w pisanie (ADR-110) — NIE wysyla wiadomosci
    *  - modal:order    → openOrderModal(); inne modal:<typ> → fallback ai
    *  - curated:<kat> / inne → fallback ai (hook na przyszlosc, poza zakresem)
    */
@@ -651,7 +719,12 @@
     var srcNode = state.chipStack.length ? state.chipStack[state.chipStack.length - 1] : null;
     var ctx = buildChipContext(null, srcNode && srcNode.ai_prompt);
     if (target === 'ai') {
-      sendUserMessage(btn.label || '', ctx);
+      // CHAT-T-121 (ADR-110, decyzja 41a): NIE wysylamy wiadomosci. Etykieta
+      // przycisku ("Napisz czego szukasz") to instrukcja UI, nie tresc — nigdy
+      // nie trafia do historii ani do backendu. Odslaniamy pole pisania i
+      // zapamietujemy kontekst chipow do zuzycia przy pierwszej realnej
+      // wiadomosci klienta (context dla LLM + strukturalna sciezka chip_path).
+      enterWriteMode(ctx, buildChipPath());
       return;
     }
     if (target.indexOf('modal:') === 0) {
@@ -887,6 +960,21 @@
     // poprzednich babli zostaje klikalny.
     spendPriorInlineChips();
 
+    // CHAT-T-121 (ADR-110, decyzje 41a/9a): konsumpcja pendingChip. Jesli klient
+    // wszedl w pisanie przez przycisk target:ai, pierwsza realna wiadomosc niesie
+    // zapamietany chip_context (string dla LLM tej tury) ORAZ strukturalna sciezke
+    // chip_path (do utrwalenia w rozmowie). One-shot: kolejne wiadomosci tury juz
+    // bez tego. Jawny chipContext (lisc-ai z routeChipNode) ma pierwszenstwo nad
+    // pendingChip; chip_path pochodzi WYLACZNIE z pendingChip (target:ai).
+    var chipPath = null;
+    if (state.pendingChip) {
+      if (!chipContext) chipContext = state.pendingChip.context;
+      if (Array.isArray(state.pendingChip.path) && state.pendingChip.path.length) {
+        chipPath = state.pendingChip.path;
+      }
+      state.pendingChip = null;
+    }
+
     appendUserMessage(text);
     state.inputEl.value = '';
     state.inputEl.dispatchEvent(new Event('input'));
@@ -920,7 +1008,9 @@
     // CHAT-T-088e (ADR-097, decyzja 65b): chipContext (sciezka chipow + ai_prompt)
     // jako OSOBNY parametr — backend wstrzykuje go do system promptu tej tury, NIE
     // do tresci user message. null dla wolnego pisania (czysta rozmowa).
-    state.abortCtl = transport.sendMessage(text, state.sessionId, state.nudgeSid, chipContext || null, {
+    // CHAT-T-121 (ADR-110): chipPath — strukturalna sciezka do utrwalenia (jsonb),
+    // rozlaczna z chipContext. null gdy klient nie wszedl przez chip target:ai.
+    state.abortCtl = transport.sendMessage(text, state.sessionId, state.nudgeSid, chipContext || null, chipPath, {
       onStatus: function (statusText) {
         showTyping(statusText || 'Asystent pisze');
       },

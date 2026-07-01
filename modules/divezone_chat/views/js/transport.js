@@ -6,13 +6,17 @@
  *
  * Eksponuje globalnie: window.DivezoneChatTransport
  *
- * sendMessage(message, sessionId, nudgeSid, chipContext, callbacks) -> AbortController
+ * sendMessage(message, sessionId, nudgeSid, chipContext, chipPath, callbacks) -> AbortController
  *   callbacks: { onStatus(text), onDone(payload), onError(msg) }
  *   nudgeSid (CHAT-T-085 / ADR-091): opcjonalna atrybucja ekspozycji nudge.
  *     null gdy klient nie wszedl przez nudge (launcher / second message).
  *   chipContext (CHAT-T-088e / ADR-097, decyzja 65b): opcjonalny kontekst sciezki
  *     chipow ("Dobór rozmiaru › Kaptur" + ai_prompt). OSOBNY od message — backend
  *     wstrzykuje go do promptu tury, NIE do historii. null dla wolnego pisania.
+ *   chipPath (CHAT-T-121 / ADR-110): opcjonalna STRUKTURALNA sciezka chipow
+ *     [{node_key,label,level}] do utrwalenia w divechat_conversations.chip_path
+ *     (jsonb). Rozlaczna z chipContext (string dla LLM). null/[] dla wolnego
+ *     pisania. Wysylana jako body.chip_path (kontrakt: handoff chip_path).
  *
  * Token + customerId + time + backendUrl + tokenUrl czyta z window.DIVEZONE_CHAT_BOOT
  * (ustawione przez shim PHP w hookDisplayFooter).
@@ -125,7 +129,7 @@
     return { events: events, rest: rest };
   }
 
-  function sendMessage(message, sessionId, nudgeSid, chipContext, callbacks) {
+  function sendMessage(message, sessionId, nudgeSid, chipContext, chipPath, callbacks) {
     callbacks = callbacks || {};
     var onStatus = callbacks.onStatus || function () {};
     var onDone   = callbacks.onDone   || function () {};
@@ -143,6 +147,10 @@
     // CHAT-T-088e (ADR-097, decyzja 65b): kontekst sciezki chipow jako osobne pole.
     // Backend (ChatController::resolveChipContext) trimuje + capuje; tu tylko gdy niepuste.
     if (chipContext) body.chip_context = chipContext;
+    // CHAT-T-121 (ADR-110): strukturalna sciezka chipow jako osobne pole jsonb.
+    // Backend (ChatController::resolveChipPath) waliduje + capuje elementy i utrwala
+    // TYLKO raz na rozmowe. Wysylamy tylko gdy niepusta tablica.
+    if (Array.isArray(chipPath) && chipPath.length) body.chip_path = chipPath;
     var bodyJson = JSON.stringify(body);
 
     function makeRequest() {
