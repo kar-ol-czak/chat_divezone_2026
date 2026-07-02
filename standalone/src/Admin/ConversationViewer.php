@@ -27,7 +27,7 @@ final class ConversationViewer
         $conv = $this->db->fetchOne(
             'SELECT id, session_id, ps_customer_id, model_used,
                     tokens_input, tokens_output, cache_read_tokens, cache_creation_tokens,
-                    estimated_cost, started_at, updated_at, closed_at
+                    estimated_cost, started_at, updated_at, closed_at, chip_path
              FROM divechat_conversations
              WHERE id = ?',
             [$conversationId],
@@ -116,10 +116,34 @@ final class ConversationViewer
             ],
             'messages' => $messagesOut,
             'orphan_usage_count' => count($orphanUsage),
+            // CHAT-T-123 (ADR-110, decyzja 9a): strukturalna ścieżka chipów, przez
+            // którą klient wszedł w rozmowę (utrwalona przez CHAT-T-122). jsonb z PG
+            // wraca jako string → dekodujemy. null gdy wolne pisanie (brak chipów).
+            // Zwracamy tylko listę węzłów; render breadcrumb po stronie panelu.
+            'chip_path' => $this->decodeChipPath($conv['chip_path'] ?? null),
             // CHAT-T-104 (ADR-102): stan recenzji rozmowy. null = brak wiersza =
             // stan "nowy" implicytny (D3). Mirror dedykowanego GET /api/admin/review/:id
             // (kanoniczny endpoint dla CHAT-T-105); tu wygodny przy ladowaniu modala.
             'review' => $this->reviewRepository?->getByConversation($conversationId),
         ];
+    }
+
+    /**
+     * Dekoduj kolumnę jsonb `chip_path` do listy węzłów `{node_key, label, level}`.
+     * Defensywnie: null/pusty/niepoprawny JSON/nie-tablica → null (panel nie renderuje
+     * bloku ścieżki dla rozmów z wolnego pisania). CHAT-T-123.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    private function decodeChipPath(mixed $raw): ?array
+    {
+        if (!is_string($raw) || $raw === '') {
+            return null;
+        }
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded) || $decoded === []) {
+            return null;
+        }
+        return array_values($decoded);
     }
 }

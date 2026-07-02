@@ -40,6 +40,10 @@
             .then(function (data) {
                 renderHeader(data);
                 renderMessages(data.messages || []);
+                // CHAT-T-123 (ADR-110): ślad chipów, przez który klient wszedł w
+                // rozmowę — wstawiany NAD wątkiem (renderMessages czyści bodyEl, więc
+                // dokładamy po nim). Pusty/NULL chip_path => nic nie renderujemy.
+                renderChipPath(data.chip_path);
             })
             .catch(function (err) {
                 metaEl.textContent = 'Błąd: ' + err.message;
@@ -63,6 +67,30 @@
             + DiveAdmin.fmt.tokens(totals.input_tokens) + ' in / '
             + DiveAdmin.fmt.tokens(totals.output_tokens) + ' out'
             + (totals.cache_read_tokens ? ' · cache: ' + DiveAdmin.fmt.tokens(totals.cache_read_tokens) : '');
+    }
+
+    /**
+     * Ślad chipów (breadcrumb) nad wątkiem: "Ścieżka: Dobór sprzętu › Komputer".
+     * chip_path = [{node_key, label, level}] utrwalone przez CHAT-T-122. Render tylko
+     * gdy niepusta lista z co najmniej jedną etykietą — rozmowy z wolnego pisania
+     * (NULL/[]) nie dostają bloku. Etykiety escapowane (DiveAdmin.escHtml); separator
+     * "›" to stały tekst UI, nie dane. CHAT-T-123 (ADR-110).
+     */
+    function renderChipPath(chipPath) {
+        if (!Array.isArray(chipPath) || chipPath.length === 0) return;
+
+        var labels = chipPath
+            .map(function (node) { return (node && node.label != null) ? String(node.label) : ''; })
+            .filter(function (s) { return s.trim() !== ''; });
+        if (labels.length === 0) return;
+
+        var parts = labels.map(function (l) { return DiveAdmin.escHtml(l); });
+        var trail = document.createElement('div');
+        trail.className = 'conv-chip-path';
+        trail.innerHTML = '<span class="conv-chip-path__label">Ścieżka:</span> '
+            + parts.join(' <span class="conv-chip-path__sep">›</span> ');
+
+        bodyEl.insertBefore(trail, bodyEl.firstChild);
     }
 
     function renderMessages(messages) {
