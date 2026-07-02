@@ -255,6 +255,10 @@ class AdminDivezoneChatController extends ModuleAdminController
         $css .= '.dz-conv-meta dt{color:#777;}';
         $css .= '.dz-conv-meta dd{margin:0;}';
         $css .= '.dz-conv-cost{background:#fffdf5;border:1px solid #e8d96a;padding:10px 14px;border-radius:4px;margin-bottom:14px;font-size:12px;}';
+        // CHAT-T-125: breadcrumb sciezki chipow — dyskretny, maly szary tekst nad "Przebieg rozmowy".
+        $css .= '.dz-conv-chip-path{font-size:12px;color:#888;margin:20px 0 4px;}';
+        $css .= '.dz-conv-chip-path .label{font-weight:600;color:#666;}';
+        $css .= '.dz-conv-chip-path .sep{color:#bbb;}';
         $css .= '.dz-conv-thread{display:flex;flex-direction:column;gap:6px;max-width:880px;margin:8px 0;}';
         $css .= '.dz-conv-bubble{padding:10px 14px;border-radius:8px;max-width:78%;font-size:13px;line-height:1.45;}';
         $css .= '.dz-conv-bubble--user{background:#e8f0fe;align-self:flex-end;margin-left:auto;border:1px solid #c9d7f0;}';
@@ -1783,6 +1787,10 @@ JS;
         // panelem recenzji pod trescia rozmowy (renderReviewPanel nizej).
 
         $messages = isset($resp['messages']) && is_array($resp['messages']) ? $resp['messages'] : array();
+        // CHAT-T-125 (ADR-110, decyzja 9a): breadcrumb sciezki chipow, przez ktora
+        // klient wszedl w rozmowe (utrwalona od CHAT-T-122, zwracana przez endpoint
+        // /api/conversations/{sid} od CHAT-T-125). Wolne pisanie -> brak -> nic.
+        $html .= $this->renderChipPathBreadcrumb($resp);
         $html .= '<h3 style="margin:24px 0 8px;border-bottom:1px solid #ddd;padding-bottom:6px;">' . $this->l('Przebieg rozmowy') . '</h3>';
         $html .= $this->renderConvMessages($messages);
 
@@ -1860,6 +1868,40 @@ JS;
         }
         $html .= '</div>';
         return $html;
+    }
+
+    /**
+     * CHAT-T-125 (ADR-110, decyzja 9a): breadcrumb strukturalnej sciezki chipow.
+     * Wejscie: $resp['chip_path'] = lista wezlow {node_key, label, level} z endpointu
+     * /api/conversations/{sid}. Renderuje "Sciezka: Dobor sprzetu > Komputer nurkowy"
+     * (separator to staly tekst UI). Brak/pusty/nie-tablica/brak labeli -> '' (rozmowa
+     * z wolnego pisania nie ma breadcrumbu). Etykiety zawsze przez htmlspecialchars
+     * ENT_QUOTES. Styl dyskretny (dz-conv-chip-path, maly szary tekst).
+     */
+    private function renderChipPathBreadcrumb($resp)
+    {
+        if (!isset($resp['chip_path']) || !is_array($resp['chip_path']) || empty($resp['chip_path'])) {
+            return '';
+        }
+
+        $labels = array();
+        foreach ($resp['chip_path'] as $node) {
+            if (!is_array($node) || !isset($node['label'])) {
+                continue;
+            }
+            $label = trim((string) $node['label']);
+            if ($label === '') {
+                continue;
+            }
+            $labels[] = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
+        }
+
+        if (empty($labels)) {
+            return '';
+        }
+
+        return '<div class="dz-conv-chip-path"><span class="label">' . $this->l('Sciezka:') . '</span> '
+            . implode(' <span class="sep">&rsaquo;</span> ', $labels) . '</div>';
     }
 
     /**

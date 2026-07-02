@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DiveChat\Chat;
 
 use DiveChat\Chip\ChipAiLabelProvider;
+use DiveChat\Chip\ChipPathCodec;
 use DiveChat\Database\PostgresConnection;
 
 /**
@@ -328,6 +329,11 @@ final class ConversationStore
             'started_at' => $row['started_at'],
             'updated_at' => $row['updated_at'],
             'closed_at' => $row['closed_at'],
+            // CHAT-T-125 (ADR-110, decyzja 9a): strukturalna ścieżka chipów dla
+            // panelu recenzji PS (/api/conversations/{sid}). SELECT * pobiera już
+            // kolumnę chip_path; dekodujemy jsonb→lista wspólnym ChipPathCodec.
+            // null gdy wolne pisanie (brak chipów) — panel PS wtedy nic nie renderuje.
+            'chip_path' => ChipPathCodec::decode($row['chip_path'] ?? null),
         ];
     }
 
