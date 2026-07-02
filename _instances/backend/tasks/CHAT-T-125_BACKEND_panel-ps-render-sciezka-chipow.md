@@ -24,7 +24,12 @@ CHAT-T-123 dodał render ścieżki chipów w standalone admin dashboard (`chat.d
 - Panel recenzji w module PS („Przebieg rozmowy") pokazuje breadcrumb ścieżki dla rozmowy 29e2c4a8; rozmowa z wolnego pisania → brak breadcrumb.
 
 ## Wynik (2026-07-02)
-**Status: KOD GOTOWY — czeka na 2 rsync STOP-gated (A→chat.divezone.pl/src, potem B→newtmp2/modules).**
+**Status: ZDEPLOYOWANE na prod (A + B), 2026-07-02. Pozostaje wizualne potwierdzenie Karola w panelu BO dla rozmowy 29e2c4a8 (twardy refresh).**
+
+### Deploy (wykonany 2026-07-02, autoryzacja Karola „deploy A zrób a potem deploy B")
+- **A → chat.divezone.pl** (ADR-089): backup `_deploy_bak/CHAT-T-125/` (ConversationStore + ConversationViewer), rsync per-plik 3 plików (ChipPathCodec nowy + 2 zmienione). Weryfikacja: **md5 3/3 match** repo↔serwer, **`php -l` clean 3/3** (ea-php84 8.4.22), smoke **`/api/health` HTTP 200 / 0.29s**.
+- **B → newtmp2/modules/divezone_chat** (za explicit zgodą, 116b): backup do `_deploy_bak/CHAT-T-125/module_*.bak` (md5 760bd9… = stary serwer), rsync 1 pliku bez `--delete`. Weryfikacja: **md5 match** (34ff8ab…), **`php -l` clean**, marker `CHAT-T-125` obecny 4×. Cache: **`var/cache/prod` wyczyszczony** (PrestaShop przebudował — store front `divezone.pl` HTTP 200 po czyszczeniu). LSCache: panel BO nie jest cache'owany przez LSCache (front-office only) → brak akcji.
+- **Rollback** (gdyby regres): kopie z `~/public_html/chat.divezone.pl/_deploy_bak/CHAT-T-125/*.bak` z powrotem (standalone) + `module_AdminDivezoneChatController.php.bak` → newtmp2.
 
 ### Część A — backend (standalone)
 - **Wspólny `DiveChat\Chip\ChipPathCodec::decode(mixed): ?array`** — wydzielony dekoder jsonb `chip_path` (null/pusty/niepoprawny/pusta tablica → null; string z PG lub już-tablica). Zamiast duplikować `decodeChipPath` z CHAT-T-123.
