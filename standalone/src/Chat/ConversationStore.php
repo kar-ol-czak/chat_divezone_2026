@@ -258,7 +258,9 @@ final class ConversationStore
                     cache_read_tokens, cache_creation_tokens,
                     estimated_cost,
                     knowledge_gap, admin_status,
-                    jsonb_array_length(COALESCE(messages, '[]'::jsonb)) as message_count,
+                    (SELECT count(*) FROM jsonb_array_elements(COALESCE(messages, '[]'::jsonb)) mm
+                      WHERE mm->>'role' IN ('user','assistant')
+                        AND COALESCE(mm->>'content','') <> '') as message_count,
                     started_at, updated_at,
                     (SELECT m.content FROM divechat_messages m
                      WHERE m.conversation_id = divechat_conversations.id AND m.role = 'user'{$excludeSql}

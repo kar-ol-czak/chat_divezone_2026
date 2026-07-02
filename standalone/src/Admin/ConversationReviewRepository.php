@@ -114,7 +114,9 @@ final class ConversationReviewRepository
         $rows = $this->db->fetchAll(
             "SELECT r.conversation_id, r.status, r.verdict, r.updated_by, r.updated_at,
                     c.session_id, c.started_at, c.model_used,
-                    COALESCE(jsonb_array_length(c.messages), 0) AS message_count,
+                    (SELECT count(*) FROM jsonb_array_elements(COALESCE(c.messages, '[]'::jsonb)) mm
+                      WHERE mm->>'role' IN ('user','assistant')
+                        AND COALESCE(mm->>'content','') <> '') AS message_count,
                     (SELECT m->>'content'
                        FROM jsonb_array_elements(c.messages) m
                       WHERE m->>'role' = 'user'{$excludeSql}
@@ -164,7 +166,9 @@ final class ConversationReviewRepository
                     COALESCE(r.status, 'nowy') AS status,
                     r.verdict, r.updated_by, r.updated_at,
                     c.session_id, c.started_at, c.model_used,
-                    COALESCE(jsonb_array_length(c.messages), 0) AS message_count,
+                    (SELECT count(*) FROM jsonb_array_elements(COALESCE(c.messages, '[]'::jsonb)) mm
+                      WHERE mm->>'role' IN ('user','assistant')
+                        AND COALESCE(mm->>'content','') <> '') AS message_count,
                     (SELECT m->>'content'
                        FROM jsonb_array_elements(c.messages) m
                       WHERE m->>'role' = 'user'{$excludeSql}

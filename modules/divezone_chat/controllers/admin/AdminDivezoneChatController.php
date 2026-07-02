@@ -256,14 +256,19 @@ class AdminDivezoneChatController extends ModuleAdminController
         $css .= '.dz-conv-meta dd{margin:0;}';
         $css .= '.dz-conv-cost{background:#fffdf5;border:1px solid #e8d96a;padding:10px 14px;border-radius:4px;margin-bottom:14px;font-size:12px;}';
         // CHAT-T-125: breadcrumb sciezki chipow — dyskretny, maly szary tekst nad "Przebieg rozmowy".
-        $css .= '.dz-conv-chip-path{font-size:12px;color:#888;margin:20px 0 4px;}';
+        // CHAT-T-126 (czesc D): breadcrumb 12->14px (czytelnosc na rowni z czatem).
+        $css .= '.dz-conv-chip-path{font-size:14px;color:#888;margin:20px 0 4px;}';
         $css .= '.dz-conv-chip-path .label{font-weight:600;color:#666;}';
         $css .= '.dz-conv-chip-path .sep{color:#bbb;}';
         $css .= '.dz-conv-thread{display:flex;flex-direction:column;gap:6px;max-width:880px;margin:8px 0;}';
-        $css .= '.dz-conv-bubble{padding:10px 14px;border-radius:8px;max-width:78%;font-size:13px;line-height:1.45;}';
+        $css .= '.dz-conv-bubble{padding:10px 14px;border-radius:8px;max-width:78%;font-size:14px;line-height:1.45;}';
         $css .= '.dz-conv-bubble--user{background:#e8f0fe;align-self:flex-end;margin-left:auto;border:1px solid #c9d7f0;}';
         $css .= '.dz-conv-bubble--ai{background:#f5f5f5;align-self:flex-start;margin-right:auto;border:1px solid #e2e2e2;}';
         $css .= '.dz-conv-bubble .role{font-size:11px;color:#666;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;}';
+        // CHAT-T-126 (decyzja 43a): babelek chipu = akcja klienta; lekko przygaszony
+        // + drobny znacznik "(chip)" w naglowku roli.
+        $css .= '.dz-conv-bubble--chip{background:#eef4ff;border-style:dashed;}';
+        $css .= '.dz-conv-bubble--chip .chip-tag{font-weight:400;text-transform:none;letter-spacing:0;color:#9aa;}';
         // CHAT-T-105: stary .dz-status-badge/.dz-status-* (CHAT-T-048) USUNIETE — bez uzycia.
         // CHAT-T-105 (ADR-102): badge statusu recenzji + chip werdyktu + pasek filtra + panel.
         $css .= '.dz-review-badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:0.85em;color:#fff;font-weight:600;}';
@@ -1792,7 +1797,10 @@ JS;
         // /api/conversations/{sid} od CHAT-T-125). Wolne pisanie -> brak -> nic.
         $html .= $this->renderChipPathBreadcrumb($resp);
         $html .= '<h3 style="margin:24px 0 8px;border-bottom:1px solid #ddd;padding-bottom:6px;">' . $this->l('Przebieg rozmowy') . '</h3>';
-        $html .= $this->renderConvMessages($messages);
+        // CHAT-T-126 (decyzja 43a): chipy klikane (chip_path) wstawiamy do watku jako
+        // babelki klienta NA POCZATKU (klient klikal chipy zanim zaczal pisac).
+        $chipPath = (isset($resp['chip_path']) && is_array($resp['chip_path'])) ? $resp['chip_path'] : array();
+        $html .= $this->renderConvMessages($messages, $chipPath);
 
         // CHAT-T-105 (ADR-102): panel recenzji POD trescia rozmowy. conversation_id
         // (int) z detalu (kolumna `id`); stan recenzji z dedykowanego GET /api/admin/review/:id.
@@ -1839,13 +1847,35 @@ JS;
         return $html;
     }
 
-    private function renderConvMessages($messages)
+    private function renderConvMessages($messages, $chipPath = array())
     {
-        if (empty($messages)) {
+        if (!is_array($chipPath)) {
+            $chipPath = array();
+        }
+        if (empty($messages) && empty($chipPath)) {
             return '<p><em>' . $this->l('Brak wiadomosci w tej rozmowie.') . '</em></p>';
         }
 
         $html = '<div class="dz-conv-thread">';
+
+        // CHAT-T-126 (decyzja 43a): chipy klikniete jako akcje klienta — babelki po
+        // prawej (dz-conv-bubble--user) NA POCZATKU watku, w kolejnosci zejscia
+        // sciezki. Etykieta = label chipu (tekst, tylko escape — bez markdownu).
+        // Drobny znacznik "(chip)" odroznia je od realnie wpisanych wiadomosci.
+        foreach ($chipPath as $node) {
+            if (!is_array($node) || !isset($node['label'])) {
+                continue;
+            }
+            $label = trim((string) $node['label']);
+            if ($label === '') {
+                continue;
+            }
+            $html .= '<div class="dz-conv-bubble dz-conv-bubble--user dz-conv-bubble--chip">';
+            $html .= '<div class="role">' . $this->l('Klient') . ' <span class="chip-tag">(chip)</span></div>';
+            $html .= '<div>' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</div>';
+            $html .= '</div>';
+        }
+
         foreach ($messages as $msg) {
             if (!is_array($msg)) {
                 continue;
@@ -1900,42 +1930,92 @@ JS;
             return '';
         }
 
-        return '<div class="dz-conv-chip-path"><span class="label">' . $this->l('Sciezka:') . '</span> '
+        // CHAT-T-126 (decyzja 44a): literal UTF-8 "Ścieżka:" zamiast $this->l() —
+        // reszta etykiet w tym kontrolerze jest bez diakrytyk (l() gubilo je w BO),
+        // a tu chcemy poprawne polskie znaki. Strona BO jest UTF-8, wiec ś renderuje sie.
+        return '<div class="dz-conv-chip-path"><span class="label">' . "\xC5\x9Acie\xC5\xBCka:" . '</span> '
             . implode(' <span class="sep">&rsaquo;</span> ', $labels) . '</div>';
     }
 
     /**
-     * CHAT-T-051 (Problem B): bezpieczne formatowanie tresci bubla.
-     * KOLEJNOSC KRYTYCZNA dla bezpieczenstwa:
-     *  1. htmlspecialchars NAJPIERW — zero surowego HTML z tresci rozmowy.
-     *  2. **bold** -> <strong> (regex na sparowanych ** — htmlspecialchars
-     *     nie zmienia gwiazdek, wiec dziala na zescapowanym tekscie).
-     *  3. URL http(s) -> <a target=_blank rel="noopener noreferrer nofollow">.
-     *     Po escape & w URL jest juz &amp; — budujac href uzywamy tej formy
-     *     bez odwracania escape (odwracanie = wektor XSS).
-     *  4. nl2br NA KONCU — po wszystkich podstawieniach.
-     * Zakres minimalny: bold + linki. Bez markdown-parsera, obrazkow, list.
+     * CHAT-T-126 (decyzja 42b): panel renderuje TAK JAK widget — wierny port
+     * SPEC z renderMarkdown() (widget-bundle.js ~311). TA SAMA specyfikacja, port
+     * do PHP (nie wspoldzielony plik — dwa swiaty, PHP 7.2 vs JS).
+     *
+     * KOLEJNOSC KRYTYCZNA (bezpieczenstwo + poprawnosc):
+     *  1. escape HTML NAJPIERW (ENT_QUOTES = odpowiednik escapeHtml widgetu) —
+     *     zero surowego HTML z tresci rozmowy; reguly ponizej dzialaja na
+     *     zescapowanym tekscie (gwiazdki/tyldy/nawiasy htmlspecialchars nie rusza).
+     *  2. link [label](url) — TYLKO http(s) i mailto -> <a target=_blank rel=noopener>.
+     *     Po escape & w url jest juz &amp; (poprawny href, bez odwracania escape).
+     *     Priorytet nad golym URL (skladnia markdown wygrywa).
+     *  3. bold **...** (bez * i \n wewnatrz).
+     *  4. przekreslenie ~~...~~ (GFM strikethrough — stara cena promocyjna, 36a);
+     *     podwojna tylda, [^~\n]+ zostawia pojedyncza tylde ("~5 dni") nietknieta.
+     *  5. listy ("- "/"• " -> <ul><li>) + paragrafy (<p>...<br>...</p>).
+     * CHAT-T-126: goly-URL autolink USUNIETY — widget go NIE ma, wiec panel wiernie
+     * odwzorowuje widget (gole URL zostaja tekstem, jak u klienta). Unika tez
+     * podwojnego opakowania url wewnatrz <a> z reguly [label](url).
      */
     private function formatConvBubbleText($raw)
     {
-        $escaped = htmlspecialchars((string) $raw, ENT_QUOTES, 'UTF-8');
+        // 1. escape
+        $safe = htmlspecialchars((string) $raw, ENT_QUOTES, 'UTF-8');
 
-        // 2. **bold** — non-greedy, bez gwiazdek wewnatrz.
-        $escaped = preg_replace('/\*\*([^*]+?)\*\*/u', '<strong>$1</strong>', $escaped);
-
-        // 3. URL — konserwatywnie: trim konczacych znakow interpunkcyjnych ktore
-        //    zwykle nie sa czesc URL.
-        $escaped = preg_replace_callback(
-            '#\b(https?://[^\s<>"\']+)#i',
+        // 2. link [label](url) — http(s) i mailto
+        $safe = preg_replace_callback(
+            '/\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/',
             function ($m) {
-                $url = rtrim($m[1], '.,;:!?)]}>');
-                return '<a href="' . $url . '" target="_blank" rel="noopener noreferrer nofollow">' . $url . '</a>';
+                return '<a href="' . $m[2] . '" target="_blank" rel="noopener noreferrer">' . $m[1] . '</a>';
             },
-            $escaped
+            $safe
         );
 
-        // 4. nl2br — na koncu, po linkach (gdyby URL byl wewnatrz nowej linii).
-        return nl2br($escaped);
+        // 3. bold **...**
+        $safe = preg_replace('/\*\*([^*\n]+)\*\*/', '<strong>$1</strong>', $safe);
+
+        // 4. przekreslenie ~~...~~
+        $safe = preg_replace('/~~([^~\n]+)~~/', '<del>$1</del>', $safe);
+
+        // 5. listy + paragrafy (grupowanie linii jak w widgecie)
+        $lines = preg_split('/\n/', $safe);
+        $out = array();
+        $listBuf = array();
+        $paraBuf = array();
+
+        $flushList = function () use (&$listBuf, &$out) {
+            if (!empty($listBuf)) {
+                $items = '';
+                foreach ($listBuf as $it) {
+                    $items .= '<li>' . $it . '</li>';
+                }
+                $out[] = '<ul>' . $items . '</ul>';
+                $listBuf = array();
+            }
+        };
+        $flushPara = function () use (&$paraBuf, &$out) {
+            if (!empty($paraBuf)) {
+                $out[] = '<p>' . implode('<br>', $paraBuf) . '</p>';
+                $paraBuf = array();
+            }
+        };
+
+        foreach ($lines as $line) {
+            if (preg_match('/^\s*(?:-|•)\s+(.*)$/u', $line, $m)) {
+                $flushPara();
+                $listBuf[] = $m[1];
+            } elseif (trim($line) === '') {
+                $flushList();
+                $flushPara();
+            } else {
+                $flushList();
+                $paraBuf[] = $line;
+            }
+        }
+        $flushList();
+        $flushPara();
+
+        return implode('', $out);
     }
 
     private function renderConvDiagnostics($resp)
