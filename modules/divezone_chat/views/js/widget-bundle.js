@@ -320,6 +320,11 @@
     // bold **...**
     safe = safe.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
 
+    // przekreslenie ~~...~~ (GFM strikethrough) — stara cena promocyjna, decyzja 36a
+    // (CHAT-T-124). Wymaga PODWOJNEJ tyldy; [^~\n]+ = bez zagniezdzen i wieloliniowosci
+    // (jak bold), wiec pojedyncza tylda ("~5 dni", "~5 670") pozostaje nietknieta.
+    safe = safe.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
+
     // listy: linie zaczynajace sie od "- " lub "• " grupowane w <ul>
     var lines = safe.split(/\n/);
     var out = [];

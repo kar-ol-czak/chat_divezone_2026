@@ -178,6 +178,9 @@
   overflow-wrap: anywhere;
 }
 .dz-bubble--bot strong { font-weight: 600; color: var(--dz-text-strong); }
+/* CHAT-T-124: stara cena promocyjna ~~...~~ -> <del>. Jawny line-through (gdyby
+   reset go zjadl) + dyskretne wyszarzenie odrozniajace ja od ceny aktualnej. */
+.dz-bubble--bot del { text-decoration: line-through; opacity: .7; }
 .dz-bubble--bot a { color: var(--dz-callout); text-decoration: underline; }
 .dz-bubble--bot ul { margin: 6px 0 0; padding-left: 18px; }
 .dz-bubble--bot li { margin: 2px 0; }
