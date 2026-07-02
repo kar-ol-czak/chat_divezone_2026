@@ -590,3 +590,21 @@ SQL tabele:
 
 **Otwarte pytania:**
 - Smoke test w UI panelu admina (do wykonania przez Karola)
+
+---
+
+## UWAGA: ten plik jest przestarzały (ostatnia pełna aktualizacja 2026-04-30)
+Aktualny stan prac: patrz pliki tasków w `_instances/*/tasks/CHAT-T-NNN_*` oraz rejestr decyzji `_docs/10_decyzje_projektowe.md` (ostatni ADR = źródło prawdy). Commity `docs:` w `git log` opisują deploye. Gruntowna aktualizacja tego pliku = osobny task.
+
+## SESJA 2026-07-02 — chipy: ścieżka, render panelu, przekreślenie ceny
+Zdeployowane i zweryfikowane na prod (ADR-110):
+- CHAT-T-121 (widget): przycisk `target:ai` = wejście w pisanie (nie wiadomość), dosyłanie strukturalnej ścieżki `chip_path`; seed 040 (usunięte zbędne przyciski z 12 liści).
+- CHAT-T-122 (backend): migracja 039 (`chip_path jsonb` + partial GIN), utrwalanie ścieżki, fix `first_user_message` (dynamiczna lista labeli `target:ai`, korekta 18a).
+- CHAT-T-125 (backend+panel PS): endpoint `/api/conversations/{sid}` zwraca `chip_path`; breadcrumb ścieżki w panelu recenzji modułu PS (ADR-070 — panel PS, nie wygaszany standalone).
+- CHAT-T-124 (widget): render `~~przekreślenie~~` jako `<del>` (stara cena promocyjna, decyzja 36a).
+- CHAT-T-126 (backend+panel PS): render rozmowy jak w widgecie (link `[label](url)`, `~~`, listy), chipy klikane jako bąbelki klienta w wątku, fix licznika `message_count` (tylko widoczne user/assistant), breadcrumb 14px + polskie znaki, czcionka czatu 14px.
+- CLAUDE.md: nowa sekcja „Mapa infrastruktury i wdrożeń" (dwa światy, dwa panele admina, cache, brzytwa Okhama).
+
+## HORYZONT (do zrobienia)
+- Statystyki klikalności chipów (Sprawa 3): liczone czystym SQL z `chip_path` (jsonb_array_elements → GROUP BY node_key), bez osobnej tabeli zdarzeń. Fundament (kolumna + GIN) gotowy.
+- Selektywne czyszczenie LSCache: obecny `flush_all_litespeed.php` czyści CAŁY cache (kosztowna odbudowa). LiteSpeed wspiera purge po tagach (URL/kategoria/produkt po ID). Rozpoznać: plugin LiteSpeed dla PS, jakie tagi generuje, przerobić skrypt na parametr (URL/ID) — żeby deploy nie wywalał całego cache.
