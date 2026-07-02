@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace DiveChat\Admin;
 
-use DiveChat\Chip\ChipButtonLabels;
+use DiveChat\Chip\ChipAiLabelProvider;
 use DiveChat\Database\PostgresConnection;
 use DiveChat\Enum\ReviewStatus;
 use DiveChat\Enum\ReviewVerdict;
@@ -23,9 +23,31 @@ final class ConversationReviewRepository
     /** Pola edytowalne przez upsert (poza updated_by/updated_at sterowanymi serwerowo). */
     private const UPDATABLE = ['status', 'verdict', 'note'];
 
+    /**
+     * Cache etykiet target:ai na czas ZADANIA (CHAT-T-122, ADR-110 18a). null =
+     * jeszcze nie pobrane; pusta lista = pobrano, brak przyciskow ai. listByStatus
+     * routuje do listNewInbox dla 'nowy', wiec zwykle jedno pobranie/zadanie i tak,
+     * ale cache chroni przed dublem gdyby oba wywolano.
+     *
+     * @var list<string>|null
+     */
+    private ?array $targetAiLabelsCache = null;
+
     public function __construct(
         private readonly PostgresConnection $db,
     ) {}
+
+    /**
+     * Dynamiczna lista etykiet target:ai z drzewa (CHAT-T-122, ADR-110 18a),
+     * pobrana RAZ na zadanie i zbuforowana. Uzywana do wykluczenia labeli
+     * przyciskow z wyboru tytulu rozmowy (first_user_message).
+     *
+     * @return list<string>
+     */
+    private function targetAiLabels(): array
+    {
+        return $this->targetAiLabelsCache ??= ChipAiLabelProvider::fetchLabels($this->db);
+    }
 
     /**
      * Pelny wiersz recenzji dla rozmowy albo null (brak wiersza = stan "nowy", D3).
@@ -76,11 +98,18 @@ final class ConversationReviewRepository
         // mniej round-tripow do Railway (odpornosc na wolne/zrywajace polaczenie).
         // Lekki zestaw do listy: pola recenzji + skrot rozmowy (started_at,
         // model_used, liczba wiadomosci, pierwsza wiadomosc uzytkownika).
-        // CHAT-T-122 (ADR-110 pkt 5): pomijaj etykiety przyciskow chipow target:ai
-        // w wyborze tytulu (pierwszej wiadomosci user) — chroni STARE rozmowy, gdzie
-        // klik przycisku zapisal etykiete jako pierwsza wiadomosc (np. "Napisz czego
-        // szukasz"). Zero migracji danych messages.
-        $excludeChipLabels = ChipButtonLabels::notInSql("m->>'content'");
+        // CHAT-T-122 (ADR-110 18a): pomijaj etykiety przyciskow chipow target:ai
+        // w wyborze tytulu (pierwszej wiadomosci user) — lista DYNAMICZNA z drzewa,
+        // pobrana raz na zadanie i wstrzyknieta jako `<> ALL(?::text[])`. Pusta lista
+        // -> warunek pomijany. Parametr labeli idzie PIERWSZY (placeholder w SELECT
+        // przed WHERE/LIMIT).
+        $excludeSql = '';
+        $params = [$status, $limit, $offset];
+        $labels = $this->targetAiLabels();
+        if ($labels !== []) {
+            $excludeSql = " AND m->>'content' <> ALL(?::text[])";
+            array_unshift($params, ChipAiLabelProvider::toPgTextArray($labels));
+        }
 
         $rows = $this->db->fetchAll(
             "SELECT r.conversation_id, r.status, r.verdict, r.updated_by, r.updated_at,
@@ -88,8 +117,7 @@ final class ConversationReviewRepository
                     COALESCE(jsonb_array_length(c.messages), 0) AS message_count,
                     (SELECT m->>'content'
                        FROM jsonb_array_elements(c.messages) m
-                      WHERE m->>'role' = 'user'
-                        AND {$excludeChipLabels}
+                      WHERE m->>'role' = 'user'{$excludeSql}
                       LIMIT 1) AS first_user_message,
                     COUNT(*) OVER() AS total_count
              FROM divechat_conversation_review r
@@ -97,7 +125,7 @@ final class ConversationReviewRepository
              WHERE r.status = ?
              ORDER BY r.updated_at DESC
              LIMIT ? OFFSET ?",
-            [$status, $limit, $offset],
+            $params,
         );
 
         return [
@@ -120,9 +148,16 @@ final class ConversationReviewRepository
     {
         // CHAT-T-113: COUNT(*) OVER() w jednym zapytaniu (zamiast osobnego COUNT) —
         // mniej round-tripow do Railway przy wolnym/zrywajacym polaczeniu.
-        // CHAT-T-122 (ADR-110 pkt 5): pomijaj etykiety przyciskow chipow target:ai
-        // w wyborze tytulu (jak w listByStatus).
-        $excludeChipLabels = ChipButtonLabels::notInSql("m->>'content'");
+        // CHAT-T-122 (ADR-110 18a): pomijaj etykiety przyciskow chipow target:ai
+        // w wyborze tytulu (lista dynamiczna, jak w listByStatus). Pusta lista ->
+        // warunek pomijany; parametr labeli idzie PIERWSZY.
+        $excludeSql = '';
+        $params = [$limit, $offset];
+        $labels = $this->targetAiLabels();
+        if ($labels !== []) {
+            $excludeSql = " AND m->>'content' <> ALL(?::text[])";
+            array_unshift($params, ChipAiLabelProvider::toPgTextArray($labels));
+        }
 
         $rows = $this->db->fetchAll(
             "SELECT c.id AS conversation_id,
@@ -132,8 +167,7 @@ final class ConversationReviewRepository
                     COALESCE(jsonb_array_length(c.messages), 0) AS message_count,
                     (SELECT m->>'content'
                        FROM jsonb_array_elements(c.messages) m
-                      WHERE m->>'role' = 'user'
-                        AND {$excludeChipLabels}
+                      WHERE m->>'role' = 'user'{$excludeSql}
                       LIMIT 1) AS first_user_message,
                     COUNT(*) OVER() AS total_count
              FROM divechat_conversations c
@@ -141,7 +175,7 @@ final class ConversationReviewRepository
              WHERE r.id IS NULL OR r.status = 'nowy'
              ORDER BY c.started_at DESC
              LIMIT ? OFFSET ?",
-            [$limit, $offset],
+            $params,
         );
 
         return [

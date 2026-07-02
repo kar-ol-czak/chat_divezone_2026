@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace DiveChat\Chat;
 
-use DiveChat\Chip\ChipButtonLabels;
+use DiveChat\Chip\ChipAiLabelProvider;
 use DiveChat\Database\PostgresConnection;
 
 /**
@@ -241,9 +241,16 @@ final class ConversationStore
         // wzorzec z CostAnalytics::topConversations(). Alias tabeli list() to bare
         // `divechat_conversations` (nie `c.` jak w topConversations) — podzapytanie
         // odnosi sie do divechat_conversations.id, reszta bez zmian.
-        // CHAT-T-122 (ADR-110 pkt 5): pomijaj etykiety przyciskow chipow target:ai
-        // (np. "Napisz czego szukasz") w wyborze tytulu — chroni STARE rozmowy.
-        $excludeChipLabels = ChipButtonLabels::notInSql('m.content');
+        // CHAT-T-122 (ADR-110 18a): pomijaj etykiety przyciskow chipow target:ai
+        // (lista DYNAMICZNA z drzewa) w wyborze tytulu. Pusta lista -> warunek
+        // pomijany. Placeholder labeli jest PIERWSZY (podzapytanie w SELECT przed
+        // WHERE/LIMIT), wiec array_unshift do $params.
+        $excludeSql = '';
+        $labels = ChipAiLabelProvider::fetchLabels($this->db);
+        if ($labels !== []) {
+            $excludeSql = ' AND m.content <> ALL(?::text[])';
+            array_unshift($params, ChipAiLabelProvider::toPgTextArray($labels));
+        }
         $rows = $this->db->fetchAll(
             "SELECT id, session_id, ps_customer_id, model_used, tools_used,
                     tokens_input, tokens_output,
@@ -253,8 +260,7 @@ final class ConversationStore
                     jsonb_array_length(COALESCE(messages, '[]'::jsonb)) as message_count,
                     started_at, updated_at,
                     (SELECT m.content FROM divechat_messages m
-                     WHERE m.conversation_id = divechat_conversations.id AND m.role = 'user'
-                       AND {$excludeChipLabels}
+                     WHERE m.conversation_id = divechat_conversations.id AND m.role = 'user'{$excludeSql}
                      ORDER BY m.created_at, m.id LIMIT 1) AS first_user_message
              FROM divechat_conversations
              {$where}

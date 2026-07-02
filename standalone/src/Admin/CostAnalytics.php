@@ -6,7 +6,7 @@ namespace DiveChat\Admin;
 
 use DiveChat\AI\ExchangeRateService;
 use DiveChat\AI\PricingService;
-use DiveChat\Chip\ChipButtonLabels;
+use DiveChat\Chip\ChipAiLabelProvider;
 use DiveChat\Database\PostgresConnection;
 
 /**
@@ -127,9 +127,17 @@ final class CostAnalytics
     {
         $rate = $this->exchangeRates->getUsdToPln();
 
-        // CHAT-T-122 (ADR-110 pkt 5): pomijaj etykiety przyciskow chipow target:ai
-        // (np. "Napisz czego szukasz") w wyborze tytulu — chroni STARE rozmowy.
-        $excludeChipLabels = ChipButtonLabels::notInSql('m.content');
+        // CHAT-T-122 (ADR-110 18a): pomijaj etykiety przyciskow chipow target:ai
+        // (lista DYNAMICZNA z drzewa) w wyborze tytulu. Pusta lista -> warunek
+        // pomijany. Placeholder labeli jest PIERWSZY (podzapytanie w SELECT przed
+        // WHERE/LIMIT), wiec idzie na poczatek params.
+        $excludeSql = '';
+        $params = [(string) $days, $limit];
+        $labels = ChipAiLabelProvider::fetchLabels($this->db);
+        if ($labels !== []) {
+            $excludeSql = ' AND m.content <> ALL(?::text[])';
+            array_unshift($params, ChipAiLabelProvider::toPgTextArray($labels));
+        }
         $rows = $this->db->fetchAll(
             "SELECT
                 c.id,
@@ -140,15 +148,14 @@ final class CostAnalytics
                 COALESCE(c.model_used, '') AS model_used,
                 jsonb_array_length(COALESCE(c.messages, '[]'::jsonb)) AS messages_count,
                 (SELECT m.content FROM divechat_messages m
-                 WHERE m.conversation_id = c.id AND m.role = 'user'
-                   AND {$excludeChipLabels}
+                 WHERE m.conversation_id = c.id AND m.role = 'user'{$excludeSql}
                  ORDER BY m.created_at, m.id LIMIT 1) AS first_user_message
              FROM divechat_conversations c
              WHERE c.started_at >= NOW() - (? || ' days')::interval
                AND c.estimated_cost > 0
              ORDER BY c.estimated_cost DESC
              LIMIT ?",
-            [(string) $days, $limit],
+            $params,
         );
 
         return array_map(function (array $r) use ($rate): array {
