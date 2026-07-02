@@ -60,7 +60,7 @@
 - PG: 17.8
 - Region: DigitalOcean (przydzielony przez Aiven)
 - Connection limit: 20
-**Status:** Baza aktywna, pgvector 0.8.1 zainstalowany. Port 22367 otwarty na VPS divezone.pl (whitelist IP: 159.223.235.232). Połączenie przetestowane z Maca (psql) i VPS.
+**Status:** Baza nie używana, przechodzimy na Railway
 
 
 ---
@@ -3314,3 +3314,55 @@ Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?sta
 **Decyzja (45b):** każda przesyłka DO nas (serwis/zwrot/reklamacja) → KURIER na adres, NIGDY paczkomat. **Krytyczne rozróżnienie kierunku:** paczkomat InPost jako DOSTAWA ZAKUPÓW DO KLIENTA pozostaje prawidłową, oferowaną metodą (SystemPrompt l.108 doręczenia sobotnie, l.146 InPost EU, l.647 get_shipping_info) — NIETKNIĘTE. Poprawka dotyczy WYŁĄCZNIE kierunku odwrotnego (klient → sklep). Decyzja 46a: na teraz bot mówi po prostu „kurier na adres", BEZ wprowadzania usługi „InPost Paczkomat Kurier" (do ewentualnego dodania później po potwierdzeniu Karola).
 
 **Implementacja:** CHAT-T-117 (`SystemPrompt.php`, +2/-1): blok ZWROTY — nowy bullet (zwrot/reklamacja kurierem na adres, nie paczkomat); blok SERWIS AUTOMATU — „dowolnym kurierem" → „WYŁĄCZNIE kurierem" + jawny zakaz paczkomatu. Commit `d720e8e`, deploy na prod (md5 `ba028f92`, `php -l` ea-php84 czysto, `/api/health` 200). grep `paczkomat`: 3 miejsca DOSTAWY do klienta nietknięte; 2 nowe reguły kierunku DO nas.
+
+
+
+---
+
+### ADR-109: Zachęta kontekstowa widgetu (context-aware greeting) — deterministyczna, wg strony
+
+**Data:** 2026-07-01 | **Status:** PRZYJĘTA | **Powiązane:** doc 41 (spec), CHAT-T-119 (moduł PS), CHAT-T-120 (frontend), ADR-097 (zasada „dwóch światów"). **Decyzje Karola:** 34b, 35a, 36b(→a w MVP), 37a, 38a, 39a, 40a.
+
+**Problem:** Powitanie widgetu jest statyczne, niezależne od strony. Klient na karcie produktu, w koszyku i na blogu dostaje ten sam tekst. Utrata okazji do trafienia w intencję na ścieżce zakupowej.
+
+**Decyzja:**
+1. **Personalizacja po typie strony + nazwie encji (34b).** Deterministyczna, ZERO LLM — brak latencji i fabrykacji w powitaniu.
+2. **Kontekst z modułu PS jako `data-*` (35a).** Kontroler zna stronę po stronie serwera; widget nie parsuje URL/DOM. `data-page-type` (zawsze) + `data-entity-name` (product/category). Zgodne z „dwoma światami": kontekst jako parametr prezentacyjny.
+3. **Zestaw typów (37a):** `product`, `category`, `cms`, `cart`, `index`, fallback `default`. Pokrywa główny ruch, reszta na `default`.
+4. **Źródło prawdy = panel admina modułu (38a),** JSON w `Configuration`, edytowalny bez deployu, fallback do wartości domyślnych w kodzie.
+5. **Dwa szablony na typ (39a):** `withEntity` (z `{entity}`) i `neutral`. Brak encji → `neutral`. Gołe `{entity}` nigdy nie trafia do UI.
+6. **Backend AI bez zmian w MVP (40a).** Greeting to warstwa UI. `page_context` do backendu = osobny task razem z chipami kontekstowymi.
+
+**Poza zakresem MVP:** chipy kontekstowe L1 (36b — po sesji nad drzewem), `page_context`/routing do backendu (40b), personalizacja AI-generowana (34c — koszt/latencja/fabrykacja), placeholdery inne niż `{entity}`.
+
+**Konsekwencje:**
+- Pozytywne: trafienie w intencję na ścieżce, wyższy engagement, pełna kontrola treści (deterministyczna), zmiana tekstów bez deployu.
+- Koszt: mapowanie kontrolera + odczyt nazwy encji w module (znikomy), silnik wyboru szablonu w widgecie.
+- Bezpieczeństwo: nazwa encji sanityzowana w module (`htmlspecialchars`), widget wstawia jako textContent — brak XSS.
+
+**Implementacja:** CHAT-T-119 (moduł PS) + CHAT-T-120 (frontend). Handoff kontraktu `data-*` + kształt JSON szablonów: backend→frontend.
+
+
+### ADR-110: Przycisk `target:ai` na liściu = wejście w pisanie (nie wiadomość) + utrwalenie ścieżki chipów w rozmowie
+
+**Data:** 2026-07-01 | **Status:** PRZYJĘTA | **Powiązane:** ADR-097 (chip_context „dwa światy"), ADR-096 (ai_prompt), CHAT-T-089 (silnik drzewa), CHAT-T-088e (chip_context), CHAT-T-121/122/123 (implementacja). **Decyzje Karola:** 41a, 42b(→8b), 43a(→9a), 44a(→10a).
+
+**Problem:** Rozmowy startujące przez chip z przyciskiem akcji `{"label":"Napisz czego szukasz","target":"ai"}` zapisują w historii etykietę przycisku jako pierwszą wiadomość `user`. Panel recenzji bierze tytuł z pierwszej wiadomości `user` (`first_user_message`), więc lista i nagłówek pokazują „Napisz czego szukasz" zamiast realnego pytania klienta (idx=3+). Intencja klienta (np. „komputer nurkowy") leci osobnym `chip_context` i NIE jest utrwalana — panel nie wie, przez jaką ścieżkę chipów klient trafił do rozmowy. Diagnoza na produkcji (rozmowy `09645b04`, `53a8ac95`, `f7755483`): węzły-liście 36/54/35 mają `bot_text` już zadający pytanie, więc przycisk `target:ai` jest zbędny — wystarczy odsłonić pole pisania.
+
+**Decyzja:**
+1. **Przycisk `target:ai` NIE tworzy wiadomości user (41a).** Klik odsłania pole pisania (ukrywa chipy, fokus na input), zapamiętuje `chip_context` (ścieżka + `ai_prompt`) do dołączenia OSOBNYM parametrem przy PIERWSZEJ realnej wiadomości klienta. Etykieta przycisku nigdy nie trafia do historii. Zgodne z ADR-097 („dwa światy" wzmocnione: label to instrukcja UI, nie treść).
+2. **Zbędne przyciski `target:ai` usunięte z liści w seedzie (8a).** Na węźle-liściu `bot_text` zaprasza do pisania; wejście na liść od razu odsłania pole. Dane drzewa aktualizowane w seedzie (nie ręcznie na produkcji).
+3. **Ścieżka chipów utrwalana STRUKTURALNIE (8b).** Nowa kolumna `chip_path jsonb` w `divechat_conversations`: tablica `[{node_key, label, level}]`. Statystyki klikalności (które chipy najczęściej) liczone czystym SQL po `node_key` z rozbicia jsonb — bez osobnej tabeli zdarzeń, bez parsowania stringów. `chip_context` (string dla LLM) POZOSTAJE efemeryczny w system prompcie tej tury — utrwalamy TYLKO strukturalną ścieżkę.
+4. **Moment utrwalenia = pierwsza realna wiadomość rozmowy (9a).** Zapisujemy pełną ścieżkę zejścia do liścia, z którego klient wszedł w pisanie (wszystkie kliki tej gałęzi). Zawracanie/porzucenia poza zakresem (9b — osobny temat, gdyby analiza funnela była potrzebna).
+5. **Tytuł panelu pomija etykiety chipów (fix `first_user_message`).** Podzapytanie w `ConversationReviewRepository` (3 metody) wyklucza znane labele `target:ai` i bierze pierwszą realną wiadomość user. Chroni STARE rozmowy bez pisania do produkcyjnego jsonb (zero migracji danych).
+
+**Korekta 13a → 18a (2026-07-01, po wykonaniu seeda 040):** lista wykluczanych labeli liczona DYNAMICZNIE z `divechat_chip_nodes` (`SELECT DISTINCT label WHERE target='ai'`), NIE stała w kodzie. Powód: po seedzie 040 labele `target:ai` będą się zmieniać z rozwojem drzewa; stała lista rozjeżdża się cicho przy każdej zmianie seeda (ten sam typ błędu, który zrodził ten ADR). Karol: historyczne rozmowy z wycofanym „Napisz czego szukasz" świadomie odpuszczone (znikną z bieżącego widoku) — priorytet to odporność na przyszłość. Pobranie RAZ na żądanie panelu, wstrzyknięcie jako `<> ALL($labels)` do 4 zapytań listujących (18a). Klasa `ChipButtonLabels` (stała lista z pierwszej implementacji) wycofana.
+
+**Poza zakresem:** statystyki klikalności jako gotowy widok (Sprawa 3 — liczone z `chip_path` po 121-123, osobny task); analiza zawracania/porzuceń (9b); podpięcie hooka `onChipClick`/beacon (był rezerwą pod CHAT-T-090, niepotrzebny skoro liczymy z historii).
+
+**Konsekwencje:**
+- Pozytywne: czysta historia (zero śmieciowych wiadomości), panel pokazuje realny tytuł + ścieżkę chipów, fundament pod statystyki bez nowej infrastruktury zdarzeń.
+- Koszt: migracja PG (1 kolumna jsonb), zmiana kontraktu front→backend (strukturalna ścieżka jako nowe pole body), render ścieżki w panelu.
+- Zgodność: nie łamie ADR-097 — `chip_context` string dla LLM dalej efemeryczny; utrwalamy rozłączną, strukturalną reprezentację do analityki.
+
+**Implementacja:** CHAT-T-121 (frontend widget), CHAT-T-122 (backend migracja+utrwalenie+fix tytułu), CHAT-T-123 (frontend panel render ścieżki). Kontrakt strukturalnej ścieżki: handoff frontend→backend.
