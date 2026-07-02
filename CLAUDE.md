@@ -1,7 +1,26 @@
 # Czat AI divezone.pl
 
 ## Opis projektu
-Czat AI ze wyszukiwaniem semantycznym dla sklepu nurkowego divezone.pl (PrestaShop 1.7.6, prefix tabel: pr_). Wykorzystuje pgvector, function calling (Claude/OpenAI API), bazę wiedzy ekspercką. Architektura hybrydowa: cienki moduł PS (PHP 7.2) + standalone API na chat.divezone.pl (PHP 8.4).
+Czat AI ze wyszukiwaniem semantycznym dla sklepu nurkowego divezone.pl (PrestaShop 1.7.6, prefix tabel: pr_). Wykorzystuje pgvector, function calling (Claude/OpenAI API), bazę wiedzy ekspercką. Architektura hybrydowa: moduł PS (widget + panel admina) + standalone API na chat.divezone.pl (PHP 8.4).
+
+## ⚠️ MAPA INFRASTRUKTURY I WDROŻEŃ — dla architekta (czytaj PRZED pisaniem tasków i deployem)
+
+**DWA OSOBNE ŚWIATY WDROŻENIOWE — nie mylić, każdy to inny rsync w inne miejsce:**
+
+- **ŚWIAT 1 — BACKEND standalone.** Osobna domena `chat.divezone.pl`, PHP 8.4. Kod na serwerze w `~/public_html/chat.divezone.pl/src|public|config` (BEZ prefiksu `standalone/` — w repo lokalnym jest `standalone/`). Deploy = rsync `standalone/` → `chat.divezone.pl/` + backup `_deploy_bak/` + md5 + `php -l` + smoke `/api/health`, STOP przed rsync (ADR-089). Łączy się z Railway PG (`divechat_*`, `chip_path`) i MySQL PrestaShop (read-only).
+- **ŚWIAT 2 — SKLEP + WIDGET + PANEL PS.** Cała instalacja PrestaShop w `~/public_html/newtmp2` (**newtmp2 TO PRODUKCJA sklepu**). Moduł czatu w `~/public_html/newtmp2/modules/divezone_chat/`. Widget: `modules/divezone_chat/views/js/widget-bundle.js` + `transport.js`. Panel admina/recenzji: `modules/divezone_chat/controllers/admin/AdminDivezoneChatController.php`. Deploy = ręczny rsync Karola (port 5739, `--exclude config_pl.xml`, bez `--delete`).
+
+**Task frontend/widget/panel-PS → ŚWIAT 2. Task backend/API → ŚWIAT 1.** To dwa różne rsynce w dwa różne katalogi. Zmiana widgetu/panelu PS NIE działa dopóki nie trafi do `newtmp2` (weryfikować md5 + grep markerów taska w pliku na produkcji).
+
+**DWA PANELE ADMINA (źródło realnej pomyłki):**
+- **Panel recenzji rozmów = moduł PS** (`AdminDivezoneChatController`, nagłówek „Przebieg rozmowy", endpoint `/api/conversations/{sid}`). **TEN używa Karol.**
+- Standalone `/admin` (`chat.divezone.pl/admin`, `admin-conversation.js`, `/api/admin/conversations/:id`) jest **WYGASZANY (ADR-070)** — panel PS to jedyny docelowy front administracyjny. NIE kierować tam nowych funkcji recenzji.
+
+**CACHE po wdrożeniu do modułu (newtmp2):** po rsync ZAWSZE (1) skasować `var/cache/prod` w PrestaShop, (2) wyczyścić LSCache (LiteSpeed). Front trzyma bundle w cache przeglądarki (`?v=md5_8` pomaga, ale przy testach twardy refresh / incognito).
+
+**PHP na serwerze:** domyślny CLI po SSH = PHP 8.3. Do `php -l` / PHP 8.4 używać `ea-php84` (stara ścieżka `/usr/local/php84/bin/php` NIE działa).
+
+**REGUŁA BRZYTWY OKHAMA:** po każdym deployu widgetu/modułu NAJPIERW najprostsza hipoteza = cache (przeglądarka + sklep), zanim diagnozować kod/API. Nie rozbierać na części tego, co już zweryfikowane jako poprawne.
 
 ## Status projektu (2026-02-20)
 
@@ -102,3 +121,4 @@ Chat_dla_klientow_2026/
 - SQL: PostgreSQL prefix divechat_, MySQL prefix pr_
 - Komentarze: po polsku. Zmienne/funkcje: po angielsku
 - **Numeracja ADR (profilaktyka kolizji):** przed utworzeniem nowego ADR ZAWSZE sprawdź ostatni użyty numer w `_docs/10_decyzje_projektowe.md` (np. `grep '^### ADR-' _docs/10_decyzje_projektowe.md | tail`) i nadaj kolejny wolny. Plik jest współdzielony przez równoległe linie prac (czat CHAT-T-*, encyklopedia TASK-ENC-*) — dwa zadania pisane w zbliżonym czasie mogą sięgnąć po ten sam numer. Kolizja zdarzyła się raz (dwa ADR-091: TASK-ENC-014 wyporność + CHAT-T-085 nudge → renumerowane na ADR-092). Jeśli numer już zajęty: weź następny wolny i dopisz w nagłówku adnotację o renumeracji (commit/kod mogą wskazywać stary numer).
+- **Git przy równoległych instancjach CC (ADR-103 dec. P44c):** gdy w jednym repo pracuje kilka instancji CC naraz, NIE wchodź w KROK-git (add/commit/push) jednocześnie z inną instancją — to powoduje wyścig o `index.lock` i mieszanie cudzych zastage'owanych plików pod swoim commitem (zdarzyło się 2026-06-29: CHAT-T-088f vs CHAT-T-109). Zasada: przed `git add` sprawdź `git status` pod kątem cudzych zmian w indeksie; jeśli widzisz pliki spoza swojego taska — NIE commituj ich, zrób soft-reset do czystego indeksu i `git add` wyłącznie własnych ścieżek. Jeśli inna instancja właśnie pushuje, poczekaj z własnym push do zwolnienia. NIGDY nie przepisuj opublikowanej historii (rebase/force-push) w repo z aktywnymi równoległymi pushami — ryzyko utraty cudzej pracy przewyższa zysk z czystej atrybucji.
