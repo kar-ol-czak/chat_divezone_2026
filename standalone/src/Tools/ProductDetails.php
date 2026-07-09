@@ -33,7 +33,8 @@ final class ProductDetails implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Pobiera pełną specyfikację konkretnego produktu: opis, cechy techniczne, cenę, dostępność, warianty. '
+        return 'Pobiera pełną specyfikację konkretnego produktu: opis, cechy techniczne, cenę, dostępność. '
+             . 'Nie zwraca wariantów (kolory, rozmiary) — do tego użyj get_product_combinations. '
              . 'Używaj gdy klient pyta o szczegóły konkretnego produktu lub potrzebujesz dokładnych danych.';
     }
 

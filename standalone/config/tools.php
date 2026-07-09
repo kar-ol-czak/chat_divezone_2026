@@ -14,6 +14,7 @@ use DiveChat\Tools\ExpertKnowledge;
 use DiveChat\Tools\GetShopLinks;
 use DiveChat\Tools\GetShopSchedule;
 use DiveChat\Tools\OrderStatus;
+use DiveChat\Tools\ProductCombinations;
 use DiveChat\Tools\ProductDetails;
 use DiveChat\Tools\ProductSearch;
 use DiveChat\Tools\ShippingInfo;
@@ -35,6 +36,9 @@ return static function (EmbeddingService $embeddingService): ToolRegistry {
     // CHAT-T-062 (E5): ProductDetails wola enrichment dla pojedynczego product_id —
     // ta sama logika ceny brutto z VAT + specific_price co ProductSearch (jedno zrodlo).
     $registry->register(new ProductDetails($enrichmentService));
+    // CHAT-T-129 (ADR-112): warianty (kolor × rozmiar) z MySQL PrestaShop — osobne
+    // narzędzie, bo get_product_details ich nie zwraca (fabrykacja bota, czat 606).
+    $registry->register(new ProductCombinations(MysqlConnection::getInstance()));
     $registry->register(new ExpertKnowledge($embeddingService, $pg));
     $registry->register(new OrderStatus());
     $registry->register(new ShippingInfo($pg));
