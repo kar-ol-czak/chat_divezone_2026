@@ -95,3 +95,18 @@ Po kazdym deployu osobny `docs:` commit (status).
 ## Domkniecie
 Po wdrozeniu obu czesci i weryfikacji: karta Trello → "Zrobione". Ta karta odblokowuje
 Karola w dostepie do rozmow po numerze (rozwiazuje problem "nie mam jak dotrzec do 584").
+
+## Wynik — czesc A (backend) — DONE 2026-07-14
+
+- `ConversationStore::list()`: gdy `search` jest liczba (`ctype_digit`) → warunek
+  `(id = ? OR messages::text ILIKE ?)`; tekst → jak dotad. Paginacja, podzapytanie
+  tytulu (CHAT-T-051) i exclude chipow (CHAT-T-122) nietkniete.
+- ADR-116 dopisany do `_docs/10_decyzje_projektowe.md` (prog GIN: >3000 rozmow lub >500 ms).
+- Commit: `527d45b` (`CHAT-T-133 backend: search po conversation_id w liscie rozmow (ADR-116)`).
+- Test lokalny (store na Railway): search='584' → id=584 na liscie (total 81, OR z trescia);
+  search='pianka' → 115 trafien; bez filtra → 620 rozmow (brak regresji).
+- Deploy: TYLKO `src/Chat/ConversationStore.php` → chat.divezone.pl (backup
+  `_deploy_bak/20260714_T133/`, prod przed deployem == repo HEAD~1 — brak dryfu,
+  ea-php84 -l clean, md5 zgodne, /api/health 200). `config/tools.php` NIE ruszony.
+- Test PROD (realny endpoint, HMAC serwerowy, employee 2): `search=584` → total=81,
+  id=584 OBECNE; `search=pianka` → total=115.
