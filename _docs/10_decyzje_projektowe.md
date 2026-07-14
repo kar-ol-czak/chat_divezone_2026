@@ -3524,3 +3524,25 @@ Detal po fixie: 2 zapytania (rola HMAC + zbiorczy SELECT) na 1 wywołanie HTTP, 
 - Poprawność zweryfikowana lokalnie na Railway: `costFromDetailRow` == `getConversationCost` na 6 rozmowach; review poprawny dla rozmowy z wierszem i bez; testy UsageLoggerTest 17/17.
 - Root-cause epizodów pozostaje po stronie egress smarthost (eskalacja CHAT-T-116) — fix zmniejsza EKSPOZYCJĘ (mniej round-tripów), nie usuwa epizodów.
 - Narzędzia pomiarowe zostawione na serwerze w `~/_diag/t134/` (t134_measure_http.php, t134_measure_pdo.php — uruchamiać `ea-php84`) do weryfikacji przed/po w tym samym oknie. Faza diagnozy bez zmian na PROD (pomiar zewnętrzny).
+
+### ADR-118: SystemPrompt — ton wobec sfrustrowanego klienta, porównania właściwej pary, niejednoznaczność intencji (czaty 634/608/584)
+
+**Data:** 2026-07-14 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-135 (implementacja), karty Trello 5 (porównania) i 6 (ton), ADR-095/CHAT-T-063 (reguły „nie pytaj ponownie", z którymi reguła 3 nie może kolidować). **Decyzje Karola:** kierunek tonu z notatki conv 634; 33b (niejednoznaczność: zaproponuj najprawdopodobniejszą interpretację + jawnie wskaż alternatywę — nie czyste pytanie, nie ślepe założenie).
+
+**Kontekst:** trzy powtarzalne błędy zachowania bota z przeglądu czatów: (1) conv 634 — na zirytowanie samym czatem bot odpowiedział „Rozumiem frustrację" i zaproponował kontakt mailowy (deklaracja cudzych uczuć + wciskanie kolejnego kanału kontaktu); (2) conv 608 — na pytanie „która cieplejsza: Scubapro 7mm czy Bare 7mm" bot porównał komplet 7+6mm z pojedynczą 7mm i orzekł werdykt po marce; (3) conv 584 — na „co jeszcze jest niezbędne?" (po pytaniu o Peregrine) bot po cichu założył najszerszą interpretację i rozpisał cały sprzęt nurkowy.
+
+**Decyzja:** trzy nowe sekcje w SystemPrompt (styl: reguła + „Bug do uniknięcia (conv N)"):
+1. **TON WOBEC SFRUSTROWANEGO / WROGIEGO KLIENTA** (po bloku ZASADY): zakaz deklarowania rozumienia cudzych uczuć; przy irytacji SAMYM czatem — krótkie przeprosiny + wskazanie X do zamknięcia okna, BEZ proponowania maila/telefonu; przy problemie merytorycznym z emocjami — jedno krótkie przeprosiny i przejście do konkretu.
+2. **POROWNANIA PRODUKTÓW — WŁAŚCIWA PARA** (po FORMAT ODPOWIEDZI PRODUKTOWEJ): porównuj tę samą klasę/konfigurację (pojedyncza pianka ≠ komplet, automat ≠ zestaw); przy innych konfiguracjach w wynikach — wybierz odpowiednik pytania klienta albo powiedz wprost o różnicy klas; zasada domenowa pianek: przy równej grubości o cieple decyduje dopasowanie i szczelność, nie marka — zakaz werdyktu „X cieplejsza" po marce.
+3. **NIEJEDNOZNACZNOŚĆ INTENCJI (33b)** (bezpośrednio po „UŻYJ PODANEGO PARAMETRU"): przy realnie rozjeżdżających się interpretacjach — odpowiedz na najprawdopodobniejszą (zwykle najwęższą, z kontekstu) + krótko wskaż alternatywę; zakaz cichego zakładania najszerszej wersji; zakaz nadgorliwego „co masz na myśli" przy jasnych pytaniach. **Jawna GRANICA w tekście reguły:** nie osłabia „UŻYJ PODANEGO PARAMETRU — NIE PYTAJ PONOWNIE" ani „TYLKO NOWY SPRZĘT — nie dopytuj pod używany" (tam odpowiedź jasna, dopytywanie = błąd); dotyczy wyłącznie rozjazdu INTENCJI, nie brakujących parametrów.
+
+**Alternatywy rozważane:**
+- Jedna zbiorcza reguła „dopytuj przy wątpliwościach" — odrzucona: kolidowałaby z regułami o niedopytywaniu (C5/D4, case 77) i cofnęła wcześniejsze fixy; 33b celowo wymaga odpowiedzi + alternatywy zamiast czystego pytania.
+- Reguła pianek w FAKTY DOMENOWE osobno od reguły pary — odrzucona: oba błędy wystąpiły w JEDNEJ rozmowie (608) i dotyczą tej samej czynności (porównania), razem tworzą spójną instrukcję.
+
+**Konsekwencje:**
+- Zmiana wyłącznie w `standalone/src/Chat/SystemPrompt.php` (świat BACKEND); zero zmian w PS.
+- Prompt rośnie o ~3,5 tys. znaków (96,4 tys. łącznie) — pomijalne przy cache'owaniu promptu.
+- Test PROD (kryteria CHAT-T-135): scenariusz wrogi, porównanie pianek 7mm, „co jeszcze niezbędne", regresja budżet/używany sprzęt.
+
+**Implementacja:** CHAT-T-135. Deploy: rsync SystemPrompt.php → chat.divezone.pl/src/Chat/ (ADR-089, STOP przed rsync; BEZ config/tools.php — dryf repo≠prod).
