@@ -3366,3 +3366,29 @@ Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?sta
 - Zgodność: nie łamie ADR-097 — `chip_context` string dla LLM dalej efemeryczny; utrwalamy rozłączną, strukturalną reprezentację do analityki.
 
 **Implementacja:** CHAT-T-121 (frontend widget), CHAT-T-122 (backend migracja+utrwalenie+fix tytułu), CHAT-T-123 (frontend panel render ścieżki). Kontrakt strukturalnej ścieżki: handoff frontend→backend.
+
+---
+
+### ADR-111: Selektywny purge LSCache po tagach zamiast pełnego flusha (`purge_litespeed.php`)
+
+**Data:** 2026-07-06 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-127 (implementacja), ADR-089 (STOP przed rsync), CLAUDE.md sekcja „Mapa infrastruktury" (LSCache po deployu). **Decyzje Karola:** 1c, 2b, 3a. **Źródło:** diagnoza produkcji z kodu pluginu `modules/litespeedcache/classes/` (Cache.php, Config.php, Helper.php).
+
+**Problem:** `~/public_html/newtmp2/flush_all_litespeed.php` wysyła `X-LiteSpeed-Purge: *` = pełny flush całego cache przy KAŻDYM wywołaniu. Po deployu widgetu/modułu albo edycji jednego produktu unieważnia się cały kontener cache; PrestaShop kosztownie odbudowuje wszystkie strony (obserwowane pierwsze wejście ~2s). Do purge jednego produktu czy strony głównej nie ma potrzeby palić całości.
+
+**Diagnoza (fakty z kodu, nie założenia):**
+- Nagłówek purge pluginu = `X-Litespeed-Purge2` (`Cache.php::LSHEADER_PURGE`). Składnia selektywna (`getPurgeHeader()`): `tag=<PREFIX>_<TAG>,tag=<PREFIX>_<TAG>`.
+- Prefiks instalacji (`Helper.php::initInternals()`) = `'PS'.substr(md5(_PS_ROOT_DIR_),0,5)`. Na tej instalacji = `PSd6615`. Zależny od ścieżki root → NIE stała.
+- Prefiksy typów (`Config.php`): produkt `P`, kategoria `C`, marka `M`, dostawca `L`, CMS `G`, sklep `S`; tagi specjalne home `H`, search `SR`.
+- Nagłówek `X-LiteSpeed-Tag` nie jest widoczny w odpowiedzi HTTP na zewnątrz (nagłówek wewnętrzny serwer↔plugin) — dlatego źródłem prawdy jest kod pluginu, nie curl nagłówków odpowiedzi.
+
+**Decyzja:**
+1. **Nowy plik `purge_litespeed.php` w root newtmp2 (3a).** Stary `flush_all_litespeed.php` ZOSTAJE nietknięty jako świadomy fallback „spal wszystko". Czysty rozdział: awaryjny przycisk działa dalej, nowe narzędzie osobno.
+2. **Purge po tagach, wiele typów łączonych w jednym wywołaniu (1c):** `?product=ID`, `?category=ID`, `?manufacturer=ID`, `?supplier=ID`, `?cms=ID`, `?home=1`, `?search=1`, plus `?tag=<goły>` dla dowolnego surowego tagu (elastyczność bez dopisywania skryptu). ID wielokrotne przez przecinek. `?all=1` = awaryjny pełny flush `*` (nie domyślny).
+3. **Prefiks liczony runtime, nie zaszyty (2b):** `'PS'.substr(md5(realpath(__DIR__)),0,5)`. Skrypt leży w root sklepu, więc `realpath(__DIR__)` == `_PS_ROOT_DIR_` liczone przez plugin — jedno źródło prawdy, odporne na przyszłą zmianę ścieżki. Dopuszczalny override `?prefix=` (walidacja `^PS[0-9a-f]{5}$`). Bez bootstrapu `config.inc.php` (lekki skrypt).
+4. **Zabezpieczenie jak dziś:** `?k=<KLUCZ>` + `hash_equals`, NOWY klucz (nie kopiować starego). Twarda walidacja wejścia: ID→int>0, `?tag=` whitelist `^[A-Za-z0-9]{1,20}$`. Finalny nagłówek tylko ze znaków `[A-Za-z0-9_,=]`. Zero poprawnych tagów i brak `?all=1` → 400 bez wysyłania purge (nie czyścić przypadkiem).
+
+**Uzasadnienie 2b nad 2a:** wariant a (bootstrap PS + `LiteSpeedCacheHelper::getTagPrefix()`) daje identyczny prefiks, ale ładuje cały framework (~0.5s narzutu) i w teście CLI zachowywał się nieprzewidywalnie (cichy die/redirect). Wariant b liczy tę samą formułę lekko, z gwarancją poprawności wynikającą z fizycznej lokalizacji pliku.
+
+**Zgodność z regułami projektu:** deterministyczne i dynamiczne źródło prawdy (prefiks liczony, nie stała lista — ten sam typ ochrony co dynamiczne labele w ADR-110). Purge selektywny wpisuje się w regułę brzytwy Okhama po deployu: zamiast palić cały cache, unieważnia tylko to, co się zmieniło.
+
+**Implementacja:** CHAT-T-127 (instancja integration). Deploy = ręczny rsync Karola do `~/public_html/newtmp2/purge_litespeed.php`, STOP przed rsync (ADR-089). Weryfikacja: curl `-D -` na URL skryptu, potwierdzenie że tylko dana strona przechodzi w `miss`.
