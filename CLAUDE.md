@@ -112,6 +112,10 @@ Chat_dla_klientow_2026/
 - `12_plan_testow_modeli.md` — plan testów Claude/OpenAI
 - `13_wymagania_panel_admina.md` — wymagania panelu admina
 - `14_architektura_bazy_wiedzy.md` — hierarchia 4-poziomowa
+- `42_weryfikacja_czatow_procedura.md` — **jak weryfikowac czaty do naprawy**
+  (dane w Railway PG `divechat_conversation_review`, narzedzia w
+  `_diag_local/chat_verification/`, backlog w Trello "Projekty 2026"). Czytaj to
+  ZAWSZE przy zadaniu "przejrzyj/zweryfikuj czaty do naprawy".
 - `CONVENTIONS.md` — konwencje kodu
 
 ## Konwencje
