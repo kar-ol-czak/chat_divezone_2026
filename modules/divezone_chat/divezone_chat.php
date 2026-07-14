@@ -63,6 +63,15 @@ class Divezone_Chat extends Module
     // rozmowy bezterminowo (closed_at IS NULL); TTL to UX limit po stronie klienta.
     const KEY_PERSIST_TTL_DAYS    = 'DIVEZONE_CHAT_PERSIST_TTL_DAYS';
     const DEFAULT_PERSIST_TTL_DAYS = 30;
+    // CHAT-T-136 (ADR-119): atrybucja deterministyczna. Tabela (bez prefiksu —
+    // Db dokleja _DB_PREFIX_) + nazwy cookie ustawianych przez widget w domenie
+    // sklepu (widget-bundle.js setAttributionCookies). Hook actionValidateOrder
+    // czyta cookie z $_COOKIE (raw JS cookie, NIE szyfrowane PS Cookie) i zapisuje
+    // pare id_order <-> chat_session_id.
+    const ATTRIBUTION_TABLE  = 'divechat_order_attribution';
+    const COOKIE_SESSION_ID  = 'divechat_session_id';
+    const COOKIE_LAST_AT     = 'divechat_last_at';
+    const COOKIE_VISIT       = 'divechat_visit';
     const TAB_CLASS          = 'AdminDivezoneChat';
     // T-034: zlecenie Karola — tab w sidebar Ulepsz, pomiedzy "Moduly" a "Wyglad".
     // Wybor T-034 (AdminModulesSf, id=44) byl bledny — to kontener Module Manager UI,
@@ -114,9 +123,48 @@ class Divezone_Chat extends Module
             error_log(self::LOG_PREFIX . ' install: installTab() failed');
             return false;
         }
+        // CHAT-T-136 (ADR-119): tabela atrybucji + hook zamowienia. Idempotentne
+        // (IF NOT EXISTS / registerHook zwraca true gdy juz zarejestrowany).
+        if (!$this->createAttributionTable()) {
+            error_log(self::LOG_PREFIX . ' install: createAttributionTable() failed');
+            return false;
+        }
+        if (!$this->registerHook('actionValidateOrder')) {
+            error_log(self::LOG_PREFIX . ' install: registerHook(actionValidateOrder) failed');
+            return false;
+        }
 
         error_log(self::LOG_PREFIX . ' install: OK');
         return true;
+    }
+
+    /**
+     * CHAT-T-136 (ADR-119): tabela atrybucji deterministycznej w MySQL PrestaShop
+     * (prefix pr_ przez _DB_PREFIX_). Idempotentna (IF NOT EXISTS) — ponowny
+     * install / reinstall nie wywala bledu. Schema wg _docs/12_atrybucja_czatu.md
+     * sekcja 4. Bliznaczy plik do recznego uruchomienia:
+     * modules/divezone_chat/sql/pr_divechat_order_attribution.sql
+     */
+    private function createAttributionTable()
+    {
+        $sql = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . self::ATTRIBUTION_TABLE . '` (
+            `id_attribution` INT(11) NOT NULL AUTO_INCREMENT,
+            `id_order` INT(11) NOT NULL,
+            `chat_session_id` VARCHAR(64) NOT NULL,
+            `attribution_type` ENUM(\'last_touch\',\'assist\') NOT NULL DEFAULT \'assist\',
+            `conversation_last_at` DATETIME NULL DEFAULT NULL,
+            `date_add` DATETIME NOT NULL,
+            PRIMARY KEY (`id_attribution`),
+            KEY `idx_id_order` (`id_order`),
+            KEY `idx_chat_session_id` (`chat_session_id`)
+        ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
+
+        try {
+            return (bool)Db::getInstance()->execute($sql);
+        } catch (Exception $e) {
+            error_log(self::LOG_PREFIX . ' createAttributionTable: ' . $e->getMessage());
+            return false;
+        }
     }
 
     public function uninstall()
@@ -648,6 +696,102 @@ class Divezone_Chat extends Module
             . '})();</script>' . "\n";
 
         return $html;
+    }
+
+    /**
+     * CHAT-T-136 (ADR-119): hook zamowienia — strumien deterministyczny atrybucji.
+     *
+     * Przy zatwierdzeniu zamowienia czyta cookie ustawione przez widget w domenie
+     * sklepu i zapisuje powiazanie id_order <-> chat_session_id. Brak cookie =
+     * zamowienie bez czatu -> nic nie zapisujemy (nie smiecimy tabeli).
+     *
+     * attribution_type:
+     *  - last_touch — cookie sesyjne `divechat_visit` obecne = rozmowa w tej samej
+     *    wizycie przegladarki co zakup.
+     *  - assist — brak cookie sesyjnego (znikneło po zamknieciu przegladarki),
+     *    tylko cookie persistent z wczesniejszej wizyty.
+     *
+     * Cookie czytamy z $_COOKIE (raw JS cookie), NIE z $this->context->cookie
+     * (to szyfrowana Cookie PrestaShopa — nie zawiera naszych surowych cookie).
+     *
+     * Odporny: kazdy wyjatek lapiemy — atrybucja to funkcja poboczna, NIGDY nie
+     * moze wywrocic zatwierdzenia zamowienia.
+     */
+    public function hookActionValidateOrder($params)
+    {
+        try {
+            $sessionId = $this->readRawCookie(self::COOKIE_SESSION_ID);
+            if ($sessionId === '') {
+                return; // zamowienie bez czatu — brak atrybucji
+            }
+            // Sanity: chat_session_id max 64 znaki (kolumna VARCHAR(64)).
+            $sessionId = Tools::substr($sessionId, 0, 64);
+
+            $order = isset($params['order']) ? $params['order'] : null;
+            $idOrder = ($order && isset($order->id)) ? (int)$order->id : 0;
+            if ($idOrder <= 0) {
+                error_log(self::LOG_PREFIX . ' actionValidateOrder: brak id_order w params — skip');
+                return;
+            }
+
+            $visit = $this->readRawCookie(self::COOKIE_VISIT);
+            $type  = ($visit === '1') ? 'last_touch' : 'assist';
+
+            $conversationLastAt = $this->epochMsCookieToDatetime(self::COOKIE_LAST_AT);
+
+            $data = array(
+                'id_order'         => $idOrder,
+                'chat_session_id'  => pSQL($sessionId),
+                'attribution_type' => pSQL($type),
+                'date_add'         => date('Y-m-d H:i:s'),
+            );
+            // Kolumna NULLABLE — dokladamy tylko gdy znamy wartosc (inaczej DEFAULT NULL).
+            if ($conversationLastAt !== null) {
+                $data['conversation_last_at'] = pSQL($conversationLastAt);
+            }
+
+            $ok = Db::getInstance()->insert(self::ATTRIBUTION_TABLE, $data);
+            if (!$ok) {
+                error_log(self::LOG_PREFIX . ' actionValidateOrder: insert failed (id_order=' . $idOrder . ')');
+            } else {
+                error_log(self::LOG_PREFIX . ' actionValidateOrder: atrybucja zapisana (id_order=' . $idOrder . ', type=' . $type . ')');
+            }
+        } catch (Exception $e) {
+            // Atrybucja NIGDY nie moze zablokowac zamowienia — lapiemy wszystko.
+            error_log(self::LOG_PREFIX . ' actionValidateOrder: wyjatek — ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * CHAT-T-136: odczyt surowego cookie ($_COOKIE) ustawionego przez widget JS.
+     * Zwraca '' gdy brak. PHP dekoduje URL-encoding wartosci automatycznie.
+     */
+    private function readRawCookie($name)
+    {
+        if (!isset($_COOKIE[$name])) {
+            return '';
+        }
+        return trim((string)$_COOKIE[$name]);
+    }
+
+    /**
+     * CHAT-T-136: konwersja cookie z epoch ms (Date.now() z widgetu) na DATETIME
+     * czasu serwera. Zwraca null gdy brak / nieprawidlowa wartosc. Uwaga: to czas
+     * z zegara klienta (mozliwy dryf) — traktowany jako przyblizony znacznik
+     * conversation_last_at; decyzja last_touch/assist NIE zalezy od tego czasu
+     * (opiera sie na cookie sesyjnym divechat_visit), wiec dryf jest nieszkodliwy.
+     */
+    private function epochMsCookieToDatetime($cookieName)
+    {
+        $raw = $this->readRawCookie($cookieName);
+        if ($raw === '' || !ctype_digit($raw)) {
+            return null;
+        }
+        $seconds = (int)floor(((float)$raw) / 1000.0);
+        if ($seconds <= 0) {
+            return null;
+        }
+        return date('Y-m-d H:i:s', $seconds);
     }
 
     /**

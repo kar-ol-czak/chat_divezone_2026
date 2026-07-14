@@ -3546,3 +3546,27 @@ Detal po fixie: 2 zapytania (rola HMAC + zbiorczy SELECT) na 1 wywołanie HTTP, 
 - Test PROD (kryteria CHAT-T-135): scenariusz wrogi, porównanie pianek 7mm, „co jeszcze niezbędne", regresja budżet/używany sprzęt.
 
 **Implementacja:** CHAT-T-135. Deploy: rsync SystemPrompt.php → chat.divezone.pl/src/Chat/ (ADR-089, STOP przed rsync; BEZ config/tools.php — dryf repo≠prod).
+
+### ADR-119: Atrybucja czatu — strumień deterministyczny (cookie w domenie sklepu + hook zamówienia + tabela)
+
+**Data:** 2026-07-14 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-136 (implementacja — moduł PS), CHAT-T-137 (strumień GA4/GTM — osobno), spec `_docs/12_atrybucja_czatu.md`, ADR-061 (Shadow DOM widgetu — NIE iframe, warunek cookie w domenie sklepu). **Decyzje bazowe (Karol):** 34-40 (sesja 2026-07-01), 34b (cookie persistent 30 dni), 35c (podział na T-136/T-137), 37a (backend jako źródło prawdy — Consent Mode v2 zaniża GA4).
+
+**Kontekst:** brak mechanizmu mierzącego, czy klienci klikają w linki proponowane przez czat i czy jest z tego sprzedaż. Sklep ma aktywny Consent Mode v2 → GA4 systematycznie zaniża (część użytkowników bez zgody na analytics). Potrzebny strumień odporny na zgody — powiązanie rozmowy z zamówieniem po stronie serwera.
+
+**Decyzja (dwa strumienie, T-136 realizuje deterministyczny):**
+1. **Cookie w domenie sklepu.** Widget (Shadow DOM w DOM sklepu, ADR-061 — nie iframe) po KAŻDEJ realnej wymianie (onDone z `session_id`, `setAttributionCookies`) zapisuje trzy cookie na divezone.pl: `divechat_session_id` (persistent 30 dni, `path=/`, `SameSite=Lax`, `Secure` na https) → chat_session_id; `divechat_last_at` (persistent 30 dni, epoch ms) → conversation_last_at; `divechat_visit` (cookie sesyjne, bez max-age) → sygnał „ta sama wizyta". Cookie NIE są ustawiane przy samym otwarciu widgetu ani przy restore rozmowy (tryRestoreSession) — tylko przy faktycznej rozmowie w danej wizycie. Cookie funkcjonalne (powiązanie zamówienia), nie analityczne → Consent Mode nie blokuje.
+2. **Hook `actionValidateOrder`** (moduł PS). Przy zatwierdzeniu zamówienia czyta cookie z `$_COOKIE` (raw JS cookie, NIE szyfrowany `$this->context->cookie`) i wstawia rekord do `pr_divechat_order_attribution`: id_order z `$params['order']->id`, chat_session_id z cookie, attribution_type, conversation_last_at, date_add=NOW. Brak cookie → nic (zamówienie bez czatu, nie śmiecimy). Cały handler w try/catch — atrybucja nigdy nie wywraca zatwierdzenia zamówienia.
+3. **attribution_type — `last_touch` vs `assist` przez cookie sesyjne.** Obecność `divechat_visit` (znika po zamknięciu przeglądarki) = rozmowa i zakup w tej samej wizycie → `last_touch`. Brak (tylko cookie persistent z wcześniejszej wizyty) → `assist`. Sygnał NIE zależy od zegara klienta — deterministyczny. `divechat_last_at` służy tylko jako przybliżony znacznik `conversation_last_at` (dryf zegara klienta nieszkodliwy dla klasyfikacji).
+4. **Tabela `pr_divechat_order_attribution`** (MySQL PrestaShop, prefix pr_ przez `_DB_PREFIX_`): id_attribution PK, id_order (idx), chat_session_id VARCHAR(64) (idx), attribution_type ENUM('last_touch','assist'), conversation_last_at DATETIME NULL, date_add DATETIME. Zakładana idempotentnie w install() (IF NOT EXISTS) + bliźniaczy plik `modules/divezone_chat/sql/pr_divechat_order_attribution.sql` do ręcznego uruchomienia (moduł już zainstalowany — install() nie wykona się ponownie). RODO: chat_session_id to identyfikator techniczny, nie dane osobowe; zero treści rozmowy w tabeli.
+
+**Alternatywy rozważane:**
+- Tylko GA4 (dataLayer) — odrzucone: Consent Mode zaniża, brak źródła prawdy do połączenia z Subiektem (realna marża/zwroty). GA4 zostaje jako wizualizacja na próbie zgód (T-137).
+- Cookie sesyjne zamiast persistent 30 dni — odrzucone: gubi model `assist` (klient wrócił kupić w kolejnej wizycie). 30 dni = standardowe okno atrybucji, spójne z GA4 (34b).
+- `last_touch/assist` z progu na timestamp klienta — odrzucone jako mniej pewne (dryf zegara). Cookie sesyjne daje deterministyczny sygnał „ta sama wizyta".
+- Rejestracja cookie/hook w `$this->context->cookie` PrestaShopa — niemożliwe: to szyfrowana Cookie PS, nie zawiera surowych cookie ustawionych przez JS widgetu.
+
+**Konsekwencje:**
+- Zmiany wyłącznie w świecie MODUŁ PS (newtmp2): `divezone_chat.php` (install + createAttributionTable + hookActionValidateOrder + helpery cookie), `views/js/widget-bundle.js` (setAttributionCookies), nowy `sql/pr_divechat_order_attribution.sql`. ZERO zmian w backendzie standalone.
+- **Rejestracja hooka na żywym module dotyka produkcji** — moduł jest zainstalowany, `install()` się nie wykona ponownie. Wymagany jednorazowy krok rejestracji `actionValidateOrder` (kontrolowany reinstall lub wpis w `ps_hook_module`) — STOP, opisany Karolowi. Analogicznie tabelę na prod zakłada ręczne uruchomienie pliku sql.
+- Deploy = ręczny rsync Karola (port 5739, `--exclude config_pl.xml`, bez `--delete`), po nim skasować `var/cache/prod` + flush LSCache. NIE deployować `config/tools.php` (dryf repo≠prod, CHAT-T-132).
+- Weryfikacja: zamówienie testowe z aktywną rozmową → rekord w tabeli z poprawnym id_order + chat_session_id + typem; zamówienie bez czatu → brak rekordu.

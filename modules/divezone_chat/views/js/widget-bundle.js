@@ -156,6 +156,41 @@
   }
 
   /**
+   * CHAT-T-136 (ADR-119): atrybucja deterministyczna — zapis powiazania rozmowy
+   * z domena sklepu w cookie (odporne na Consent Mode v2, ktory zaniza GA4).
+   * Hook PrestaShop `actionValidateOrder` odczyta te cookie przy zamowieniu i
+   * zapisze pare id_order <-> chat_session_id do pr_divechat_order_attribution.
+   *
+   * Widget zyje w DOM sklepu (Shadow DOM, ADR-061 — NIE iframe), wiec cookie sa
+   * w domenie sklepu (divezone.pl). Cookie to funkcjonalne powiazanie zamowienia,
+   * nie analityka — Consent Mode go nie blokuje.
+   *
+   * Wywolywane po KAZDEJ realnej wymianie (onDone z session_id), NIE przy samym
+   * otwarciu widgetu ani przy restore rozmowy — dzieki temu `divechat_visit`
+   * (cookie sesyjne) jest ustawione tylko gdy klient faktycznie rozmawial w TEJ
+   * wizycie => hook rozroznia last_touch (visit obecne) vs assist (tylko cookie
+   * persistent z wczesniejszej wizyty).
+   *
+   * Trzy cookie:
+   *  - divechat_session_id (persistent 30 dni)  -> chat_session_id (zrodlo prawdy)
+   *  - divechat_last_at     (persistent 30 dni)  -> conversation_last_at (epoch ms)
+   *  - divechat_visit       (sesyjne, bez max-age) -> sygnal "ta sama wizyta"
+   */
+  function setAttributionCookies(sessionId) {
+    if (!sessionId) return;
+    try {
+      var maxAge = 2592000; // 30 dni (decyzja 34b — standardowe okno atrybucji)
+      var secure = (location.protocol === 'https:') ? '; Secure' : '';
+      var base   = '; path=/; SameSite=Lax' + secure;
+      document.cookie = 'divechat_session_id=' + encodeURIComponent(sessionId) + '; max-age=' + maxAge + base;
+      document.cookie = 'divechat_last_at=' + Date.now() + '; max-age=' + maxAge + base;
+      // Cookie sesyjne (bez max-age) — znika po zamknieciu przegladarki. Obecne
+      // przy zamowieniu = rozmowa w tej samej wizycie (last_touch).
+      document.cookie = 'divechat_visit=1' + base;
+    } catch (_) {}
+  }
+
+  /**
    * Odczyt zapamietanego sessionId. Zwraca string lub null gdy brak / wygasl /
    * skorumpowany JSON. Wygasly wpis czysci od razu (samosprzatanie).
    */
@@ -1028,6 +1063,9 @@
           // CHAT-T-059: zapamietaj sessionId + timestamp w localStorage.
           // Po nawigacji miedzy stronami sklepu front pobierze historie z backendu.
           persistSession(state.sessionId);
+          // CHAT-T-136 (ADR-119): zapis cookie atrybucji w domenie sklepu — hook
+          // zamowienia (actionValidateOrder) powiaze rozmowe z id_order.
+          setAttributionCookies(state.sessionId);
         }
         // CHAT-T-085: po pierwszej wiadomosci atrybucja jest juz zapisana w
         // bazie (INSERT z nudge_sid). Czyscimy state, zeby kolejne wiadomosci
