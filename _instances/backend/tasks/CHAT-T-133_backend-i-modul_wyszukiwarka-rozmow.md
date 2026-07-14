@@ -110,3 +110,26 @@ Karola w dostepie do rozmow po numerze (rozwiazuje problem "nie mam jak dotrzec 
   ea-php84 -l clean, md5 zgodne, /api/health 200). `config/tools.php` NIE ruszony.
 - Test PROD (realny endpoint, HMAC serwerowy, employee 2): `search=584` → total=81,
   id=584 OBECNE; `search=pianka` → total=115.
+
+## Wynik — czesc B (modul PS) — WDROZONA 2026-07-14, czeka na test reczny Karola
+
+- Pole wyszukiwania w pasku filtrow (`renderReviewFilterBar`, widoczne w KAZDYM trybie
+  recenzji): placeholder "Szukaj: numer lub slowo z rozmowy". Niepusta fraza → lista
+  przelacza sie na pelna (/api/conversations z search), bo /api/admin/review nie
+  wspiera search; wyczyszczenie pola przywraca kolejke recenzji.
+- Przycisk "Otworz" (`dzGoConv=1`): fraza-liczba → `findSessionIdByConvNumber()`
+  pyta backend i otwiera detal dokladnego trafienia conversation_id od razu
+  (best-effort: szuka na 1. stronie 100 wynikow).
+- `#{conversation_id}` maly/szary przy dacie na pozycjach OBU list (pelna
+  `renderConvListItem` + recenzje `renderReviewListItem`).
+- Stary input search w `renderConvFilters` (tryb wszystkie) → hidden (pole
+  przenioslo sie do gornego paska; filtr luk wiedzy nie gubi frazy).
+- Filtr `Recenzja: <status>` nietkniety (wyszukiwanie OBOK).
+- Commit: `10adce8` (`CHAT-T-133 modul: wyszukiwarka rozmow + numer w panelu recenzji (ADR-116)`).
+- Deploy: rsync kontrolera → newtmp2 (backup `~/_deploy_bak/newtmp2_20260714_T133/`,
+  prod przed deployem == repo HEAD~1 — brak dryfu; md5 zgodne, grep CHAT-T-133 = 7,
+  php -l clean). Cache: `var/cache/prod` skasowany + LSCache pelny flush
+  (`flush_all_litespeed.php` → OK), sklep HTTP 200.
+- PENDING: test reczny Karola w panelu (twardy refresh): "584" → Otworz → detal 584;
+  "pianka" → lista; #id widoczny; filtr recenzji bez regresji. Po tescie karta
+  Trello → "Zrobione".
