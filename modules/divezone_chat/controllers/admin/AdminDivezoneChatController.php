@@ -1114,8 +1114,22 @@ class AdminDivezoneChatController extends ModuleAdminController
         // do przejrzenia; oznaczenie dowolnym statusem usuwa je ze skrzynki).
         $reviewStatus = $this->resolveReviewFilter();
 
-        $listHtml  = $this->renderReviewFilterBar($reviewStatus, $sessionId);
-        if ($reviewStatus === 'wszystkie') {
+        // CHAT-T-133 (ADR-116): wyszukiwarka rozmow (numer conversation_id lub slowo
+        // z tresci). Przycisk "Otworz" przy frazie-liczbie laduje detal dokladnego
+        // trafienia od razu (bez klikania w liste).
+        $search = trim((string) Tools::getValue('search', ''));
+        if ($search !== '' && ctype_digit($search) && (string) Tools::getValue('dzGoConv', '') === '1') {
+            $bySid = $this->findSessionIdByConvNumber($employeeId, (int) $search);
+            if ($bySid !== '') {
+                $sessionId = $bySid;
+            }
+        }
+
+        $listHtml  = $this->renderReviewFilterBar($reviewStatus, $sessionId, $search);
+        // CHAT-T-133: niepuste wyszukiwanie -> ZAWSZE pelna lista (/api/conversations),
+        // bo /api/admin/review nie wspiera search. Wyczyszczenie pola przywraca
+        // liste wg filtra recenzji.
+        if ($reviewStatus === 'wszystkie' || $search !== '') {
             $listHtml .= $this->renderConversationsList($employeeId, $sessionId);
         } else {
             $listHtml .= $this->renderReviewList($employeeId, $sessionId, $reviewStatus);
@@ -1368,7 +1382,7 @@ JS;
      * obu trybach, zeby pracownik mogl przelaczac robocza/pelna liste. Zachowuje
      * otwarta rozmowe (session_id) przy przelaczeniu.
      */
-    private function renderReviewFilterBar($reviewStatus, $sessionId)
+    private function renderReviewFilterBar($reviewStatus, $sessionId, $search = '')
     {
         $token = Tools::getAdminTokenLite('AdminDivezoneChat');
 
@@ -1390,8 +1404,37 @@ JS;
         $html .= '</select></div>';
 
         $html .= '<div><button type="submit" class="btn btn-primary">' . $this->l('Pokaz') . '</button></div>';
+
+        // CHAT-T-133 (ADR-116): wyszukiwarka — numer conversation_id lub slowo z tresci.
+        // "Otworz" (dzGoConv=1) przy liczbie laduje detal dokladnego trafienia.
+        $html .= '<div><input type="text" name="search" value="' . htmlspecialchars($search, ENT_QUOTES) . '" placeholder="' . $this->l('Szukaj: numer lub slowo z rozmowy') . '"></div>';
+        $html .= '<div><button type="submit" name="dzGoConv" value="1" class="btn btn-default">' . $this->l('Otworz') . '</button></div>';
+
         $html .= '</form>';
         return $html;
+    }
+
+    /**
+     * CHAT-T-133: skok do rozmowy po numerze conversation_id. Pyta backend
+     * (/api/conversations?search=<nr>) i szuka na 1. stronie wynikow dokladnego
+     * dopasowania id. Best-effort: brak trafienia / blad backendu -> '' (zostaje
+     * sama lista wynikow, bez otwierania detalu).
+     */
+    private function findSessionIdByConvNumber($employeeId, $convId)
+    {
+        $resp = $this->callBackend(
+            self::ENDPOINT_CONVERSATIONS . '?' . http_build_query(array('search' => (string) $convId, 'per_page' => 100)),
+            $employeeId
+        );
+        if (!isset($resp['conversations']) || !is_array($resp['conversations'])) {
+            return '';
+        }
+        foreach ($resp['conversations'] as $conv) {
+            if (isset($conv['id']) && (int) $conv['id'] === $convId) {
+                return isset($conv['session_id']) ? (string) $conv['session_id'] : '';
+            }
+        }
+        return '';
     }
 
     /**
@@ -1469,6 +1512,7 @@ JS;
     private function renderReviewListItem($item, $activeSessionId, $reviewStatus)
     {
         $sessionId   = isset($item['session_id']) ? (string) $item['session_id'] : '';
+        $convId      = isset($item['conversation_id']) ? (int) $item['conversation_id'] : 0;
         $startedAt   = isset($item['started_at']) ? (string) $item['started_at'] : '';
         $firstMsg    = isset($item['first_user_message']) ? $item['first_user_message'] : null;
         $status      = isset($item['status']) ? (string) $item['status'] : '';
@@ -1496,7 +1540,12 @@ JS;
         $html  = '<li><a href="' . htmlspecialchars($url, ENT_QUOTES) . '" data-dz-detail="' . htmlspecialchars($ajaxUrl, ENT_QUOTES) . '" class="dz-conv-item' . $activeClass . '">';
         $html .= '<div class="dz-conv-item-msg">' . htmlspecialchars($msgPreview, ENT_QUOTES) . '</div>';
         $html .= '<div class="dz-conv-item-meta">';
-        $html .= '<span>' . htmlspecialchars($this->formatConvDate($startedAt), ENT_QUOTES) . '</span>';
+        // CHAT-T-133: numer rozmowy #{conversation_id} przy dacie (jak na pelnej liscie).
+        $html .= '<span>';
+        if ($convId > 0) {
+            $html .= '<span style="color:#999;">#' . $convId . '</span> ';
+        }
+        $html .= htmlspecialchars($this->formatConvDate($startedAt), ENT_QUOTES) . '</span>';
         $html .= '<span>';
         $html .= $this->renderReviewBadge($status);
         if ($verdict !== '') {
@@ -1605,7 +1654,9 @@ JS;
         // CHAT-T-105: ten formularz dziala tylko w trybie pelnej listy — utrzymaj go.
         $html .= '<input type="hidden" name="review_status" value="wszystkie">';
 
-        $html .= '<div><input type="text" id="dz-conv-search" name="search" value="' . htmlspecialchars($search, ENT_QUOTES) . '" placeholder="' . $this->l('Szukaj konwersacji') . '"></div>';
+        // CHAT-T-133: pole tekstowe przeniesione do paska nad lista (renderReviewFilterBar,
+        // widoczne w KAZDYM trybie). Tu hidden, zeby filtr luk wiedzy nie gubil frazy.
+        $html .= '<input type="hidden" name="search" value="' . htmlspecialchars($search, ENT_QUOTES) . '">';
 
         $html .= '<div class="check-row"><label><input type="checkbox" name="knowledge_gap" value="1"' . ($knowledgeGap ? ' checked' : '') . '> ' . $this->l('Luki wiedzy') . '</label></div>';
 
@@ -1625,6 +1676,7 @@ JS;
     private function renderConvListItem($conv, $activeSessionId)
     {
         $sessionId    = isset($conv['session_id']) ? (string) $conv['session_id'] : '';
+        $convId       = isset($conv['id']) ? (int) $conv['id'] : 0;
         $customerId   = isset($conv['customer_id']) ? (int) $conv['customer_id'] : 0;
         $startedAt    = isset($conv['started_at']) ? (string) $conv['started_at'] : '';
         $firstMessage = isset($conv['first_message']) ? $conv['first_message'] : null;
@@ -1655,7 +1707,13 @@ JS;
         $html  = '<li><a href="' . htmlspecialchars($url, ENT_QUOTES) . '" data-dz-detail="' . htmlspecialchars($ajaxUrl, ENT_QUOTES) . '" class="dz-conv-item' . $activeClass . '">';
         $html .= '<div class="dz-conv-item-msg">' . htmlspecialchars($msgPreview, ENT_QUOTES) . '</div>';
         $html .= '<div class="dz-conv-item-meta">';
-        $html .= '<span>' . htmlspecialchars($this->formatConvDate($startedAt), ENT_QUOTES) . '</span>';
+        // CHAT-T-133: numer rozmowy #{conversation_id} przy dacie — wspolny numer,
+        // po ktorym Karol i architekt wskazuja rozmowe.
+        $html .= '<span>';
+        if ($convId > 0) {
+            $html .= '<span style="color:#999;">#' . $convId . '</span> ';
+        }
+        $html .= htmlspecialchars($this->formatConvDate($startedAt), ENT_QUOTES) . '</span>';
         $html .= '<span>';
         $html .= ($customerId > 0 ? '#' . $customerId : '<em>' . $this->l('gosc') . '</em>');
         if ($knowledgeGap) {
