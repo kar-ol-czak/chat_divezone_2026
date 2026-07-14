@@ -125,4 +125,30 @@ final class UsageLogger
             messageCount: $messageCount,
         );
     }
+
+    /**
+     * CHAT-T-134 (ADR-117): koszt rozmowy z JUŻ pobranego wiersza detalu —
+     * ConversationStore::getBySessionId dokleja usage_message_count i usd_rate
+     * w tym samym round-tripie, więc tu ZERO dodatkowych zapytań do Railway
+     * (getConversationCost robił 2-3 SELECTy × RTT ~115 ms na to samo).
+     * getConversationCost() zostaje dla ścieżek bez pełnego wiersza (ChatService).
+     * Fallback na getUsdToPln() tylko gdy w bazie brak jakiegokolwiek kursu.
+     */
+    public function costFromDetailRow(array $conversation): ConversationCost
+    {
+        $usd = (float) ($conversation['estimated_cost'] ?? 0);
+        $rate = $conversation['usd_rate'] ?? null;
+        $rate = $rate !== null ? (float) $rate : $this->exchangeRates->getUsdToPln();
+
+        return new ConversationCost(
+            conversationId: (int) ($conversation['id'] ?? 0),
+            totalCostUsd: $usd,
+            totalCostPln: $usd * $rate,
+            totalInputTokens: (int) ($conversation['tokens_input'] ?? 0),
+            totalOutputTokens: (int) ($conversation['tokens_output'] ?? 0),
+            totalCacheReadTokens: (int) ($conversation['cache_read_tokens'] ?? 0),
+            totalCacheCreationTokens: (int) ($conversation['cache_creation_tokens'] ?? 0),
+            messageCount: (int) ($conversation['usage_message_count'] ?? 0),
+        );
+    }
 }

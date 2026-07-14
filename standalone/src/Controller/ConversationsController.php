@@ -69,13 +69,21 @@ final class ConversationsController
         }
 
         // Wzbogacamy o conversation_cost (USD + PLN po przeliczeniu).
+        // CHAT-T-134 (ADR-117): koszt liczony z JUŻ pobranego wiersza
+        // (usage_message_count + usd_rate doklejone w SELECT getBySessionId) —
+        // bez dodatkowych round-tripów do Railway. Odpowiedź zawiera też
+        // `review` (stan recenzji), żeby panel PS nie robił drugiego
+        // wywołania HTTP na GET /api/admin/review/:id.
         try {
             $conversation['conversation_cost'] = $this->usageLogger
-                ->getConversationCost((int) $conversation['id'])
+                ->costFromDetailRow($conversation)
                 ->toArray();
         } catch (\Throwable $e) {
             $conversation['conversation_cost'] = null;
         }
+
+        // Pola pomocnicze kosztu — nie wystawiamy w JSON (są już w conversation_cost).
+        unset($conversation['usage_message_count'], $conversation['usd_rate']);
 
         Response::json($conversation);
     }

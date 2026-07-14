@@ -3493,7 +3493,7 @@ Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?sta
 
 ### ADR-117: Wolne ładowanie rozmowy w panelu (do ~10 s) — zmierzona przyczyna: sekwencyjne round-tripy do Railway (RTT ~115 ms) amplifikowane epizodami sieci smarthost
 
-**Data:** 2026-07-14 | **Status:** PROPONOWANA (diagnoza zmierzona; wybór wariantu fixu czeka na decyzję Karola) | **Powiązane:** CHAT-T-134 (diagnoza), CHAT-T-107/ADR-104 (odporność na zrywanie Railway), CHAT-T-113 (AJAX detalu + prefetchCache), CHAT-T-116 (eskalacja smarthost — degradacja egress), CHAT-T-119 (diagnostyka sieciowa epizodów).
+**Data:** 2026-07-14 | **Status:** PRZYJĘTA (Karol wybrał wariant „redukcja round-tripów" 2026-07-14) | **Powiązane:** CHAT-T-134 (diagnoza + fix), CHAT-T-107/ADR-104 (odporność na zrywanie Railway), CHAT-T-113 (AJAX detalu + prefetchCache), CHAT-T-116 (eskalacja smarthost — degradacja egress), CHAT-T-119 (diagnostyka sieciowa epizodów).
 
 **Kontekst (objaw):** panel recenzji, pierwsze otwarcie rozmowy = do ~10 s (obserwacja Karola 2026-07-14 ~17:2x); już oglądana = błyskawicznie. Hipoteza wiodąca (koszt nawiązania PDO w świeżym FPM) była BŁĘDNA jako główny mechanizm — zweryfikowano pomiarami.
 
@@ -3508,6 +3508,19 @@ Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?sta
 
 **Wniosek (przyczyna):** czas ładowania = (liczba sekwencyjnych round-tripów do Railway) × (RTT chwilowe). Baseline ~1,4 s jest strukturalnie wysoki (10 round-tripów na jedno otwarcie), a epizody sieci smarthost mnożą każdy round-trip — stąd 10 s. Przyczyną NIE jest: rozmiar rozmowy, wydajność SQL, NBP na żywo, zimny autoloader.
 
-**Warianty fixu (KROK 2 — decyzja Karola):** rekomendowany = redukcja round-tripów: (a) stan recenzji dołączony do odpowiedzi detalu (2 wywołania HTTP → 1), (b) usunięcie duplikatu SELECT wiersza kosztów (dane już w SELECT *), (c) `PDO::ATTR_PERSISTENT` (oszczędza 161 ms connect per request; uwaga na limit połączeń Railway). Szacunek po fixie: ~0,4-0,6 s baseline; w epizodzie proporcjonalnie mniejsza ekspozycja. Uzupełniająco (objaw): `HTTP_TIMEOUT_SEC` 10→6 s. Poza kodem: przyczyna epizodów = egress smarthost (eskalacja CHAT-T-116).
+**Decyzja (wybrany wariant — redukcja round-tripów):**
+1. **Jedno wywołanie HTTP zamiast dwóch:** `GET /api/conversations/{sid}` zwraca też `review` (stan recenzji, kształt 1:1 z `GET /api/admin/review/:id`; null = „nowy" implicytny D3). Panel PS (`renderReviewPanel`) używa `review` z detalu; fallback na stary GET, gdy klucz nieobecny (bezpieczeństwo kolejności deployu). Endpoint `/api/admin/review/:id` zostaje (używany przez fallback i inne ścieżki).
+2. **Jeden SELECT zamiast czterech w detalu:** `ConversationStore::getBySessionId` dokleja skorelowane podzapytania w tym samym round-tripie: `usage_message_count` (dawny COUNT), `usd_rate` (dawny SELECT kursu; ostatni znany = dzisiejszy gdy jest), `review_row` (row_to_json wiersza recenzji). Nowa metoda `UsageLogger::costFromDetailRow()` liczy koszt z pobranego wiersza — zero dodatkowych zapytań; `getConversationCost()` zostaje dla ChatService. Duplikat SELECT wiersza kosztów usunięty (dane były już w SELECT *).
+3. **`PDO::ATTR_PERSISTENT`** w PostgresConnection — połączenie do Railway przeżywa między requestami procesu FPM (oszczędność ~161 ms TCP+TLS per request). Bezpieczne: pdo_pgsql robi check_liveness (PQstatus+PQreset) przy pobraniu z puli, retry/reconnect CHAT-T-107 działa bez zmian, kod nie używa transakcji (zweryfikowane grep).
+Detal po fixie: 2 zapytania (rola HMAC + zbiorczy SELECT) na 1 wywołanie HTTP, bez świeżego connectu.
 
-**Konsekwencje:** narzędzia pomiarowe zostawione na serwerze w `~/_diag/t134/` (t134_measure_http.php, t134_measure_pdo.php — uruchamiać `ea-php84`) do weryfikacji fixu w tym samym oknie. Bez zmian na PROD w fazie diagnozy (pomiar zewnętrzny, zero instrumentacji w kodzie).
+**Alternatywy rozważane:**
+- `HTTP_TIMEOUT_SEC` 10→6 s — odrzucone na teraz (leczy objaw, nie przyczynę; Karol wybrał wariant bez zmiany timeoutu).
+- Warm-up ping DB przy renderze listy — zbędny po ATTR_PERSISTENT.
+- Cache/materializacja detalu — niepotrzebna: problem to round-tripy, nie praca bazy.
+
+**Konsekwencje:**
+- Zmiany: świat BACKEND (ConversationStore, UsageLogger, ConversationsController, MobileConversationsController, PostgresConnection) + świat SKLEP (AdminDivezoneChatController — renderReviewPanel z review z detalu).
+- Poprawność zweryfikowana lokalnie na Railway: `costFromDetailRow` == `getConversationCost` na 6 rozmowach; review poprawny dla rozmowy z wierszem i bez; testy UsageLoggerTest 17/17.
+- Root-cause epizodów pozostaje po stronie egress smarthost (eskalacja CHAT-T-116) — fix zmniejsza EKSPOZYCJĘ (mniej round-tripów), nie usuwa epizodów.
+- Narzędzia pomiarowe zostawione na serwerze w `~/_diag/t134/` (t134_measure_http.php, t134_measure_pdo.php — uruchamiać `ea-php84`) do weryfikacji przed/po w tym samym oknie. Faza diagnozy bez zmian na PROD (pomiar zewnętrzny).

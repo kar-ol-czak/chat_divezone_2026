@@ -307,11 +307,33 @@ final class ConversationStore
 
     /**
      * Szczegóły jednej rozmowy.
+     *
+     * CHAT-T-134 (ADR-117): detal panelu płacił ~10 round-tripów do Railway
+     * (RTT ~115 ms KAŻDY) rozbitych na 2 wywołania HTTP i 7-8 SELECTów.
+     * Ten SELECT dokleja w TYM SAMYM round-tripie skorelowane podzapytania:
+     *  - usage_message_count (dawny osobny COUNT w UsageLogger),
+     *  - usd_rate (dawny osobny SELECT kursu w ExchangeRateService),
+     *  - review_row (dawne OSOBNE wywołanie HTTP GET /api/admin/review/:id
+     *    z panelu PS — zwracamy stan recenzji od razu w detalu).
+     * Kształt review identyczny z AdminConversationReviewController::get
+     * (normalizacja niżej); null = brak wiersza = stan "nowy" implicytny (D3).
      */
     public function getBySessionId(string $sessionId): ?array
     {
         $row = $this->db->fetchOne(
-            'SELECT * FROM divechat_conversations WHERE session_id = ? ORDER BY started_at DESC LIMIT 1',
+            "SELECT *,
+                    (SELECT count(*) FROM divechat_message_usage u
+                      WHERE u.conversation_id = divechat_conversations.id) AS usage_message_count,
+                    (SELECT rate_to_pln FROM divechat_exchange_rates
+                      WHERE currency = 'USD'
+                      ORDER BY rate_date DESC LIMIT 1) AS usd_rate,
+                    (SELECT row_to_json(r) FROM (
+                        SELECT rv.id, rv.conversation_id, rv.status, rv.verdict, rv.note,
+                               rv.updated_by, rv.created_at, rv.updated_at
+                        FROM divechat_conversation_review rv
+                        WHERE rv.conversation_id = divechat_conversations.id
+                    ) r) AS review_row
+             FROM divechat_conversations WHERE session_id = ? ORDER BY started_at DESC LIMIT 1",
             [$sessionId],
         );
 
@@ -319,7 +341,27 @@ final class ConversationStore
             return null;
         }
 
+        $review = null;
+        if (!empty($row['review_row'])) {
+            $r = json_decode((string) $row['review_row'], true);
+            if (is_array($r)) {
+                $review = [
+                    'id'              => (int) $r['id'],
+                    'conversation_id' => (int) $r['conversation_id'],
+                    'status'          => (string) $r['status'],
+                    'verdict'         => $r['verdict'] !== null ? (string) $r['verdict'] : null,
+                    'note'            => $r['note'] !== null ? (string) $r['note'] : null,
+                    'updated_by'      => $r['updated_by'] !== null ? (int) $r['updated_by'] : null,
+                    'created_at'      => $r['created_at'],
+                    'updated_at'      => $r['updated_at'],
+                ];
+            }
+        }
+
         return [
+            'usage_message_count' => (int) ($row['usage_message_count'] ?? 0),
+            'usd_rate' => $row['usd_rate'] !== null ? (float) $row['usd_rate'] : null,
+            'review' => $review,
             'id' => (int) $row['id'],
             'session_id' => $row['session_id'],
             'customer_id' => (int) ($row['ps_customer_id'] ?? 0),

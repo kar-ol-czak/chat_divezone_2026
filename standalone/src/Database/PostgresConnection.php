@@ -65,10 +65,18 @@ final class PostgresConnection
     public function getPdo(): PDO
     {
         if ($this->pdo === null) {
+            // CHAT-T-134 (ADR-117): ATTR_PERSISTENT — połączenie do Railway żyje
+            // między requestami w procesie FPM (zmierzone: świeży connect TCP+TLS
+            // = ~161 ms na KAŻDE żądanie; RTT ~115 ms). pdo_pgsql przy pobraniu
+            // z puli robi check_liveness (PQstatus + PQreset), a martwy handle
+            // odrzuca — retry/reconnect z CHAT-T-107 ($this->pdo = null) nadal
+            // działa. Kod nie używa transakcji (zweryfikowane), więc brak ryzyka
+            // wycieku otwartego TX między requestami.
             $this->pdo = new PDO($this->buildDsn(), options: [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES => false,
+                PDO::ATTR_PERSISTENT => true,
             ]);
         }
 

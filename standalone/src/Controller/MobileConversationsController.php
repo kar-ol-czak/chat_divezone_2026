@@ -64,13 +64,17 @@ final class MobileConversationsController
             Response::error('Rozmowa nie znaleziona', 404);
         }
 
+        // CHAT-T-134 (ADR-117): koszt z już pobranego wiersza — spójnie
+        // z ConversationsController::detail, bez dodatkowych zapytań.
         try {
             $conversation['conversation_cost'] = $this->usageLogger
-                ->getConversationCost((int) $conversation['id'])
+                ->costFromDetailRow($conversation)
                 ->toArray();
         } catch (\Throwable) {
             $conversation['conversation_cost'] = null;
         }
+
+        unset($conversation['usage_message_count'], $conversation['usd_rate']);
 
         Response::json($conversation);
     }

@@ -1861,9 +1861,14 @@ JS;
         $html .= $this->renderConvMessages($messages, $chipPath);
 
         // CHAT-T-105 (ADR-102): panel recenzji POD trescia rozmowy. conversation_id
-        // (int) z detalu (kolumna `id`); stan recenzji z dedykowanego GET /api/admin/review/:id.
+        // (int) z detalu (kolumna `id`).
+        // CHAT-T-134 (ADR-117): stan recenzji przychodzi JUZ w odpowiedzi detalu
+        // (klucz `review`) — przekazujemy caly $resp; renderReviewPanel NIE robi
+        // wtedy drugiego wywolania HTTP (oszczednosc ~0,45 s + polowa ekspozycji
+        // na epizody sieci). Fallback na GET /api/admin/review/:id gdy backend
+        // jeszcze bez klucza `review` (bezpieczenstwo kolejnosci deployu).
         $convId = isset($resp['id']) ? (int) $resp['id'] : 0;
-        $html .= $this->renderReviewPanel($employeeId, $sessionId, $convId);
+        $html .= $this->renderReviewPanel($employeeId, $sessionId, $convId, $resp);
 
         $html .= $this->renderConvDiagnostics($resp);
 
@@ -2219,24 +2224,32 @@ JS;
     }
 
     /**
-     * Panel recenzji pod trescia rozmowy (CHAT-T-105). Czyta stan z
-     * GET /api/admin/review/:convId (review=null gdy brak wiersza = stan "nowy"
-     * implicytny, D3). Formularz POST -> handleReviewSave.
+     * Panel recenzji pod trescia rozmowy (CHAT-T-105). Stan recenzji
+     * (review=null gdy brak wiersza = stan "nowy" implicytny, D3):
+     * CHAT-T-134 (ADR-117) — preferencyjnie z odpowiedzi detalu ($detailResp,
+     * klucz `review` dokladany przez backend), bez drugiego wywolania HTTP.
+     * Fallback: GET /api/admin/review/:convId gdy detal bez klucza `review`
+     * (starszy backend). Formularz POST -> handleReviewSave.
      */
-    private function renderReviewPanel($employeeId, $sessionId, $convId)
+    private function renderReviewPanel($employeeId, $sessionId, $convId, $detailResp = null)
     {
         if ($convId <= 0) {
             return '';
         }
 
-        $resp   = $this->callBackend(self::ENDPOINT_REVIEW . '/' . (int) $convId, $employeeId);
         $review = null;
         $loadErr = '';
-        if (isset($resp['error'])) {
-            $httpStatus = isset($resp['http_status']) ? (int) $resp['http_status'] : 0;
-            $loadErr = $this->reviewErrorMessage($resp, $httpStatus, $this->l('Blad pobrania recenzji:'));
-        } elseif (isset($resp['review']) && is_array($resp['review'])) {
-            $review = $resp['review'];
+        if (is_array($detailResp) && array_key_exists('review', $detailResp)) {
+            // CHAT-T-134: stan recenzji juz w detalu (null = "nowy" implicytny).
+            $review = is_array($detailResp['review']) ? $detailResp['review'] : null;
+        } else {
+            $resp = $this->callBackend(self::ENDPOINT_REVIEW . '/' . (int) $convId, $employeeId);
+            if (isset($resp['error'])) {
+                $httpStatus = isset($resp['http_status']) ? (int) $resp['http_status'] : 0;
+                $loadErr = $this->reviewErrorMessage($resp, $httpStatus, $this->l('Blad pobrania recenzji:'));
+            } elseif (isset($resp['review']) && is_array($resp['review'])) {
+                $review = $resp['review'];
+            }
         }
 
         // Stan biezacy: gdy brak wiersza -> 'nowy' implicytny (D3). Werdykt/notatka puste.
