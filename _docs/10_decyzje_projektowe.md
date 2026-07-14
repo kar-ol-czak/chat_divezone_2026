@@ -3414,3 +3414,28 @@ Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?sta
 - Rabaty progowe `from_quantity > 1` przestają być raportowane (enrichment filtruje `from_quantity <= 1`) — świadomie: czat podaje cenę jednostkową.
 
 **Implementacja:** CHAT-T-130 (instancja backend), `standalone/src/Tools/ProductDetails.php`. Deploy: świat BACKEND `chat.divezone.pl`, STOP przed rsync (ADR-089).
+
+---
+
+### ADR-114: Dobór automatu pod budżet (górna granica, nie najtańszy) + „gotowy zestaw" = zestaw z manometrem
+
+**Data:** 2026-07-14 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-131 (implementacja), ADR-065 (curated recommendations MVP), CHAT-T-063 (UŻYJ PODANEGO PARAMETRU / budżet prezentowy), CHAT-T-117/linia ~96 promptu (montaż manometrów przy odbiorze). **Źródło:** recenzje rozmów 609 (budżet 3500 zł → bot poleca ATX40 za ~2079 zł) i 596 (klient chce „gotowy zestaw", bot proponuje zestaw bez manometru), karta Trello „Chat - Dobór zestawów: ATX40 wciskany wszystkim…".
+
+**Problem:**
+1. **Permanentny ATX40.** `divechat_curated_recommendations` dla `regulator_recreational` ma prio 1 = pid 2368 (APEKS ATX40/DS4, ~2390 zł brutto). Bot traktował `priority` jako ranking rekomendacji i prowadził klienta pozycją prio 1 niezależnie od podanego budżetu — klient z budżetem 3500 zł dostawał najtańszy zestaw. Wcześniejsze próby (CHAT-T-036/063) nie zmieniły tego zachowania.
+2. **„Gotowy zestaw" mylony z zestawem bez manometru.** Sklep nie ma cechy/atrybutu „manometr" — jedyny sygnał to słowo „manometr"/„konsola" w nazwie produktu. Bot proponował zestaw I st.+II st.+octopus jako „gotowy", choć dla klienta gotowy zestaw = z manometrem.
+
+**Decyzje (Karol, 2026-07-14):**
+- **9a — dopasowanie do budżetu:** gdy klient podał budżet, rekomendacją wiodącą jest produkt NAJBLIŻSZY GÓRNEJ GRANICY budżetu spełniający potrzebę, nie najtańszy z listy. `priority` w curated = kolejność kuratorska (podstawowy → premium), NIE ranking. Pozycja do ~10% ponad budżet może być pokazana z jawnym zaznaczeniem przekroczenia. ATX40 pozostaje właściwy dla budżetów niższych.
+- **8b — definicja „gotowego zestawu":** gotowy zestaw automatu = I st. + II st. + octopus + manometr/konsola. Procedura: (1) szukaj zestawu z manometrem (pierwsze źródło: kategoria „Zestawy rekreacyjne" id 416; sygnał = „manometr"/„konsola" w nazwie; search_products z exact_keywords + in_stock_only), (2) przy braku dostępnego → bazowy zestaw + osobny manometr do skompletowania z ceną łączną (realna praktyka sklepu: montaż przy odbiorze, prompt „NOWY AUTOMAT — regulacja i montaż").
+
+**Alternatywy rozważane:**
+- Twarde filtrowanie budżetu w kodzie `CuratedRecommendations` (parametr price_max) — odrzucone na tym etapie: reguła jest behawioralna (wybór wiodącej rekomendacji z listy), curated zwraca 3-4 pozycje, model ma pełne ceny z enrichment; zmiana promptu wystarcza i nie usztywnia narzędzia.
+- Cecha „manometr" w PrestaShop — poza zakresem czatu (dane sklepu); do rozważenia w Atrybuty_produktow_2026.
+
+**Konsekwencje:**
+- SystemPrompt: nowa sekcja „DOBÓR POD BUDŻET KLIENTA (9a)" + „»GOTOWY ZESTAW« AUTOMATU = ZESTAW Z MANOMETREM (8b)" (po bloku curated), odnośnik w „UŻYJ PODANEGO PARAMETRU". Reguła budżetu prezentowego (~366-389) bez zmian.
+- Dane: opcjonalny seed `regulator_recreational` o środek przedziału cenowego (dziura 2390→3776 zł) — osobna decyzja Karola przed INSERT (ADR-089 STOP).
+- Kategoria 416 po uporządkowaniu przez Karola stanie się pierwszym źródłem gotowych zestawów; embeddingi mają dziś `category_name` = marka dla większości pozycji z 416, więc prompt kieruje przez `category="Automaty Oddechowe"` + exact_keywords, nie przez nazwę podkategorii.
+
+**Implementacja:** CHAT-T-131 (instancja backend), `standalone/src/Chat/SystemPrompt.php`. Deploy: świat BACKEND `chat.divezone.pl`, STOP przed rsync (ADR-089).
