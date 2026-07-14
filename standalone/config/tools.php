@@ -14,6 +14,7 @@ use DiveChat\Tools\ExpertKnowledge;
 use DiveChat\Tools\GetShopLinks;
 use DiveChat\Tools\GetShopSchedule;
 use DiveChat\Tools\OrderStatus;
+use DiveChat\Tools\PopularProducts;
 use DiveChat\Tools\ProductCombinations;
 use DiveChat\Tools\ProductDetails;
 use DiveChat\Tools\ProductSearch;
@@ -45,6 +46,9 @@ return static function (EmbeddingService $embeddingService): ToolRegistry {
     $registry->register(new GetShopLinks($pg));
     $registry->register(new GetShopSchedule(new ShopCalendar(new DbOverrideProvider($pg))));
     $registry->register(new CuratedRecommendations($pg, $enrichmentService));
+    // CHAT-T-132 (ADR-115): dynamiczna popularnosc z PrestaShop na zywo (pr_orders),
+    // dwie sekcje bestsellers + new_arrivals (<90 dni), enrich jak curated.
+    $registry->register(new PopularProducts(MysqlConnection::getInstance(), $enrichmentService));
     // CHAT-T-100 (ADR-099): deterministyczny dobór rozmiaru skafandra mokrego (NIE embeddingi).
     // CHAT-T-103: źródło prawdy rozmiarów na MySQL PrestaShop (divezone_attr_*), nie Railway/PG.
     $registry->register(new SizeRecommender(MysqlConnection::getInstance()));

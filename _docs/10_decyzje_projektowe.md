@@ -3439,3 +3439,32 @@ Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?sta
 - Kategoria 416 po uporządkowaniu przez Karola stanie się pierwszym źródłem gotowych zestawów; embeddingi mają dziś `category_name` = marka dla większości pozycji z 416, więc prompt kieruje przez `category="Automaty Oddechowe"` + exact_keywords, nie przez nazwę podkategorii.
 
 **Implementacja:** CHAT-T-131 (instancja backend), `standalone/src/Chat/SystemPrompt.php`. Deploy: świat BACKEND `chat.divezone.pl`, STOP przed rsync (ADR-089).
+
+---
+
+### ADR-115: `get_popular_products` — dynamiczna popularność z PrestaShop na żywo (bestsellers + new_arrivals)
+
+**Data:** 2026-07-14 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-132 (implementacja), ADR-065 (curated recommendations — wzorzec kontraktu i twardego enrichment), ADR-114 (dobór pod budżet — max_price), czaty 605/606 (pomyłka JET vs paskowe). **Decyzje Karola:** 15a/17b/18a/19a/20a/21b/22a.
+
+**Kontekst:** bot nie miał źródła „co się realnie najczęściej kupuje" — dla płetw rozważano statyczny seed curated, odrzucony (stałe listy rozjeżdżają się cicho). Dodatkowo bot mylił typy płetw (JET vs paskowe, conv 605/606), bo zgadywał kategorię z nazwy.
+
+**Decyzja:**
+1. **Źródło: PrestaShop na żywo (19a).** Popularność z `pr_orders` (valid=1) + `pr_order_detail`, MySQL read-only — NIE z `divechat_product_sales_popularity` (martwy import CSV Subiekta, zamrożony 2026-06-01). Sprzedaż online wystarcza.
+2. **Bez materializacji (20a).** Zapytanie liczone przy wywołaniu — zmierzone ~10 ms na PROD (kategoria 473, JOIN + GROUP BY). Cron/tabela pośrednia dokładałaby ruchomą część, która cicho się rozjeżdża.
+3. **Okno domyślne 6 miesięcy** (parametr `months`, clamp 1-24) — lepiej oddaje bieżący popyt (sezonowość) niż 12.
+4. **Klucze kategorii semantyczne (17b/18a).** Narzędzie przyjmuje `category_key` z enum, mapowany w klasie na `id_category`: `fins_recreational`→473 (Płetwy Paskowe na Buta), `fins_jet`→415 (Płetwy Gumowe JET), `fins_snorkel`→472 (Płetwy Kaloszowe na Stopę). Architektura ogólna: dołożenie kategorii = jeden wpis w mapie `PopularProducts::CATEGORIES`. Bot wybiera klucz, NIE zgaduje typu z nazwy; gdy zastosowanie niejasne — dopytuje.
+5. **Zimny start (21b + 22a).** Produkt z `pr_product.date_add` < 90 dni, aktywny i dostępny, wchodzi do sekcji `new_arrivals` NIEZALEŻNIE od sprzedaży. Wynik ma dwie ODDZIELNE sekcje: `bestsellers` (top wg sztuk, `sold_qty`) i `new_arrivals` (`added_date`) — nowość z 1 sztuką nie udaje bestsellera. Produkt będący jednocześnie nowością i bestsellerem dostaje flagę `is_new` w bestsellers (bez duplikatu). **Założenie:** `date_add` wiarygodne (zweryfikowane na danych); ryzyko: re-dodanie/migracja produktu może zafałszować datę.
+6. **Enrichment jak curated (twarda zasada ADR-065):** oba zestawy przez `MysqlProductEnrichmentService::enrich()` — brak danych / active=false / visibility=none / unavailable → pozycja odpada (`skipped` z powodem). Cena brutto z promocjami, `price_eur`, `url_en`. `max_price` odcina po cenie finalnej z enrichment.
+
+**Alternatywy rozważane:**
+- Statyczny seed curated dla płetw — odrzucony (15a): ręczna lista rozjeżdża się cicho, wymaga pamiętania o aktualizacji.
+- Tabela `divechat_popular_categories` (dokładanie kluczy bez deployu) — odłożona: na start stały array w klasie jest prostszy; migracja do tabeli możliwa bez zmiany kontraktu, gdy zespół zacznie dokładać kategorie.
+- Subiekt (sprzedaż stacjonarna) jako drugie źródło — przyszłość, dopiero gdyby online istotnie odbiegał.
+
+**Konsekwencje:**
+- Nowe narzędzie `standalone/src/Tools/PopularProducts.php` + rejestracja w `config/tools.php` + sekcja w SystemPrompt (rozgraniczenie: popular = co kupują inni, curated = co MY polecamy, search = konkretny model; wzór narracji dwusekcyjnej; nakaz dopytania o zastosowanie płetw).
+- Reguła DOBÓR POD BUDŻET (ADR-114) rozszerzona o get_popular_products.
+- Test jednostkowy mapowania/normalizacji: `standalone/tests/Tools/PopularProductsTest.php` (20 asercji, bez MySQL).
+- Wynik zależny od jakości przypisań `pr_category_product` — porządkowanie kategorii w sklepie bezpośrednio poprawia rekomendacje.
+
+**Implementacja:** CHAT-T-132 (instancja backend). Deploy: świat BACKEND `chat.divezone.pl` (PopularProducts.php + tools.php + SystemPrompt.php), STOP przed rsync (ADR-089).
