@@ -113,3 +113,40 @@ Wykluczone: rozmiar rozmowy, SQL, NBP na zywo, zimny autoloader.
 
 Szczegoly + warianty fixu: ADR-117 (status PROPONOWANA, czeka na wybor wariantu).
 STOP — zgodnie z taskiem czekam na decyzje Karola przed KROK 2.
+
+## Wynik — KROK 2 FIX — WDROZONY 2026-07-14 (wariant Karola: redukcja round-tripow)
+
+**Zmiany (commit `92da19f`, ADR-117 PRZYJETA):**
+- `ConversationStore::getBySessionId`: 1 SELECT z podzapytaniami (usage_message_count,
+  usd_rate, review_row jako row_to_json) — dawne 3-4 SELECTy + osobne wywolanie HTTP
+  w jednym round-tripie.
+- `UsageLogger::costFromDetailRow()`: koszt z pobranego wiersza, zero zapytan
+  (getConversationCost zostaje dla ChatService). Duplikat SELECT kosztow usuniety.
+- `ConversationsController::detail` + `MobileConversationsController::detail`:
+  cost z wiersza; odpowiedz zawiera `review` (kszalt 1:1 z GET /api/admin/review/:id);
+  pola pomocnicze unset przed JSON.
+- `PostgresConnection`: PDO::ATTR_PERSISTENT (connect TCP+TLS 161 ms nie placony
+  per request; pdo_pgsql check_liveness na reuse; brak transakcji w kodzie).
+- Modul PS `renderReviewPanel(..., $detailResp)`: review z detalu, fallback na stary
+  GET gdy klucz nieobecny (bezpieczna kolejnosc deployu).
+
+**Weryfikacja przed deployem:** costFromDetailRow == getConversationCost na 6 rozmowach
+(Railway), review OK dla rozmowy z wierszem i bez, UsageLoggerTest 17/17, lint czysty.
+
+**Deploy:** BACKEND 5 plikow (backup `_deploy_bak/20260714_T134/`, brak dryfu na
+wszystkich, ea-php84 -l czysty, md5 zgodne, health 200; incydent rsync --relative:
+pliki najpierw trafily do zbednego `standalone/` — poprawione, katalog usuniety).
+MODUL PS: kontroler do newtmp2 (backup `~/_deploy_bak/newtmp2_20260714_T134/`,
+md5 zgodne, 3 markery CHAT-T-134, cache prod + LSCache wyczyszczone, sklep 200).
+`config/tools.php` NIETKNIETY.
+
+**Pomiar PROD po fixie (ten sam skrypt, ~21:20 CEST):** detail 900-980 ms → **283-330 ms**;
+review-state 441-466 → 283 ms; otwarcie rozmowy = 1 wywolanie (~0,3 s) zamiast 2 (~1,4 s).
+**Kryterium akceptacji < 2 s: SPELNIONE z zapasem.** W epizodzie ekspozycja ~3-4× mniejsza
+(2 zapytania + polaczenie persistent zamiast ~10 round-tripow); root-cause epizodow =
+egress smarthost (CHAT-T-116, poza kodem).
+
+**Instrumentacja:** ZERO instrumentacji w kodzie prod (pomiar zewnetrzny) — nie ma czego
+usuwac. Skrypty pomiarowe zostaja w `~/_diag/t134/` (ea-php84).
+**PENDING:** test reczny Karola w panelu (klik nieogladanej rozmowy — powinno byc <1 s);
+po tescie karta Trello → "Zrobione".
