@@ -12,6 +12,8 @@ Czat AI ze wyszukiwaniem semantycznym dla sklepu nurkowego divezone.pl (PrestaSh
 
 **Task frontend/widget/panel-PS → ŚWIAT 2. Task backend/API → ŚWIAT 1.** To dwa różne rsynce w dwa różne katalogi. Zmiana widgetu/panelu PS NIE działa dopóki nie trafi do `newtmp2` (weryfikować md5 + grep markerów taska w pliku na produkcji).
 
+**DRYF `config/tools.php` (repo ≠ prod) — pułapka deployu (CHAT-T-132, incydent 500 2026-07-14):** repozytoryjny `tools.php` rejestruje WSZYSTKIE narzędzia, w tym `ProductCombinations` (CHAT-T-129 — zacommitowane, ale CELOWO niewdrożone, czeka na kolumnę `nazwa_pl` z projektu Atrybuty). Klasy nie ma na serwerze → rsync repo `tools.php` 1:1 daje fatal „Class not found" i `/api/health` 500. Zasada: przy KAŻDYM deployu dotykającym `tools.php` NAJPIERW `diff` z wersją produkcyjną i deploy wariantu produkcyjnego z własną zmianą (dopisać tylko nowe narzędzie), albo wdrożyć CHAT-T-129 w komplecie (co dryf zlikwiduje). Smoke `/api/health` po rsync jest bramką, która to łapie — nie pomijać.
+
 **DWA PANELE ADMINA (źródło realnej pomyłki):**
 - **Panel recenzji rozmów = moduł PS** (`AdminDivezoneChatController`, nagłówek „Przebieg rozmowy", endpoint `/api/conversations/{sid}`). **TEN używa Karol.**
 - Standalone `/admin` (`chat.divezone.pl/admin`, `admin-conversation.js`, `/api/admin/conversations/:id`) jest **WYGASZANY (ADR-070)** — panel PS to jedyny docelowy front administracyjny. NIE kierować tam nowych funkcji recenzji.
