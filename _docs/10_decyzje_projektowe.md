@@ -3468,3 +3468,25 @@ Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?sta
 - Wynik zależny od jakości przypisań `pr_category_product` — porządkowanie kategorii w sklepie bezpośrednio poprawia rekomendacje.
 
 **Implementacja:** CHAT-T-132 (instancja backend). Deploy: świat BACKEND `chat.divezone.pl` (PopularProducts.php + tools.php + SystemPrompt.php), STOP przed rsync (ADR-089).
+
+### ADR-116: Wyszukiwarka rozmów w panelu recenzji — numer conversation_id + pełnotekstowo po treści (ILIKE bez indeksu)
+
+**Data:** 2026-07-14 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-133 (implementacja), ADR-102 (panel recenzji w module PS), CHAT-T-051 (tytuł first_user_message), CHAT-T-122 (exclude etykiet chipów w tytule). **Decyzje Karola:** 28c (numer + skok do numeru + tytuł + pełnotekstowo po treści), 29a (ta karta przed ton+porównania), 30a (ILIKE bez indeksu GIN).
+
+**Kontekst:** Karol i architekt wskazują rozmowy po `conversation_id` (np. „napraw 584"), ale panel recenzji (moduł PS) nie pokazywał numeru ani nie pozwalał go wyszukać — jedyna droga do konkretnej rozmowy to przewijanie listy. Backend (`ConversationStore::list()`) miał już pełnotekstowe szukanie po treści (`messages::text ILIKE`), brakowało dopasowania po numerze.
+
+**Decyzja:**
+1. **Jedno pole wyszukiwania, dwa tryby po stronie backendu (28c).** Gdy `search` jest liczbą całkowitą (`ctype_digit`) → warunek `(id = ? OR messages::text ILIKE ?)` — dokładne trafienie numeru ORAZ treść (numer może też występować w rozmowie). Gdy tekst → jak dotąd `messages::text ILIKE`.
+2. **ILIKE bez indeksu GIN/tsvector (30a).** Zmierzone: `messages::text ILIKE` na 620 rozmowach (tabela 5.96 MB) ≈ 235 ms — akceptowalne dla panelu admina. **Próg przejścia na GIN (pg_trgm) lub tsvector: > ~3000 rozmów LUB czas wyszukiwania > 500 ms.** Do tego czasu indeks to przedwczesna optymalizacja.
+3. **Panel PS pokazuje `#{conversation_id}` przy każdej pozycji listy** (mały, szary, obok daty/statusu) — wspólny numer, po którym Karol i architekt wskazują rozmowę. Pole wyszukiwania OBOK istniejącego filtra `Recenzja: <status>`, nie zamiast.
+
+**Alternatywy rozważane:**
+- Indeks GIN pg_trgm od razu — odrzucony (30a): przy 620 rozmowach zysk pomijalny, koszt utrzymania indeksu na jsonb::text realny.
+- Osobne pole „idź do numeru" obok pola tekstowego — odrzucone: jeden input z detekcją liczby jest prostszy w obsłudze i wystarcza.
+
+**Konsekwencje:**
+- `ConversationStore::list()` — rozszerzony blok `search`; paginacja, podzapytanie tytułu (CHAT-T-051) i exclude chipów (CHAT-T-122) bez zmian.
+- Moduł PS (`AdminDivezoneChatController`, zakładka Rozmowy): input wyszukiwania w pasku filtrów + `#id` na pozycjach listy.
+- Rozwiązuje problem „nie mam jak dotrzeć do 584" — dostęp do rozmowy po numerze wprost z panelu.
+
+**Implementacja:** CHAT-T-133. Część A: świat BACKEND `chat.divezone.pl` (ConversationStore.php, BEZ config/tools.php — dryf repo≠prod). Część B: świat SKLEP `newtmp2` (moduł PS, ręczny rsync Karola + czyszczenie cache).

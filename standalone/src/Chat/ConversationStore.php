@@ -210,8 +210,16 @@ final class ConversationStore
         $params = [];
 
         if ($search !== null && $search !== '') {
-            $params[] = '%' . $search . '%';
-            $conditions[] = 'messages::text ILIKE ?';
+            // CHAT-T-133 (ADR-116): fraza bedaca liczba calkowita trafia tez
+            // w conversation_id (dokladne dopasowanie), obok szukania w tresci.
+            if (ctype_digit($search)) {
+                $params[] = (int) $search;
+                $params[] = '%' . $search . '%';
+                $conditions[] = '(id = ? OR messages::text ILIKE ?)';
+            } else {
+                $params[] = '%' . $search . '%';
+                $conditions[] = 'messages::text ILIKE ?';
+            }
         }
 
         if ($knowledgeGap !== null) {
