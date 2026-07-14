@@ -130,3 +130,45 @@ push. Po deployu osobny `docs:` commit (status + karta Trello).
 ## Domkniecie
 Po zweryfikowanym deployu: karta → "Zrobione"; rozmowy 605/606 (dobor pletw, zla marka)
 → problem_rozwiazany jesli narzedzie je adresuje, wg procedury 42.
+
+## Wynik (2026-07-14, CC backend)
+
+**Implementacja** (commit `e0b1342`):
+- `standalone/src/Tools/PopularProducts.php` (nowy): pr_orders(valid=1)+pr_order_detail
+  na zywo (~10 ms), okno 6 mcy (clamp 1-24), mapa CATEGORIES w klasie
+  (fins_recreational=473/fins_jet=415/fins_snorkel=472), dwie sekcje bestsellers
+  (sold_qty) + new_arrivals (<90 dni, added_date; overlap -> flaga is_new bez
+  duplikatu), twardy enrich jak curated (skipped z powodem), max_price po finalnej
+  cenie brutto, statusy ok/unknown_category/no_available/error. Nazwa/marka/URL
+  z MySQL (pr_product_lang+pr_manufacturer), NIE z embeddingow (nowosci <90 dni
+  moga nie byc jeszcze zaembedowane).
+- `config/tools.php`: rejestracja. `SystemPrompt.php`: sekcja POPULARNE PRODUKTY
+  (rozgraniczenie popular/curated/search, nakaz wyboru klucza z enum + dopytania
+  o zastosowanie pletw — czaty 605/606) + dopisanie do reguly DOBOR POD BUDZET.
+- Test jednostkowy `tests/Tools/PopularProductsTest.php`: 20/20.
+- ADR-115 w `_docs/10_decyzje_projektowe.md`.
+
+**Deploy 2026-07-14 (ADR-089):** backup, rsync 3 plikow, md5 prod==local,
+`php -l` ea-php84 clean x3, `/api/health` 200 (PG+MySQL true).
+
+**INCYDENT (~1 min 500 na PROD):** repozytoryjny `config/tools.php` rejestruje
+tez `ProductCombinations` (CHAT-T-129 — zacommitowany, CELOWO NIEWDROZONY, czeka
+na kolumne nazwa_pl); klasy nie ma na serwerze -> fatal "Class not found" po
+rsyncu tools.php. Przywrocony backup (health 200), nastepnie wdrozona wersja
+= produkcyjny tools.php + WYLACZNIE rejestracja PopularProducts.
+**LEKCJA/DRYF repo!=prod:** nie deployowac repozytoryjnego tools.php dopoki
+CHAT-T-129 nie wejdzie na PROD (albo wdrozyc oba naraz).
+
+**Test PROD (realny czat):**
+1. "jakie pletwy paskowe polecacie/co sie najlepiej sprzedaje" -> dwie sekcje:
+   bestsellery (GO Sport 567, Avanti Quattro+ 544,85, Superchannel 357,99,
+   Quattro 4X 760,75, Seawing Nova 688,50) + nowosc RecTec 299 osobno. Kryt. 1 OK
+2. "do 600 zl" -> Quattro 4X i Seawing odciete; wiodaca GO Sport 567 (najblizej
+   gornej granicy, regula ADR-114). Kryt. 2 OK
+3. "jakie pletwy najczesciej kupuja" (typ niejasny) -> bot dopytuje
+   paskowe/JET/kaloszowe, nie zgaduje. OK
+4. Linki z polskimi znakami w slugu -> 301 -> 200 kanoniczna strona produktu. OK
+
+**Domkniecie:** karta Trello -> "Zrobione"; conv 605 -> problem_rozwiazany
+(updated_by=NULL, marker w note); conv 606 ZOSTAJE otwarta z notatka (sedno =
+warianty/kolor w koszyku -> CHAT-T-129 + procedura naprawy koszyka).
