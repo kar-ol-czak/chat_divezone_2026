@@ -3392,3 +3392,25 @@ Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?sta
 **Zgodność z regułami projektu:** deterministyczne i dynamiczne źródło prawdy (prefiks liczony, nie stała lista — ten sam typ ochrony co dynamiczne labele w ADR-110). Purge selektywny wpisuje się w regułę brzytwy Okhama po deployu: zamiast palić cały cache, unieważnia tylko to, co się zmieniło.
 
 **Implementacja:** CHAT-T-127 (instancja integration). Deploy = ręczny rsync Karola do `~/public_html/newtmp2/purge_litespeed.php`, STOP przed rsync (ADR-089). Weryfikacja: curl `-D -` na URL skryptu, potwierdzenie że tylko dana strona przechodzi w `miss`.
+
+---
+
+### ADR-113: `special_price` w `get_product_details` wyprowadzane z enrichment — fix wycieku rabatu grupowego B2B
+
+**Data:** 2026-07-14 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-130 (implementacja), CHAT-T-062/E5 (jedna ścieżka liczenia ceny), CHAT-T-124 (przekreślenie ceny w widgecie), ADR-093 (computeBruttoPrice). **Źródło:** recenzje rozmów 649 (maska TUSA Zensee Pro M-1010S) i 641 (xDEEP Ghost Deluxe), verdict=problem_do_rozwiazania.
+
+**Problem:** bot ogłaszał klientom nieistniejący rabat -25% i podawał zaniżoną cenę (619 zł → „464,25 zł"); klient w koszyku widział cenę bez rabatu. Przyczyna: `ProductDetails.php` pobierał `pr_specific_price` OSOBNYM zapytaniem bez filtrów `id_group`/`id_customer`/`id_product_attribute` i doklejał `special_price:{reduction,type}` do odpowiedzi narzędzia zawsze, gdy wiersz istniał. Łapał rabat przypisany grupie `id_group=9` „B2B / Instruktorzy" — niedostępny dla zwykłego klienta czatu (grupa 1/3). Dowód na PROD (2026-07-14): produkty 6379, 4517, 6834, 7460 mają WYŁĄCZNIE wiersze `id_group=9`, `reduction=0.25`. Enrichment (`MysqlProductEnrichmentService::fetchSpecificPrices`) filtrował poprawnie (`id_customer=0 AND id_group IN (0,1) AND id_product_attribute=0`), więc `price` i `price_before_discount` były dobre — rozjazd tworzyło tylko równoległe, prostsze zapytanie.
+
+**Decyzja (wariant A — jedno źródło prawdy):**
+1. Osobne zapytanie o `pr_specific_price` w `ProductDetails` USUNIĘTE. Promocje w odpowiedzi narzędzia pochodzą wyłącznie z enrichment — tej samej ścieżki co `price` (E5).
+2. `special_price` wyprowadzane z enrichment: gdy `price_before_discount` istnieje (realna publiczna obniżka), `special_price = {reduction: round(1 - price/price_before_discount, 4), type: 'percentage'}`. Gdy publicznej promocji nie ma — pola NIE ma w odpowiedzi.
+
+**Alternatywy rozważane:** wariant B (dorównanie WHERE osobnego zapytania do filtrów enrichment) — odrzucony: utrzymywałby dwie równoległe ścieżki liczenia promocji, czyli źródło przyszłych rozjazdów (dokładnie ten mechanizm zawiódł tutaj).
+
+**Konsekwencje:**
+- `special_price` zawsze spójne z parą `price`/`price_before_discount`; niemożliwy stan „rabat ogłoszony, cena pełna".
+- Rabaty kwotowe (`amount`) prezentowane modelowi jako procent efektywny (`percentage`) — model komunikuje klientowi ceny/procent, typ źródłowy rabatu nie jest mu potrzebny.
+- Zniknęły metadane `from_quantity`/`date_from`/`date_to` z surowego wiersza — nie były częścią kontraktu odpowiedzi.
+- Rabaty progowe `from_quantity > 1` przestają być raportowane (enrichment filtruje `from_quantity <= 1`) — świadomie: czat podaje cenę jednostkową.
+
+**Implementacja:** CHAT-T-130 (instancja backend), `standalone/src/Tools/ProductDetails.php`. Deploy: świat BACKEND `chat.divezone.pl`, STOP przed rsync (ADR-089).

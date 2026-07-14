@@ -103,23 +103,12 @@ final class ProductDetails implements ToolInterface
             [$productId],
         );
 
-        // Promocje
-        $specialPrice = $db->fetchOne(
-            'SELECT reduction, reduction_type, from_quantity,
-                    `from` AS date_from, `to` AS date_to
-             FROM pr_specific_price
-             WHERE id_product = ? AND id_shop IN (0, ?)
-               AND (`from` = "0000-00-00 00:00:00" OR `from` <= NOW())
-               AND (`to` = "0000-00-00 00:00:00" OR `to` >= NOW())
-             ORDER BY from_quantity ASC
-             LIMIT 1',
-            [$productId, self::SHOP_ID],
-        );
-
         // CHAT-T-062 (E5): cena + availability + price_before_discount z TEGO SAMEGO
-        // serwisu co ProductSearch. Lokalne $stock + $specialPrice zostaja dla metadanych
-        // (quantity, special_price.from/to dla diagnostyki), ale `price` w odpowiedzi
-        // ZAWSZE z enrichment — koniec dwoch sciezek liczenia ceny.
+        // serwisu co ProductSearch. Lokalne $stock zostaje dla metadanych (quantity),
+        // ale `price` w odpowiedzi ZAWSZE z enrichment — koniec dwoch sciezek liczenia ceny.
+        // CHAT-T-130 (ADR-113): usuniete osobne zapytanie o pr_specific_price — nie
+        // filtrowalo id_group/id_customer i wyciekalo rabaty grupowe (B2B id_group=9)
+        // do zwyklych klientow (czaty 649/641). special_price liczone z enrichment.
         $enrichData = $this->enrichment->enrich([$productId]);
         $enrich = $enrichData[$productId] ?? null;
 
@@ -170,15 +159,16 @@ final class ProductDetails implements ToolInterface
         ];
 
         // Cena przed rabatem — model moze powiedziec "przeceniony z X na Y".
-        if ($enrich !== null && isset($enrich['price_before_discount'])) {
+        // special_price wyprowadzone z enrichment (jedno zrodlo prawdy o promocjach):
+        // pojawia sie TYLKO gdy realna publiczna obnizka (id_group IN (0,1)) istnieje.
+        if ($enrich !== null && isset($enrich['price_before_discount'])
+            && $enrich['price_before_discount'] > 0
+        ) {
             $result['price_before_discount'] = $enrich['price_before_discount'];
             $result['price_before_discount_eur'] = $enrich['price_before_discount_eur'] ?? null;
-        }
-
-        if ($specialPrice) {
             $result['special_price'] = [
-                'reduction' => (float) $specialPrice['reduction'],
-                'type' => $specialPrice['reduction_type'],
+                'reduction' => round(1 - $enrich['price'] / $enrich['price_before_discount'], 4),
+                'type' => 'percentage',
             ];
         }
 
