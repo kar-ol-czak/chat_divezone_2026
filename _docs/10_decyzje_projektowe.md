@@ -3490,3 +3490,24 @@ Nowy model: **status `nowy` = SKRZYNKA katalogu** — `GET /api/admin/review?sta
 - Rozwiązuje problem „nie mam jak dotrzeć do 584" — dostęp do rozmowy po numerze wprost z panelu.
 
 **Implementacja:** CHAT-T-133. Część A: świat BACKEND `chat.divezone.pl` (ConversationStore.php, BEZ config/tools.php — dryf repo≠prod). Część B: świat SKLEP `newtmp2` (moduł PS, ręczny rsync Karola + czyszczenie cache).
+
+### ADR-117: Wolne ładowanie rozmowy w panelu (do ~10 s) — zmierzona przyczyna: sekwencyjne round-tripy do Railway (RTT ~115 ms) amplifikowane epizodami sieci smarthost
+
+**Data:** 2026-07-14 | **Status:** PROPONOWANA (diagnoza zmierzona; wybór wariantu fixu czeka na decyzję Karola) | **Powiązane:** CHAT-T-134 (diagnoza), CHAT-T-107/ADR-104 (odporność na zrywanie Railway), CHAT-T-113 (AJAX detalu + prefetchCache), CHAT-T-116 (eskalacja smarthost — degradacja egress), CHAT-T-119 (diagnostyka sieciowa epizodów).
+
+**Kontekst (objaw):** panel recenzji, pierwsze otwarcie rozmowy = do ~10 s (obserwacja Karola 2026-07-14 ~17:2x); już oglądana = błyskawicznie. Hipoteza wiodąca (koszt nawiązania PDO w świeżym FPM) była BŁĘDNA jako główny mechanizm — zweryfikowano pomiarami.
+
+**Zmierzone (PROD, 2026-07-14 19:34-19:40 CEST, okno wieczorne):**
+1. **RTT serwer→Railway ≈ 115 ms na KAŻDE zapytanie** (`SELECT 1` = 115 ms stabilnie; TCP proxy `switchback.proxy.rlwy.net:14368`). Świeży PDO connect (TCP+TLS) = **161 ms**.
+2. **GET /api/conversations/{sid} (detal) = 900-980 ms** — niezależnie od rozmiaru payloadu (1,2 KB i 52 KB tak samo → rozmiar wiadomości NIE jest przyczyną). Struktura: connect 161 ms + **5-6 sekwencyjnych zapytań** (rola HMAC, SELECT * rozmowy, wiersz kosztów — ten sam wiersz co SELECT * !, COUNT message_usage, kurs USD, czasem 2. kurs) × 115 ms + narzut FPM/TLS.
+3. **GET /api/admin/review/{id} = 441-466 ms** (connect + 2 zapytania × 115 ms) — potwierdza model: czas = liczba round-tripów, nie praca bazy.
+4. **Jedno otwarcie detalu w panelu = DWA sekwencyjne wywołania HTTP** (detal + stan recenzji) = **~1,4 s backendu w warunkach ZDROWYCH** + bootstrap PS.
+5. **Epizody degradacji egress smarthost** (monitor `~/_diag/railway_monitor_20260714.log`): 13:49-14:34 WAW — zapytania 1,5-8 s lub FAIL (127+21 anomalii); **17:15-17:34 WAW — dokładnie okno objawu Karola** — TCP connect ~1 s (retransmisja SYN), `SELECT 1` do 2,3 s; równolegle github probe też 1 s → **to sieć wyjściowa smarthost, nie Railway** (spójne z CHAT-T-116).
+6. Mechanizm 10 s: podczas epizodu KAŻDY z ~8 round-tripów (2× connect+TLS + 7-8 zapytań) potrafi utknąć 0,3-8 s → suma sięga ~10 s; `HTTP_TIMEOUT_SEC=10` w PS obcina dłuższe.
+7. **„Drugi raz błyskawicznie" = `prefetchCache` JS panelu (CHAT-T-113)** — cache HTML per URL w przeglądarce, żaden request nie wychodzi. PDO singleton (per proces FPM) NIE wyjaśnia efektu per-rozmowa. Dodatkowo prefetch na hover potrafi zdublować żądanie (klik przed końcem prefetchu → 2 równoległe requesty PS serializowane lockiem sesji = do 2× czas).
+
+**Wniosek (przyczyna):** czas ładowania = (liczba sekwencyjnych round-tripów do Railway) × (RTT chwilowe). Baseline ~1,4 s jest strukturalnie wysoki (10 round-tripów na jedno otwarcie), a epizody sieci smarthost mnożą każdy round-trip — stąd 10 s. Przyczyną NIE jest: rozmiar rozmowy, wydajność SQL, NBP na żywo, zimny autoloader.
+
+**Warianty fixu (KROK 2 — decyzja Karola):** rekomendowany = redukcja round-tripów: (a) stan recenzji dołączony do odpowiedzi detalu (2 wywołania HTTP → 1), (b) usunięcie duplikatu SELECT wiersza kosztów (dane już w SELECT *), (c) `PDO::ATTR_PERSISTENT` (oszczędza 161 ms connect per request; uwaga na limit połączeń Railway). Szacunek po fixie: ~0,4-0,6 s baseline; w epizodzie proporcjonalnie mniejsza ekspozycja. Uzupełniająco (objaw): `HTTP_TIMEOUT_SEC` 10→6 s. Poza kodem: przyczyna epizodów = egress smarthost (eskalacja CHAT-T-116).
+
+**Konsekwencje:** narzędzia pomiarowe zostawione na serwerze w `~/_diag/t134/` (t134_measure_http.php, t134_measure_pdo.php — uruchamiać `ea-php84`) do weryfikacji fixu w tym samym oknie. Bez zmian na PROD w fazie diagnozy (pomiar zewnętrzny, zero instrumentacji w kodzie).
