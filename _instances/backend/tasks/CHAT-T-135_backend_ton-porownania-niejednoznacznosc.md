@@ -74,3 +74,38 @@ push. Po deployu osobny docs: commit (status).
 ## Domkniecie
 Po zweryfikowanym deployu: obie karty (5 i 6) → "Zrobione"; rozmowy 634, 608, 584 →
 problem_rozwiazany (updated_by=NULL + marker), wg procedury _docs/42.
+
+## Wynik — DONE 2026-07-14
+
+**Zmiany (commit `2590da7`, ADR-118):** trzy sekcje w SystemPrompt.php (+~3,5 tys.
+znakow, prompt 96,4 tys.):
+1. TON WOBEC SFRUSTROWANEGO / WROGIEGO KLIENTA — po bloku ZASADY.
+2. POROWNANIA PRODUKTÓW — WŁAŚCIWA PARA (+ zasada pianek: rowna grubosc →
+   dopasowanie/szczelnosc, nie marka) — po FORMAT ODPOWIEDZI PRODUKTOWEJ.
+3. NIEJEDNOZNACZNOŚĆ INTENCJI (33b) — bezposrednio po "UŻYJ PODANEGO PARAMETRU",
+   z jawna GRANICA (nie oslabia regul o niedopytywaniu: budzet C5/D4 ~384,
+   uzywany sprzet case 77 ~328-330). Regula 2 odsyla do reguly 3 przy
+   wieloznacznosci pary.
+
+**Deploy:** TYLKO SystemPrompt.php → chat.divezone.pl/src/Chat/ (backup
+`_deploy_bak/20260714_T135/`, brak dryfu przed deployem, ea-php84 -l czysty,
+md5 zgodne, 3 markery CHAT-T-135, /api/health 200). tools.php NIETKNIETY.
+
+**Test PROD (realny czat /api/chat, 4 scenariusze — wszystkie PASS):**
+1. "nie prosciej byloby nie molestowac ludzi tym czatem?" → "Przepraszam za
+   niedogodnosc. Okno czatu mozesz w kazdej chwili zamknac krzyzykiem w rogu —
+   nie bedzie przeszkadzac." (zero "rozumiem frustracje", zero maila/telefonu).
+2. "Ktora cieplejsza: Scubapro 7mm czy Bare 7mm?" → (po dopytaniu o plec — istniejaca
+   regula) porownanie DWOCH POJEDYNCZYCH 7mm damskich (Definition vs Nixie Ultra),
+   wprost "przy tej samej grubosci zadna marka nie jest z definicji cieplejsza,
+   decyduje dopasowanie i szczelnosc" + roznice konstrukcyjne z opisow + CTA przymiarka.
+3. Peregrine → "co jeszcze jest niezbedne?" → "Do samego Peregrine'a nie potrzebujesz
+   nic — dziala od razu (...) Jesli natomiast kompletujesz caly sprzet od zera, daj
+   znac — rozpisze co bedzie potrzebne." (waska interpretacja + alternatywa, wzor 33b).
+4. Regresja: "automat, budzet 3500 zl" → bez ponownego pytania o budzet, dobor pod
+   gorna granice (XTX50/DST 3133 jako wiodacy, ATX40 jako oszczednosciowa — ADR-114 OK);
+   "uzywane butle?" → "wylacznie nowy sprzet", bez dopytywania pod uzywana.
+
+**Domkniecie wykonane:** rozmowy 584, 608, 634 → verdict='problem_rozwiazany',
+status='zamkniety', updated_by=NULL, marker w note (guard idempotentny, proc. _docs/42).
+Karty Trello 5 i 6 → "Zrobione" (byly juz w "W trakcie" — przesuniete przez Karola).
