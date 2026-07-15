@@ -28,6 +28,8 @@ Czat AI ze wyszukiwaniem semantycznym dla sklepu nurkowego divezone.pl (PrestaSh
 
 **REGUŁA BRZYTWY OKHAMA:** po każdym deployu widgetu/modułu NAJPIERW najprostsza hipoteza = cache (przeglądarka + sklep), zanim diagnozować kod/API. Nie rozbierać na części tego, co już zweryfikowane jako poprawne.
 
+**GIT NA SMB (repo leży na sieciowym share `/Volumes/karol`):** operacje gita bywają wolne, a `git add` sporadycznie pada na `fatal: unable to write new index file` (błąd przejściowy — ponowienie zawsze pomaga, nic nie ginie; przyczyna niezdiagnozowana, sam zapis i rename działają w izolacji 20/20 i 30/30). Usprawnienie zmierzone 2026-07-15: `git config core.untrackedCache true` + `git config core.preloadIndex true` → `git status` z 0,98 s na ~0,07 s (13x). Ustawienia są lokalne dla klonu (`.git/config`, niewersjonowane) — po świeżym klonie trzeba włączyć ponownie. Gdy błąd zapisu wróci: po prostu ponowić.
+
 ## Status projektu (2026-02-20)
 
 ### Ukończone
