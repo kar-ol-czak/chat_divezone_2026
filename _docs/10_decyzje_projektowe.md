@@ -3570,3 +3570,36 @@ Detal po fixie: 2 zapytania (rola HMAC + zbiorczy SELECT) na 1 wywołanie HTTP, 
 - **Rejestracja hooka na żywym module dotyka produkcji** — moduł jest zainstalowany, `install()` się nie wykona ponownie. Wymagany jednorazowy krok rejestracji `actionValidateOrder` (kontrolowany reinstall lub wpis w `ps_hook_module`) — STOP, opisany Karolowi. Analogicznie tabelę na prod zakłada ręczne uruchomienie pliku sql.
 - Deploy = ręczny rsync Karola (port 5739, `--exclude config_pl.xml`, bez `--delete`), po nim skasować `var/cache/prod` + flush LSCache. NIE deployować `config/tools.php` (dryf repo≠prod, CHAT-T-132).
 - Weryfikacja: zamówienie testowe z aktywną rozmową → rekord w tabeli z poprawnym id_order + chat_session_id + typem; zamówienie bez czatu → brak rekordu.
+
+### ADR-121: Gołe linki w doborze zestawów — `get_curated_recommendations` nie zwracał `url` ani `name`; PL name+url dokładane do wspólnego enrichmentu
+
+**Data:** 2026-07-15 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-139 (implementacja), karta Trello 18, ADR-065 (curated MVP + twardy staleness), ADR-106/CHAT-T-115 (`url_en` i `price_eur` w enrichment), ADR-115 (`get_popular_products` — wzorzec guarda na pusty slug), ADR-114 (dobór pod budżet — ścieżka, w której bug się ujawnia), ADR-117 (redukcja round-tripów — argument przeciw wariantowi b), ADR-119 (atrybucja — gołe linki psują też pomiar). **Decyzje Karola:** 52a, 52a-i.
+
+**Kontekst (objaw):** bot przy doborze ZESTAWÓW podawał gołe `https://divezone.pl` zamiast URL produktu. Klient klikał nazwę produktu i lądował na stronie głównej — zepsuta ścieżka zakupu ORAZ atrybucja (ADR-119: nie ma czego śledzić, gdy link nie prowadzi do produktu). Skala zmierzona na 30 dniach: 4 rozmowy z gołym linkiem (conv 668, 657, 626, 598) vs 130 z pełnym `.html` — ~3%, nie systemowe, ale realne. Wszystkie 4 to ścieżka `get_curated_recommendations`.
+
+**Przyczyna (zweryfikowana w kodzie, nie hipoteza):** `CuratedRecommendations::execute()` (`standalone/src/Tools/CuratedRecommendations.php`, tablica `$available[]` ~146-157) zwracał botowi wyłącznie `product_id, priority, rationale_pl, price, price_eur, price_before_discount(+_eur), availability, verified_at`. **Brak `name` i brak `url`.** Bot dostawał samo id + cenę, więc link wymyślał — gołą domenę. To fabrykacja z braku danych, wprost sprzeczna z zasadą „zero fabrykacji": bot nie ma czego zmyślać, jeśli dostaje prawdę.
+
+**Ustalenie faktograficzne (korekta wcześniejszej notatki):** `MysqlProductEnrichmentService::enrich()` **nie miał** danych PL. SELECT (~75-104) joinował wyłącznie `pr_product_lang plen ... AND plen.id_lang = 3` i zwracał tylko `plen.link_rewrite AS link_rewrite_en` → `url_en` (~126-129). Brak `name`, brak PL `link_rewrite`. Wcześniejsza notatka twierdziła, że enrichment „MA dane URL" — to była nieprawda wyciągnięta z grepa bez otwarcia pliku. `PopularProducts` ma `name`/`url` poprawnie, bo bierze je z **własnego** zapytania (`fetchBestsellers`, `pl.id_lang = 1` ~314), NIE z enrichment.
+
+**Decyzja:**
+1. **PL `name` + `url` dokładane do `MysqlProductEnrichmentService::enrich()` (52a),** nie do wywołującego. Drugi `LEFT JOIN pr_product_lang` z `id_lang = 1` obok istniejącego `id_lang = 3`; nowe klucze `name`, `url` w zwracanej tablicy. **Uzasadnienie:** enrichment już dziś joinuje `pr_product_lang` i już buduje URL (`$urlEn` ~126) — to, że zwraca `url_en`, a nie zwraca `url` (PL), jest **przeoczeniem, nie decyzją projektową**. Rozszerzenie dopełnia istniejącą odpowiedzialność klasy, nie dokłada nowej.
+2. **Guard na pusty slug — obowiązkowy, wzór 1:1 z `PopularProducts` (~285):** slug niepusty → `https://divezone.pl/{slug}.html`, w przeciwnym razie **`null`**. Nigdy goła domena, nigdy `divezone.pl/.html`. **Zasada: bot ma nie dostać linku wcale, zamiast dostać zły link.** To sedno tej karty — brak danych musi być jawny (`null`), bo dane „prawie poprawne" bot dopełni zmyśleniem.
+3. **`name` traktowane równorzędnie z `url`, nie jako kosmetyka.** Dziś bot bierze nazwę z własnego kontekstu (wcześniejszy `search_products` w tej samej rozmowie). Gdy curated zostanie wywołane jako PIERWSZE narzędzie — nazwa też może zostać zmyślona. Nie zaobserwowane w rozmowach, ale mechanizm identyczny jak przy linku (ta sama klasa błędu). Naprawiane razem, bo osobno wróciłoby jako druga karta.
+4. **Wsteczna zgodność twarda:** wyłącznie NOWE klucze, zero zmian w istniejących. Sześciu wywołujących `enrich()` (ProductSearch ×2, CuratedRecommendations, PopularProducts, ProductDetails, AdminRecommendationsController) nie może zauważyć różnicy — regresja w kryteriach akceptacji.
+
+**Alternatywy rozważane:**
+- **Własne zapytanie w `CuratedRecommendations`** (wzorem `PopularProducts::fetchBestsellers`) — **odrzucone (52a).** Dałoby TRZECIĄ kopię budowania URL w kodzie (ProductDetails, PopularProducts, Curated). Karta 18 istnieje właśnie dlatego, że budowanie URL jest rozproszone — każda kopia to miejsce na kolejny wariant tego samego buga. Dodatkowo drugi round-trip do MySQL w ścieżce, którą ADR-117 dopiero co odchudzał z round-tripów.
+- **Przestawienie `PopularProducts` na `name`/`url` z enrichment przy okazji** — **odrzucone (52a-i).** `PopularProducts` działa poprawnie (guard obecny ~285). Mieszanie fixu z refaktorem rozdmuchuje powierzchnię regresji. Refaktor (przejście wszystkich wywołujących na wspólne `name`/`url`) = osobna karta na Backlogu.
+- **Zmiana w SystemPrompt (instrukcja „nie zmyślaj linków")** — odrzucone jako rozwiązanie: prompt już opisuje `url`/`url_en` (`SystemPrompt.php` ~137-138). Nie da się promptem naprawić braku danych w kontrakcie narzędzia. Instrukcja bez danych to proszenie modelu o zgadywanie.
+
+**Znany dług (świadomie nietknięty w CHAT-T-139):**
+- **`ProductDetails.php` ~135 nie ma guarda na pusty slug:** `$productUrl = "https://divezone.pl/{$product['link_rewrite']}.html"` — przy pustym `link_rewrite` zbuduje `https://divezone.pl/.html` (link do nikąd, choć NIE goła domena — inny objaw niż karta 18). Nie naprawiane tutaj, żeby nie mieszać fixu z refaktorem. Do domknięcia razem z kartą refaktoru budowania URL.
+- Trzy miejsca budujące ten sam URL pozostają rozproszone do czasu refaktoru.
+
+**Konsekwencje:**
+- Zmiany wyłącznie w świecie BACKEND `chat.divezone.pl`: `src/Shop/MysqlProductEnrichmentService.php`, `src/Tools/CuratedRecommendations.php`. **ZERO zmian w module PS / newtmp2.** BEZ `config/tools.php` (dryf repo≠prod, niewdrożony CHAT-T-129 → fatal 500); narzędzie jest już zarejestrowane, task nie wymaga zmiany rejestru.
+- Nowy test jednostkowy budowy URL (bez MySQL, wzór `computeBruttoPrice` — logika wydzielona po to, by była testowalna).
+- Poprawia atrybucję (ADR-119): link prowadzący do produktu to warunek konieczny, by `divechat_session_id` miał co śledzić.
+- Numeracja: ADR-120 pozostaje zarezerwowany przez niewdrożony CHAT-T-138 (głębokość/certyfikaty) — luka domknie się przy jego wdrożeniu, nie jest błędem.
+
+**Implementacja:** CHAT-T-139 (instancja backend). Deploy: świat BACKEND, STOP przed rsync (ADR-089), md5 prod==local + `ea-php84 -l` + smoke `/api/health`. Weryfikacja PROD: dobór budżetowy automatu (ścieżka conv 668/657) → pełny URL `.html`.

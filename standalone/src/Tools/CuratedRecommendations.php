@@ -148,6 +148,9 @@ final class CuratedRecommendations implements ToolInterface
 
             $available[] = [
                 'product_id' => $productId,
+                // CHAT-T-139 (ADR-121): name + url z enrichment — bez nich bot
+                // zmyslal link (gola domena). url=null gdy brak slugu PL.
+                'name' => $data['name'] ?? null,
                 'priority' => (int) $row['priority'],
                 'rationale_pl' => $row['rationale_pl'],
                 'price' => $data['price'],
@@ -155,6 +158,7 @@ final class CuratedRecommendations implements ToolInterface
                 'price_before_discount' => $data['price_before_discount'] ?? null,
                 'price_before_discount_eur' => $data['price_before_discount_eur'] ?? null,
                 'availability' => $data['availability'],
+                'url' => $data['url'] ?? null,
                 'verified_at' => $row['verified_at'],
             ];
         }

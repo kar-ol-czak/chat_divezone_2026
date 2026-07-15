@@ -40,6 +40,8 @@ final class MysqlProductEnrichmentService
      *     quantity: int,
      *     active: bool,
      *     visible: bool,
+     *     name: string|null,
+     *     url: string|null,
      *     url_en: string|null,
      *     price_before_discount?: float,
      *     price_before_discount_eur?: float|null
@@ -86,7 +88,9 @@ final class MysqlProductEnrichmentService
                 END AS availability,
                 ps.active,
                 ps.visibility,
-                plen.link_rewrite AS link_rewrite_en
+                plen.link_rewrite AS link_rewrite_en,
+                plpl.name AS name_pl,
+                plpl.link_rewrite AS link_rewrite_pl
             FROM pr_product p
             JOIN pr_product_shop ps ON p.id_product = ps.id_product AND ps.id_shop = 1
             LEFT JOIN (
@@ -101,6 +105,8 @@ final class MysqlProductEnrichmentService
             LEFT JOIN pr_tax t ON tr.id_tax = t.id_tax
             LEFT JOIN pr_product_lang plen ON p.id_product = plen.id_product
                 AND plen.id_lang = 3 AND plen.id_shop = 1
+            LEFT JOIN pr_product_lang plpl ON p.id_product = plpl.id_product
+                AND plpl.id_lang = 1 AND plpl.id_shop = 1
             WHERE p.id_product IN ({$placeholders})",
             array_merge([$globalAllowOos], $productIds),
         );
@@ -128,6 +134,11 @@ final class MysqlProductEnrichmentService
                 ? 'https://divezone.pl/en/' . $slugEn . '.html'
                 : null;
 
+            // CHAT-T-139 (ADR-121): nazwa + URL PL z pr_product_lang id_lang=1.
+            // Pusty/NULL slug -> url=null (guard jak w PopularProducts) — bot ma
+            // nie dostac linku wcale, zamiast dostac gola domene lub /.html.
+            $namePl = $row['name_pl'] ?? null;
+
             $entry = [
                 'price' => $priced['price'],
                 // CHAT-T-115: cena EUR = brutto PLN * kurs z bazy, half-up 2 miejsca (jak strona /en).
@@ -137,6 +148,8 @@ final class MysqlProductEnrichmentService
                 'quantity' => (int) $row['quantity'],
                 'active' => (bool) $row['active'],
                 'visible' => $row['visibility'] !== 'none',
+                'name' => ($namePl !== null && $namePl !== '') ? (string) $namePl : null,
+                'url' => self::buildProductUrl($row['link_rewrite_pl'] ?? null),
                 'url_en' => $urlEn,
             ];
 
@@ -151,6 +164,19 @@ final class MysqlProductEnrichmentService
         }
 
         return $dataById;
+    }
+
+    /**
+     * URL produktu PL z slugu (CHAT-T-139, ADR-121). Guard na pusty/NULL slug -> null:
+     * NIGDY gola domena, NIGDY divezone.pl/.html — brak danych ma byc jawny (null),
+     * bo link "prawie poprawny" bot dopelni zmysleniem. Public static jak
+     * computeBruttoPrice — testowalna bez MySQL (tests/Shop/ProductUrlTest.php).
+     */
+    public static function buildProductUrl(?string $slug): ?string
+    {
+        return ($slug !== null && $slug !== '')
+            ? "https://divezone.pl/{$slug}.html"
+            : null;
     }
 
     /**
