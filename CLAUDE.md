@@ -14,6 +14,10 @@ Czat AI ze wyszukiwaniem semantycznym dla sklepu nurkowego divezone.pl (PrestaSh
 
 **DRYF `config/tools.php` (repo ≠ prod) — pułapka deployu (CHAT-T-132, incydent 500 2026-07-14):** repozytoryjny `tools.php` rejestruje WSZYSTKIE narzędzia, w tym `ProductCombinations` (CHAT-T-129 — zacommitowane, ale CELOWO niewdrożone, czeka na kolumnę `nazwa_pl` z projektu Atrybuty). Klasy nie ma na serwerze → rsync repo `tools.php` 1:1 daje fatal „Class not found" i `/api/health` 500. Zasada: przy KAŻDYM deployu dotykającym `tools.php` NAJPIERW `diff` z wersją produkcyjną i deploy wariantu produkcyjnego z własną zmianą (dopisać tylko nowe narzędzie), albo wdrożyć CHAT-T-129 w komplecie (co dryf zlikwiduje). Smoke `/api/health` po rsync jest bramką, która to łapie — nie pomijać.
 
+**Hasło MySQL sklepu w `parameters.php`: klucz to `database_password`, NIE `database_pass` (CHAT-T-136).** `mysql` CLI potrafi odrzucić hasło wyciągnięte z tego pliku (znaki specjalne) — pewniejsze jest PDO na parametrach PS. Dotyczy operacji na MySQL sklepu z poziomu modułu/skryptu.
+
+**Rejestracja hooka PS na żywym module (CHAT-T-136):** `install()` NIE wykona się ponownie na zainstalowanym module, więc nowy hook trzeba dodać `INSERT`em do `pr_hook_module` (potrzebne: `id_module` z `pr_module`, `id_hook` z `pr_hook`, `id_shop`, `position` = MAX+1). **Po rejestracji trzeba WYCZYŚCIĆ cache PS drugi raz** — PS cache'uje mapę hook→moduł i bez tego hook nie odpala mimo wpisu w bazie. Kolejność: rsync → cache → tabela/SQL → DOPIERO hook (hook odpala natychmiast po rejestracji). Rollback: `DELETE FROM pr_hook_module WHERE id_module=? AND id_hook=?`.
+
 **DWA PANELE ADMINA (źródło realnej pomyłki):**
 - **Panel recenzji rozmów = moduł PS** (`AdminDivezoneChatController`, nagłówek „Przebieg rozmowy", endpoint `/api/conversations/{sid}`). **TEN używa Karol.**
 - Standalone `/admin` (`chat.divezone.pl/admin`, `admin-conversation.js`, `/api/admin/conversations/:id`) jest **WYGASZANY (ADR-070)** — panel PS to jedyny docelowy front administracyjny. NIE kierować tam nowych funkcji recenzji.
