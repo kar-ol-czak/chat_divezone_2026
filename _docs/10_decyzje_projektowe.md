@@ -3603,3 +3603,88 @@ Detal po fixie: 2 zapytania (rola HMAC + zbiorczy SELECT) na 1 wywołanie HTTP, 
 - Numeracja: ADR-120 pozostaje zarezerwowany przez niewdrożony CHAT-T-138 (głębokość/certyfikaty) — luka domknie się przy jego wdrożeniu, nie jest błędem.
 
 **Implementacja:** CHAT-T-139 (instancja backend). Deploy: świat BACKEND, STOP przed rsync (ADR-089), md5 prod==local + `ea-php84 -l` + smoke `/api/health`. Weryfikacja PROD: dobór budżetowy automatu (ścieżka conv 668/657) → pełny URL `.html`.
+
+---
+
+### ADR-122: `category_name` w embeddingach — konkatenacja wielu kategorii zamiast samej domyślnej; filtr nested-set na kategorie niebędące typem produktu
+
+**Data:** 2026-07-15 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-142 (implementacja), CHAT-T-141 (backfill, ujawnił problem), karta Trello 24, TASK-CHAT-010 (whitelist + override `category_name` — wzorzec), ADR-058 (Editorial Picks), ADR-115. **Decyzje Karola:** 67, 70a, 71b, 72b, 73a, 74b, 75b, 76a, 77a, 78a, 80a, 82b.
+
+**Kontekst:** CHAT-T-141 ujawnił, że `extract_products.py` odrzucił 8 z 50 produktów (7× `id_category_default = 2` root, 1× `visibility='none'`). Diagnoza rozszerzona: **40 aktywnych produktów ma root jako kategorię domyślną**, w tym sprzęt ze sprzedażą (7545 Tecline Szorty Cargo — 32 szt., sprzedaż tego samego dnia).
+
+**Ustalenie 1 — `id_category_default` NIE do naprawy (decyzja 67):** kategoria 2 to root PrestaShop, konstrukcja bazy. Zmiana przestawiłaby URL: zweryfikowane na PROD — `PS_ROUTE_product_rule` = `{category:/}{id}{-:id_product_attribute}-{rewrite}{-:ean13}.html`, `PS_CANONICAL_REDIRECT=2`. Test na żywo: 7545 odpowiada pod `https://divezone.pl/glowna/tecline-szorty-cargo-4-mm.html` (200). Zmiana = nowy URL + 301 na produktach realnie sprzedających.
+
+**Ustalenie 2 — problem szerszy niż root (86% katalogu):** `PRODUCTS_SQL` (~61) brał `category_name` wyłącznie z `id_category_default`. Zmierzone: **2251 z 2610 aktywnych produktów (86%) należy do >1 dozwolonej kategorii** (1710 ma 2, 417 ma 3, 104 ma 4, 20 ma ≥5). Przykład: 7559 „Automat Scubapro MK17 + R095 OCTO" miał w embeddingu samo `Automaty Oddechowe` — gubił „SCUBAPRO".
+
+**Ustalenie 3 — drzewo jest PŁASKIE (weryfikacja 73a):** kategoria 286 „Automaty Oddechowe" (d2) ma **12 dzieci na tym samym poziomie d3**: marki (APEKS, AQUALUNG, ATOMIC, MARES, POSEIDON, SCUBAPRO, SCUBATECH, TECLINE, XDEEP) obok typów (Zestawy rekreacyjne, Automaty stage, Akcesoria do automatów). Nie ma ścieżki „Automaty → SCUBAPRO → Zestawy". Produkt 7648 należy do **dwóch równorzędnych gałęzi dzielących rodzica**. Uzasadnienie Karola: sama marka nie mówi, czy to pianki czy automaty; sam typ gubi konkret.
+
+**Decyzja — reguła budowy `category_name`:**
+1. **Konkatenacja (70a)** wszystkich kategorii z `pr_category_product`, separator `" + "`.
+2. **Sort `level_depth, name`** — drugi klucz OBOWIĄZKOWY: bez niego kolejność przy remisie d3 jest niedeterministyczna → inny tekst → inny wektor → ciche rozjazdy między przebiegami.
+3. **Filtr nested-set (74b)**: odrzuć kategorię, jeśli ona lub którykolwiek przodek jest w `EXCLUDED_CATEGORY_IDS` — `NOT EXISTS (... ex.id_category IN (...) AND c.nleft > ex.nleft AND c.nright < ex.nright)`. **Zero listy nazw.**
+4. **`463` (Polecane) dodane do wykluczeń (76a)** — zweryfikowane: zero produktów ma je jako `id_category_default`, nikt nie wypada.
+5. **Limit 4 (75b)**.
+6. **`visibility='none'` → brak wektora (68b)** — **DECYZJA WYCOFANA, patrz NOTA NR 3.**
+
+**Weryfikacja na realnych danych:** 2369 ATX40 → `Automaty Oddechowe + APEKS + Zestawy rekreacyjne + ZESTAWY Apeks` (zapis Karola co do znaku); 7641 → `Komputery Nurkowe + Komputery SHEARWATER`; 7545 → `Skafandry mokre + Skafandry suche` (produkt należy do obu — konkatenacja nie musi wybierać); 5577 Beuchat (11 kategorii) → obcięty do 4, świadomie („mówi się trudno").
+
+**NOTA KORYGUJĄCA NR 1 — zasięg zmiany:** ADR twierdził pierwotnie „przebudowujemy tekst źródłowy wektorów `embedding_name`/`_desc`/`_jargon`". **Nieprawda.** `build_multivector_texts()` (`embed_target_products.py` ~74-93): `text_name` = `product_name + brand_name` (BEZ kategorii), `text_jargon` = `search_phrases` (BEZ kategorii). `category_name` trafia **wyłącznie** do `text_desc` (~82-83) i do single-vector. Autor ADR sprawdził tylko ścieżkę single-vector i uogólnił. Błąd wykrył Claude Code. **Faktyczny zasięg: `embedding_desc` + single.**
+**Wyniki bramy (próbka 32):** `name`/`jargon` Δ=0.0000 (nie zawierają kategorii); `desc` rośnie: 7647 **+0.0421**, 7648 +0.0079, 7641 +0.0005; `single` ±0.007. Zero regresu → decyzja 77a: pełny katalog. Wątek „kategoria też w `text_name`" = karta 26, osobna brama (78a).
+
+**NOTA KORYGUJĄCA NR 2 — 467 WYPRZEDAŻE:** ADR twierdził, że kategorie wyprzedażowe to dzieci 467, a „oba rodzice już są w wykluczeniach". **Nieprawda.** `git show HEAD:embeddings/extract_products.py` → lista zawierała `..., 468, 368, ...` — **bez 467**. Autor pomylił `468` (BLACK FRIDAY) z `467` (WYPRZEDAŻE). Sygnał obalający (17 wpisów z „WYPRZEDAŻE" w PG) został zinterpretowany jako „stary stan". Błąd wykrył i naprawił Claude Code.
+**Korekta w kodzie:** `467` dodane do `EXCLUDED_CATEGORY_IDS` (+ 4 dzieci: 477/478/479/480 przez nested set). Nowy mechanizm **`WYPRZEDAZ_ROOT_ID = 467` + `get_wyprzedaz_products()`**: produkt z aktywną kategorią w poddrzewie 467 wchodzi do indeksu **mimo pustego `category_name`** (decyzja Karola 80a) — odróżnia produkt outletowy od śmiecia bez żadnej kategorii.
+**Decyzja 82b:** usunięto 9 wektorów z `category_name = "WYPRZEDAŻE"` (5424, 5772, 5874, 5876, 6182, 6386, 6578, 6580, 7474). Tabela 2599 → 2590.
+
+**NOTA KORYGUJĄCA NR 3 (2026-07-15) — WYCOFANIE DECYZJI 68b, punkt 6 powyżej:**
+Punkt 6 („`visibility='none'` → brak wektora") opierał się na przesłance: *„`visibility='none'` znaczy nie pokazuj w katalogu ani w wyszukiwarce, a bot jest wyszukiwarką"*. **Przesłanka FAŁSZYWA.** Wyszukiwarką sklepu jest **Luigi's Box** — zewnętrzna platforma z własnym indeksem, która **ignoruje pole `visibility` z PrestaShop**. Dowód: `divezone.pl/szukaj?s=Torba%20MARES%20Cruise` zwraca produkt 3920 (`visibility='none'`) w wynikach. Czyli `vis=none` **nie ukrywa produktu przed klientem**.
+**Konsekwencje:** wektor 7602 usunięty bezpodstawnie → do przywrócenia (`embed_target_products.py --ids 7602`; skrypt nie filtruje po `visibility`). Propozycja usunięcia 444 wektorów `vis=none` **odrzucona** — to normalne produkty sklepu, widoczne dla klientów.
+**Właściwym kryterium „czy bot poleca produkt" jest `available_for_order`, NIE `visibility`** — patrz ADR-123. Zmierzone: `afo` i `visibility` nie pokrywają się (47 produktów `afo=0` przy `vis='both'`; 11 `vis='none'` mimo `afo=1`).
+
+**Alternatywy odrzucone:** wybór jednej kategorii (traci informację); wyrzucenie marek bo są w `brand_name` (przy 7502 zostałoby samo „Automaty Oddechowe"); naprawa filtru zamiast reguły opisu (zostawiłaby 2251 produktów z ubogim opisem); limit N bez filtru śmieci.
+
+**Implementacja:** CHAT-T-142 (embeddings). Uruchomienie lokalne (tunel SSH), zero rsync.
+
+---
+
+### ADR-123: `available_for_order` jako kryterium polecania — produkt wycofany ze sprzedaży nie wypływa niepytany, ale jest znajdowany po nazwie
+
+**Data:** 2026-07-15 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-143 (implementacja), karta Trello 28, ADR-122 nota nr 3 (wycofanie `visibility` jako kryterium), ADR-058 (Editorial Picks bypass), ADR-139/CHAT-T-139 (wzorzec dokładania pól do `enrich()`). **Decyzje Karola:** 87a, 88, 91a, 92a.
+
+**Kontekst:** szukając kryterium „czy bot ma polecać produkt", architekt przyjął `visibility='none'` i na tej podstawie usunął wektor 7602 (decyzja 68b) oraz opisał 483 produkty jako „ukryte, anomalia wbrew polityce". **Wszystko to było błędne** — patrz ADR-122 nota nr 3: wyszukiwarką sklepu jest **Luigi's Box**, która ignoruje `visibility` z PrestaShop, więc produkt `vis='none'` jest normalnie znajdowany przez klientów.
+
+**Ustalenie — właściwym polem jest `available_for_order`:** to ono daje szary przycisk „Dodaj do koszyka", formularz „Powiadom mnie kiedy będzie dostępny" i baner „Produkt wycofany ze sprzedaży" (zweryfikowane na produkcie 3920: `afo=0`, strona 200, cena widoczna, promocja -15%). Zgodne z polityką Karola: *„nie ukrywamy produktów, zostawiamy dla pozycjonowania, co najwyżej wyłączamy możliwość zamawiania — przycisk do koszyka jest szary"*.
+
+**Skala (PROD 2026-07-15, aktywne, shop 1):**
+
+| `afo` | `visibility` | ile |
+|---|---|---|
+| 0 | none | 472 |
+| 0 | both | **47** ← widoczne, ale NIE do zamówienia |
+| 0 | catalog | 1 |
+| 1 | both | 2133 |
+| 1 | none | **11** ← ukryte, ale DA SIĘ zamówić |
+
+**Razem `afo=0`: 520 aktywnych, z czego 456 ma wektor.** Pola **nie pokrywają się** — trzymanie się `visibility` przegapiłoby 47 wycofanych i błędnie odcięło 11 sprzedawalnych. To dowód, że `visibility` jest złym kryterium niezależnie od Luigi's Box.
+
+**Decyzja (87a — reguła dla bota):**
+- Produkt `afo=0` **NIE wypływa niepytany** — żadnych rekomendacji, list, doboru zestawów.
+- Gdy klient pyta **stricte o ten produkt**: „taki produkt był, już go nie ma, proponuję zamiast tego...".
+- Czyli: **obecny w indeksie** (musi być znaleziony po nazwie), ale **niekwalifikujący się do rekomendacji**.
+
+**Mechanizm (88) — JUŻ ISTNIEJE, nie wymyślać nowego:** `ProductSearch.php` ma filtr `in_stock_only` (~89-93): *„Filtruj tylko dostępne produkty. DOMYŚLNIE TRUE. Ustaw na false TYLKO gdy klient pyta o konkretny model który może być niedostępny."* To **1:1 reguła 87a**, tylko dla stanu magazynowego. Jest też `search_plan.intent` (`navigational` | `exploratory`) = rozróżnienie „pytał o konkret" vs „pytał ogólnie", wypełniane przez model przy każdym wywołaniu. Karol: *„traktujemy dokładnie tak samo jak wyliczanie, kiedy klient pyta, czy macie na stanie produkt X"*.
+
+**Architektura (zweryfikowana w kodzie):**
+- **`available_for_order` NIE ISTNIEJE nigdzie w kodzie** — zero trafień w `standalone/src/` i `embeddings/`. Dokładamy od zera.
+- **`in_stock_only` filtruje POST-HOC z MySQL, nie z pgvector** (`ProductSearch.php` ~460: *„in_stock_only filtrowane post-hoc z real-time MySQL"*, aplikacja w ~312 i ~848). Dostępność i tak jest pobierana świeżo przy każdym zapytaniu przez `enrich()`.
+- **Wniosek: `afo` dokładamy do tego samego SELECT-a w `MysqlProductEnrichmentService::enrich()`** — zero dodatkowych round-tripów, **zero zmian w embeddingach**, żadnego re-embeddingu. `enrich()` już czyta `out_of_stock` z `pr_product_shop` (~75-88), a `available_for_order` to sąsiednia kolumna w tej samej tabeli. Wzorzec identyczny jak CHAT-T-139 (`name`/`url`).
+
+**Decyzja 91a — twardy filtr, nie flaga:** przy `intent=exploratory` produkty `afo=0` wypadają całkowicie; przy `navigational` + `exact_keywords` wchodzą **z flagą**. Odrzucone: (b) „zawsze w wynikach z flagą, model decyduje" — reguła 87a jest twarda, a zostawienie decyzji modelowi znaczy, że produkt prędzej czy później wypłynie w rekomendacji; (c) „reużyć `in_stock_only`" — skleiłoby dwa różne stany: „chwilowo nie ma, będzie" (`quantity=0`) i „wycofany na zawsze" (`afo=0`). Bot musi mówić o nich inaczej („zamówimy" vs „już go nie ma, proponuję inne").
+
+**Decyzja 92a — Editorial Picks (ADR-058) NIE bypassują `afo`:** bypass `in_stock_only` ma sens dla stanu magazynowego („nie ma teraz, ale sprowadzimy"), nie dla wycofania. Flagowy produkt, którego nie da się kupić, jest gorszym przypadkiem niż brak stanu — polecanie go szkodzi niezależnie od tego, że jest flagowy.
+
+**Konsekwencje:**
+- Zmiana wyłącznie w świecie BACKEND `chat.divezone.pl`. Zero zmian w module PS, zero re-embeddingu, zero migracji PG.
+- Sam filtr nie wystarczy — potrzebna **reguła w SystemPrompt**: przy `afo=0` i pytaniu wprost bot mówi „był, już go nie ma" i proponuje alternatywę; nigdy nie proponuje zakupu.
+- `afo=0` musi trafiać do tool_result przy `navigational` **z flagą**, inaczej bot nie wie, że ma tak odpowiedzieć.
+
+**Implementacja:** CHAT-T-143 (instancja backend). Deploy: świat BACKEND, STOP przed rsync (ADR-089), md5 prod==local + `ea-php84 -l` + smoke `/api/health`.
