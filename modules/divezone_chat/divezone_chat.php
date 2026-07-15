@@ -155,7 +155,7 @@ class Divezone_Chat extends Module
             `conversation_last_at` DATETIME NULL DEFAULT NULL,
             `date_add` DATETIME NOT NULL,
             PRIMARY KEY (`id_attribution`),
-            KEY `idx_id_order` (`id_order`),
+            UNIQUE KEY `uniq_id_order` (`id_order`),
             KEY `idx_chat_session_id` (`chat_session_id`)
         ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
 
@@ -756,8 +756,9 @@ class Divezone_Chat extends Module
             } else {
                 error_log(self::LOG_PREFIX . ' actionValidateOrder: atrybucja zapisana (id_order=' . $idOrder . ', type=' . $type . ')');
             }
-        } catch (Exception $e) {
-            // Atrybucja NIGDY nie moze zablokowac zamowienia — lapiemy wszystko.
+        } catch (Throwable $e) {
+            // Atrybucja NIGDY nie moze zablokowac zamowienia — lapiemy wszystko
+            // (Throwable = Exception + Error/TypeError; catch(Exception) by ich nie zlapal).
             error_log(self::LOG_PREFIX . ' actionValidateOrder: wyjatek — ' . $e->getMessage());
         }
     }

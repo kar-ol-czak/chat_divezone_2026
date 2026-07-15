@@ -17,6 +17,6 @@ CREATE TABLE IF NOT EXISTS `pr_divechat_order_attribution` (
     `conversation_last_at` DATETIME NULL DEFAULT NULL,
     `date_add` DATETIME NOT NULL,
     PRIMARY KEY (`id_attribution`),
-    KEY `idx_id_order` (`id_order`),
+    UNIQUE KEY `uniq_id_order` (`id_order`),
     KEY `idx_chat_session_id` (`chat_session_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
