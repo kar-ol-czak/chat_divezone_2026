@@ -3688,3 +3688,11 @@ Punkt 6 („`visibility='none'` → brak wektora") opierał się na przesłance:
 - `afo=0` musi trafiać do tool_result przy `navigational` **z flagą**, inaczej bot nie wie, że ma tak odpowiedzieć.
 
 **Implementacja:** CHAT-T-143 (instancja backend). Deploy: świat BACKEND, STOP przed rsync (ADR-089), md5 prod==local + `ea-php84 -l` + smoke `/api/health`.
+
+**NOTA UZUPEŁNIAJĄCA (2026-07-15, decyzja 93a) — usunięcie istniejącego filtra `visibility` z `ProductSearch`:**
+Przy weryfikacji implementacji CHAT-T-143 (KROK 7, przed deployem) architekt znalazł to, czego nie sprawdził pisząc ten ADR: **`ProductSearch` JUŻ filtrował po `visibility`** — w dwóch miejscach, kod sprzed T-143: `searchByPrice` ~316 (`if (!$data['active'] || !$data['visible'])`) i `runTracksAndMerge` ~873 (`$keep = $data['active'] && $data['visible']`), gdzie `visible` = `visibility !== 'none'` (`MysqlProductEnrichmentService` ~152).
+**Skutek:** 472 z 520 produktów `afo=0` ma `visibility='none'` → wypadały na starszym filtrze, zanim nowy `include_discontinued` zdążył zadziałać. Kryterium akceptacji nr 2 CHAT-T-143 („zapytanie wprost → bot mówi: był, ale wycofany") **było niewykonalne** dla 472 z 520 przypadków, w tym dla produktu 3920 (Torba MARES Cruise) wskazanego jako test PROD. Bot powiedziałby „nie ma takiego produktu" zamiast „był, wycofany".
+**Błąd autora ADR:** zapisano „NIE ruszać `visibility`" bez sprawdzenia, że kod **już** na nim filtruje. Ten sam błąd, który ADR-122 nota nr 3 miała zamknąć — `visibility` jako kryterium — tyle że siedział w kodzie od dawna.
+**Decyzja 93a:** **usunąć filtr `visibility` z `ProductSearch` (obie lokalizacje)**. Kryterium zostaje: `active` + `available_for_order`. Uzasadnienie: filtr `afo` **zastępuje** filtr `visibility` — po to powstał. Luigi's Box pokazuje produkty `vis='none'` klientom (ADR-122 nota nr 3), więc bot, który ich nie widzi, jest gorszy niż sklep. Zostawienie obu filtrów = T-143 rozwiązuje 47 z 520 przypadków.
+**Skutek uboczny do odnotowania:** 11 produktów `visibility='none'` + `available_for_order=1` (ukryte, ale **da się zamówić**) dziś wypada z wyników — po zmianie wejdą normalnie. To poprawne: skoro da się je kupić i Luigi's Box je pokazuje, bot ma je znać.
+**Pole `visible` w `enrich()` zostaje** (może być użyte gdzie indziej) — usuwamy tylko jego użycie jako kryterium filtrowania w `ProductSearch`.
