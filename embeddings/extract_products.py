@@ -29,8 +29,21 @@ MAX_DESCRIPTION_LENGTH = 500
 EXCLUDED_CATEGORY_IDS = [
     484, 458, 485, 486, 468, 368, 413, 451, 406, 409,
     445, 447, 110, 396, 366, 448, 397, 482, 168, 461,
-    59, 457, 436, 462, 490
+    59, 457, 436, 462, 490,
+    # ADR-122 (76a): 463 "Polecane" — marketingowa kategoria d2 pod Główną, semantycznie
+    # pusta. Zweryfikowane: zero produktów ma id_category_default=463, nikt nie wypada z indeksu.
+    463,
+    # CHAT-T-142 (korekta ADR-122): 467 "WYPRZEDAŻE" (d2) + 4 dzieci (477/478/479/480) —
+    # ADR zakładał, że 467 już jest wykluczone; NIE było. WYPRZEDAŻE to szum kategoryjny jak
+    # Polecane. Wyklucza je z TEKSTU category_name (przez nested set). Produkty, których jedyną
+    # kategorią jest wyprzedaż, NIE wypadają z indeksu — wchodzą przez WYPRZEDAZ_ROOT_ID
+    # w is_allowed (decyzja Karola: bot ma znajdować sprzedażowe produkty outletowe).
+    467,
 ]
+
+# CHAT-T-142: korzeń poddrzewa WYPRZEDAŻE. Produkt z aktywną kategorią w tym poddrzewie
+# wchodzi do indeksu nawet z pustym category_name (odróżnienie od śmieci bez żadnej kategorii).
+WYPRZEDAZ_ROOT_ID = 467
 
 # Subkategorie, które chcemy indeksować pomimo wykluczenia ich parenta (override).
 # Produkt przypisany do dowolnej z tych kategorii jest indeksowany, a category_name
@@ -41,7 +54,12 @@ WHITELISTED_SUBCATEGORY_IDS = [476]
 # Produkty wykluczone ręcznie (np. maseczka COVID w kategorii Gadżety)
 EXCLUDED_PRODUCT_IDS = [5910]
 
-# Zapytanie główne: aktywne produkty z lang_id=1 (polski)
+# Zapytanie główne: aktywne produkty z lang_id=1 (polski).
+# ADR-122: category_name budowane z KONKATENACJI wszystkich dozwolonych kategorii produktu
+# (pr_category_product), a NIE z pojedynczej id_category_default. Filtr śmieci przez nested set
+# (kategoria wykluczona LUB potomek wykluczonej), sort level_depth→name (drugi klucz konieczny
+# dla determinizmu tekstu = determinizmu wektora), limit 4, separator " + ".
+# Placeholdery {excluded} i {whitelist} wypełniane w extract_products() przez .format().
 PRODUCTS_SQL = """
 SELECT
     p.id_product,
@@ -49,7 +67,31 @@ SELECT
     pl.name AS product_name,
     pl.description,
     pl.link_rewrite,
-    cl.name AS category_name,
+    (
+        SELECT SUBSTRING_INDEX(
+            GROUP_CONCAT(cl2.name ORDER BY c2.level_depth, cl2.name SEPARATOR ' + '),
+            ' + ', 4
+        )
+        FROM pr_category_product cp2
+        JOIN pr_category c2 ON c2.id_category = cp2.id_category
+        JOIN pr_category_shop cs2 ON cs2.id_category = c2.id_category AND cs2.id_shop = 1
+        JOIN pr_category_lang cl2 ON cl2.id_category = c2.id_category AND cl2.id_lang = 1
+        JOIN pr_category root2 ON root2.id_category = 2
+        WHERE cp2.id_product = p.id_product
+          AND c2.active = 1
+          AND c2.nleft > root2.nleft AND c2.nright < root2.nright
+          AND (
+            c2.id_category IN ({whitelist})
+            OR (
+                c2.id_category NOT IN ({excluded})
+                AND NOT EXISTS (
+                    SELECT 1 FROM pr_category ex
+                    WHERE ex.id_category IN ({excluded})
+                      AND c2.nleft > ex.nleft AND c2.nright < ex.nright
+                )
+            )
+          )
+    ) AS category_name,
     m.name AS brand_name,
     ROUND(ps.price * (1 + COALESCE(t.rate, 23) / 100), 2) AS price_brutto,
     ps.active,
@@ -58,7 +100,6 @@ SELECT
 FROM pr_product p
 JOIN pr_product_lang pl ON p.id_product = pl.id_product AND pl.id_lang = 1
 JOIN pr_product_shop ps ON p.id_product = ps.id_product AND ps.id_shop = 1
-LEFT JOIN pr_category_lang cl ON p.id_category_default = cl.id_category AND cl.id_lang = 1
 LEFT JOIN pr_manufacturer m ON p.id_manufacturer = m.id_manufacturer
 LEFT JOIN (
     SELECT id_product, MAX(quantity) as quantity
@@ -144,6 +185,30 @@ def get_whitelisted_products(cur) -> dict[int, dict]:
             }
     logger.info("Whitelist override dotyczy %d produktów", len(mapping))
     return mapping
+
+
+def get_wyprzedaz_products(cur) -> set[int]:
+    """CHAT-T-142: ID produktów należących do aktywnej kategorii w poddrzewie WYPRZEDAŻE (467).
+
+    Te produkty mają wejść do indeksu nawet gdy ich category_name jest puste (bo wyprzedaż
+    jest wykluczona z tekstu). Odróżnia je od śmieci (Prowizja PayPal, kursy IANTD) — te nie
+    należą do ŻADNEJ aktywnej kategorii i pozostają odrzucone.
+    """
+    cur.execute(
+        """
+        SELECT DISTINCT cp.id_product
+        FROM pr_category_product cp
+        JOIN pr_category c ON c.id_category = cp.id_category
+        JOIN pr_category_shop cs ON cs.id_category = c.id_category AND cs.id_shop = 1
+        JOIN pr_category w ON w.id_category = %s
+        WHERE c.active = 1
+          AND c.nleft >= w.nleft AND c.nright <= w.nright
+        """,
+        (WYPRZEDAZ_ROOT_ID,),
+    )
+    ids = {row["id_product"] for row in cur.fetchall()}
+    logger.info("Produkty w poddrzewie WYPRZEDAŻE (indeks mimo pustej kategorii): %d", len(ids))
+    return ids
 
 
 def open_ssh_tunnel():
@@ -244,9 +309,12 @@ def extract_products(limit: int = None) -> list[dict]:
     # Pobierz dozwolone kategorie (filtr drzewa kategorii) + whitelist override
     allowed_categories = get_allowed_categories(cur)
     whitelisted_products = get_whitelisted_products(cur)
+    wyprzedaz_products = get_wyprzedaz_products(cur)  # CHAT-T-142: outlet trzymamy w indeksie
 
-    # Pobierz produkty
-    sql = PRODUCTS_SQL
+    # Pobierz produkty (ADR-122: category_name z konkatenacji — placeholdery excluded/whitelist)
+    excluded_str = ",".join(str(x) for x in EXCLUDED_CATEGORY_IDS)
+    whitelist_str = ",".join(str(x) for x in WHITELISTED_SUBCATEGORY_IDS) or "0"
+    sql = PRODUCTS_SQL.format(excluded=excluded_str, whitelist=whitelist_str)
     if limit:
         sql += f" LIMIT {int(limit)}"
     cur.execute(sql)
@@ -260,6 +328,16 @@ def extract_products(limit: int = None) -> list[dict]:
         if p["id_product"] in EXCLUDED_PRODUCT_IDS:
             return False
         if p.get("id_category_default") in allowed_categories:
+            return True
+        # ADR-122 (KROK 3): fallback dla root-cat — produkt z niedozwoloną id_category_default
+        # (np. root=2) wchodzi, jeśli reguła konkatenacji znalazła mu >=1 dozwoloną kategorię
+        # (category_name niepuste). Śmieci bez żadnej aktywnej kategorii → puste → odrzucone,
+        # bez ręcznej listy w EXCLUDED_PRODUCT_IDS.
+        if p.get("category_name"):
+            return True
+        # CHAT-T-142: outlet — jedyną kategorią jest WYPRZEDAŻE (wykluczona z tekstu), ale produkt
+        # jest sprzedażowy → trzymamy w indeksie (embeduje się na nazwie + marce).
+        if p["id_product"] in wyprzedaz_products:
             return True
         return p["id_product"] in whitelisted_products
 
