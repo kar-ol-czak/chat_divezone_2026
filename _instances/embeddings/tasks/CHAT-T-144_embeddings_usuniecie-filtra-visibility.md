@@ -62,10 +62,29 @@ WYPRZEDAŻE). Syntax OK.
 - Śmieci (WYPRZEDAŻE/Polecane/PLN) = **0**. Wielokategoryjnych 1867 → **2186** (436 vis='none'
   dostało konkatenację). NULL desc/single = 0/0.
 
-**DELTA do odnotowania (poza zakresem T-144):** `extract_products()` zwraca 2606, a w tabeli
-2591 — różnica to ~15 produktów vis='none' indeksowalnych nową regułą, ale BEZ istniejącego
-wektora. Zgodnie z zakresem (KROK 4: „count 2591 bez zmian") NIE embedowane; wejdą przy
-najbliższym `--full`. Follow-up dla CHAT-T-143 / kolejnego pełnego przebiegu.
+**DELTA (odnotowana, DOMKNIĘTA — patrz niżej):** `extract_products()` zwracał 2606, a w tabeli
+2591 — różnica to 15 produktów vis='none' indeksowalnych nową regułą, ale BEZ istniejącego
+wektora. Pierwotnie poza zakresem; domknięte decyzją Karola 95a (bo „najbliższy --full" nie ma
+daty — pipeline nie jest cronowany, karta 23).
+
+## Domknięcie (decyzja 95a, CC 2026-07-15) — DONE
+
+**KROK 1 — zbiór wyliczony DYNAMICZNIE:** produkty z `extract_products()` (2606) bez wektora w
+`divechat_product_embeddings` = **dokładnie 15** (zgodne z przewidywaniem). Skład: **9 to stale
+wpisy WYPRZEDAŻE usunięte przez architekta w T-142** (5424, 5772, 5874, 5876, 6182, 6386, 6578,
+6580, 7474) — teraz re-indeksowalne z POPRAWNĄ konkatenacją (WYPRZEDAŻE odfiltrowane z tekstu,
+np. 5424 → `Morsowanie + Buty`, 7474 → `Płetwy + Płetwy Gumowe JET`); **6 genuinie nowych**
+(4869/4870 SEALIFE Micro, 4986/4988/4989 SP-GADGETS, 7022 maska IST). 6386 (Jacket TUSA Tina
+Outlet) → outlet, `category_name` puste (poprawne, embed na nazwie+marce).
+
+**KROK 2 — re-embed (sync `--ids`, NIE `--full`):** `Znaleziono 15/15` → 15 single + 15 multi, 0 błędów.
+
+**KROK 3 — weryfikacja:** total **2606 / 2606** / max_updated dziś (2591+15); 15/15 obecnych;
+śmieci (WYPRZEDAŻE/Polecane/PLN) = 0; NULL desc/single = 0/0; kontrolki T-142+3920 NIETKNIĘTE
+(2369/7641/7545/7648/7602/3920). Spot-check: 5424 `Morsowanie + Buty`, 4869 `Fotografia i Video`,
+7474 `Płetwy + Płetwy Gumowe JET`, 6386 outlet(None), wszystkie desc NOT NULL.
+
+Efekt: cały zbiór indeksowalny wg reguły ADR-122/ADR-123 ma teraz wektory — **zero cichego długu**.
 
 **KROK 5 — git:** commit per-ścieżka `embeddings/extract_products.py` + ten task. NIE commitowane:
 `_docs/10_decyzje_projektowe.md` (ADR-y pisze architekt), `_backups/`, `*.jsonl`,
