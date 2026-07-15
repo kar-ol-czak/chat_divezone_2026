@@ -55,6 +55,10 @@ WHITELISTED_SUBCATEGORY_IDS = [476]
 EXCLUDED_PRODUCT_IDS = [5910]
 
 # Zapytanie główne: aktywne produkty z lang_id=1 (polski).
+# CHAT-T-144 (ADR-123 nota 93a): USUNIĘTY filtr `ps.visibility != 'none'` — visibility='none'
+# NIE ukrywa produktu przed klientem (wyszukiwarka sklepu = Luigi's Box, ignoruje to pole),
+# więc bot ma je znać. Pole ps.visibility zostaje w SELECT (używane gdzie indziej), filtruje
+# tylko ps.active. Kryterium „bot poleca" = active + available_for_order (backend, CHAT-T-143).
 # ADR-122: category_name budowane z KONKATENACJI wszystkich dozwolonych kategorii produktu
 # (pr_category_product), a NIE z pojedynczej id_category_default. Filtr śmieci przez nested set
 # (kategoria wykluczona LUB potomek wykluczonej), sort level_depth→name (drugi klucz konieczny
@@ -109,7 +113,6 @@ LEFT JOIN (
 LEFT JOIN pr_tax_rule tr ON p.id_tax_rules_group = tr.id_tax_rules_group AND tr.id_country = 14
 LEFT JOIN pr_tax t ON tr.id_tax = t.id_tax
 WHERE ps.active = 1
-  AND ps.visibility != 'none'
 ORDER BY p.id_product
 """
 
