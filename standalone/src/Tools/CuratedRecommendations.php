@@ -139,6 +139,17 @@ final class CuratedRecommendations implements ToolInterface
                 continue;
             }
 
+            // CHAT-T-143 (ADR-123): rekomendacje polecaja NIEPYTANY -> produkt
+            // wycofany ze sprzedazy (afo=0) wypada ZAWSZE, bez parametru.
+            // Kandydat do alertu jak staleness — kuratorski pick wycofany ze
+            // sprzedazy to blad danych, nie stan przejsciowy.
+            // Brak klucza (dryf wersji enrich) = traktuj jak dostepny — jak w ProductSearch.
+            if (($data['available_for_order'] ?? true) === false) {
+                error_log("[DiveChat curated] product_id={$productId} category={$category} skipped: discontinued");
+                $skipped[] = ['product_id' => $productId, 'reason' => 'discontinued'];
+                continue;
+            }
+
             // Dla MVP: zwracamy wszystkie aktywne (in_stock + available_to_order),
             // pomijamy tylko 'unavailable'. Bot widzi availability i informuje klienta.
             if ($data['availability'] === 'unavailable') {

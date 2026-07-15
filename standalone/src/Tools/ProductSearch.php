@@ -91,6 +91,11 @@ final class ProductSearch implements ToolInterface
                             'description' => 'Filtruj tylko dostępne produkty. DOMYŚLNIE TRUE. '
                                 . 'Ustaw na false TYLKO gdy klient pyta o konkretny model który może być niedostępny.',
                         ],
+                        'include_discontinued' => [
+                            'type' => 'boolean',
+                            'description' => 'Produkty wycofane ze sprzedaży (available_for_order=0). DOMYŚLNIE FALSE — nie pokazuj. '
+                                . 'Ustaw TRUE TYLKO gdy klient pyta o konkretny model, który może być wycofany.',
+                        ],
                         'exclude_categories' => [
                             'type' => 'array',
                             'items' => ['type' => 'string'],
@@ -129,6 +134,16 @@ final class ProductSearch implements ToolInterface
         // Wspólne filtry SQL
         $filters = $this->buildFilters($normalized);
 
+        $inStockOnly = !empty($normalized['in_stock_only']);
+        // CHAT-T-143 (ADR-123, decyzja 91a): navigational + exact_keywords =>
+        // wycofane wchodza Z FLAGA deterministycznie. NIE polegamy na tym, ze
+        // model ustawi include_discontinued (test PROD: nie ustawial i mowil
+        // "nie znalazlem" zamiast "byl, wycofany") — jak fallbacki T-017/T-020.
+        $includeDiscontinued = self::shouldIncludeDiscontinued(
+            $searchPlan,
+            !empty($normalized['include_discontinued']),
+        );
+
         // CHAT-T-062 (E4 fix): sortowanie po cenie — osobna sciezka, BEZ RRF.
         // Diagnoza: w mergeRRF enrichment dokladany PO obcieciu do top (limit*3 =
         // 15-30), wiec sortowanie po cenie tej puli NIE znajdzie najtanszego z
@@ -136,13 +151,14 @@ final class ProductSearch implements ToolInterface
         // ulamek). Fix: dla sort=price_asc/desc fetchujemy SZEROKA pule kandydatow
         // (do 1000) z divechat_product_embeddings filtrowanych strukturalnie
         // (buildFilters: category, price_min/max, brand, exclude, blacklist),
-        // enrich na calej puli (jeden batch SQL), filtr active/visible/in_stock,
+        // enrich na calej puli (jeden batch SQL), filtr active/afo/in_stock,
         // sortujemy po realnej cenie z MySQL, top $limit. Semantyka tu nie pomaga —
         // "najtanszy komputer" to pytanie kategoryczne + cenowe, nie similarity.
         if ($sort === 'price_asc' || $sort === 'price_desc') {
             return $this->searchByPrice(
                 $filters, $sort, $limit,
-                !empty($normalized['in_stock_only']),
+                $inStockOnly,
+                $includeDiscontinued,
                 $normalized['category'] ?? null,
                 $searchPlan,
             );
@@ -161,12 +177,10 @@ final class ProductSearch implements ToolInterface
         $exactKeywords = $searchPlan['exact_keywords'] ?? [];
         $trigramQuery = !empty($exactKeywords) ? implode(' ', $exactKeywords) : $query;
 
-        $inStockOnly = !empty($normalized['in_stock_only']);
-
         // 5 torów + RRF + editorial boost + MySQL enrichment
         $merged = $this->runTracksAndMerge(
             $vectorStr, $expandedQuery, $trigramQuery, $filters,
-            $limit, $inStockOnly, $normalized['category'] ?? null,
+            $limit, $inStockOnly, $includeDiscontinued, $normalized['category'] ?? null,
             $query, $exactKeywords,
         );
 
@@ -197,7 +211,7 @@ final class ProductSearch implements ToolInterface
 
             $merged = $this->runTracksAndMerge(
                 $vectorStr, $expandedQuery, $trigramQuery, $fallbackFilters,
-                $limit, $inStockOnly, null,
+                $limit, $inStockOnly, $includeDiscontinued, null,
                 $query, $exactKeywords,
             );
             $merged['search_debug']['category_fallback'] = true;
@@ -229,6 +243,9 @@ final class ProductSearch implements ToolInterface
         // CHAT-T-041: rozkład czasu RAG (ChatService wycina embedding_ms z tool_ms do osobnego licznika).
         $merged['search_debug']['embedding_ms'] = round($embeddingMs, 1);
 
+        // CHAT-T-143: widocznosc filtra afo w debug (takze gdy auto-wlaczony przez 91a).
+        $merged['search_debug']['include_discontinued'] = $includeDiscontinued;
+
         if (empty($merged['products'])) {
             return [
                 'products' => [],
@@ -257,6 +274,7 @@ final class ProductSearch implements ToolInterface
         string $sort,
         int $limit,
         bool $inStockOnly,
+        bool $includeDiscontinued,
         ?string $category,
         array $searchPlan,
     ): array {
@@ -294,9 +312,11 @@ final class ProductSearch implements ToolInterface
         // Enrichment dla CALEJ puli — jeden batch SQL (IN(...)).
         $mysqlData = $this->enrichmentService->enrich($candidateIds);
 
-        // Filtr active/visible (jak w mergeRRF). Produkty bez danych MySQL —
+        // Filtr active (jak w mergeRRF). Produkty bez danych MySQL —
         // skip (sortowanie po cenie wymaga znanej ceny, fallback na pgvector
         // jest nieaktualny i bilbym tu maskowal problem).
+        // CHAT-T-143 (ADR-123 nota 93a): visibility NIE jest kryterium — Luigi's Box
+        // pokazuje produkty vis='none' klientom; filtr afo ponizej ZASTEPUJE visibility.
         $eligible = [];
         $filteredOut = [];
         foreach ($candidateIds as $id) {
@@ -305,8 +325,14 @@ final class ProductSearch implements ToolInterface
                 $filteredOut[] = ['id' => $id, 'reason' => 'no_mysql_data'];
                 continue;
             }
-            if (!$data['active'] || !$data['visible']) {
-                $filteredOut[] = ['id' => $id, 'reason' => !$data['active'] ? 'active=false' : 'visibility=none'];
+            if (!$data['active']) {
+                $filteredOut[] = ['id' => $id, 'reason' => 'active=false'];
+                continue;
+            }
+            // CHAT-T-143 (ADR-123): wycofane ze sprzedazy wypadaja, chyba ze
+            // include_discontinued=true (navigational — klient pyta o konkret).
+            if (!$includeDiscontinued && self::isDiscontinued($data)) {
+                $filteredOut[] = ['id' => $id, 'reason' => 'available_for_order=0, discontinued'];
                 continue;
             }
             if ($inStockOnly && !$data['in_stock']) {
@@ -364,6 +390,12 @@ final class ProductSearch implements ToolInterface
                 $product['price_before_discount'] = $mysqlData[$id]['price_before_discount'];
                 $product['price_before_discount_eur'] = $mysqlData[$id]['price_before_discount_eur'] ?? null;
             }
+            // CHAT-T-143 (ADR-123): wycofany przepuszczony przy include_discontinued=true
+            // MUSI niesc flage — bez niej bot nie wie, ze ma mowic "byl, juz go nie ma".
+            // Klucz dokladany TYLKO dla afo=0 (afo=1 zwraca dokladnie to co przed zmiana).
+            if (self::isDiscontinued($mysqlData[$id])) {
+                $product['available_for_order'] = false;
+            }
             $products[] = $product;
 
             $debugItems[] = [
@@ -385,6 +417,7 @@ final class ProductSearch implements ToolInterface
                     'eligible_count' => count($eligible),
                     'category' => $category,
                     'in_stock_only' => $inStockOnly,
+                    'include_discontinued' => $includeDiscontinued,
                     'filtered_out_sample' => array_slice($filteredOut, 0, 10),
                     'items' => $debugItems,
                     'search_plan' => $searchPlan,
@@ -406,6 +439,7 @@ final class ProductSearch implements ToolInterface
         array $filters,
         int $limit,
         bool $inStockOnly,
+        bool $includeDiscontinued,
         ?string $category,
         string $query,
         array $exactKeywords,
@@ -424,10 +458,44 @@ final class ProductSearch implements ToolInterface
             $trigram,
             $limit,
             $inStockOnly,
+            $includeDiscontinued,
             $category,
             $query,
             $exactKeywords,
         );
+    }
+
+    /**
+     * CHAT-T-143 (ADR-123): czy produkt jest wycofany ze sprzedazy (afo=0).
+     * Brak danych MySQL lub brak klucza (stary shape enrich) = traktuj jak
+     * dostepny — identyczny fallback jak przy in_stock_only (nie karzemy za
+     * brak danych). Public static jak computeBruttoPrice — testowalna bez
+     * baz (tests/Tools/AvailableForOrderFilterTest.php).
+     *
+     * @param array<string, mixed>|null $data wpis z MysqlProductEnrichmentService::enrich()
+     */
+    public static function isDiscontinued(?array $data): bool
+    {
+        return $data !== null && ($data['available_for_order'] ?? true) === false;
+    }
+
+    /**
+     * CHAT-T-143 (ADR-123, decyzja 91a): czy wyniki maja obejmowac produkty
+     * wycofane (afo=0, wchodza Z FLAGA). TRUE gdy model jawnie ustawil
+     * include_discontinued LUB deterministycznie przy navigational +
+     * exact_keywords (klient pyta o konkretny model — ma uslyszec "byl,
+     * wycofany", nie "nie znalazlem"). Public static — testowalna bez baz.
+     *
+     * @param array<string, mixed> $searchPlan
+     */
+    public static function shouldIncludeDiscontinued(array $searchPlan, bool $explicitParam): bool
+    {
+        if ($explicitParam) {
+            return true;
+        }
+
+        return ($searchPlan['intent'] ?? '') === 'navigational'
+            && !empty($searchPlan['exact_keywords']);
     }
 
     /**
@@ -441,6 +509,8 @@ final class ProductSearch implements ToolInterface
             'max_price' => $filtersInput['price_max'] ?? $params['max_price'] ?? null,
             'brand' => $filtersInput['brand'] ?? $params['brand'] ?? null,
             'in_stock_only' => $filtersInput['in_stock_only'] ?? $params['in_stock_only'] ?? true,
+            // CHAT-T-143 (ADR-123, decyzja 91a): domyslnie wycofane wypadaja.
+            'include_discontinued' => $filtersInput['include_discontinued'] ?? false,
             'exclude_categories' => $filtersInput['exclude_categories'] ?? [],
         ];
     }
@@ -704,6 +774,7 @@ final class ProductSearch implements ToolInterface
         array $trigram,
         int $limit,
         bool $inStockOnly = true,
+        bool $includeDiscontinued = false,
         ?string $category = null,
         string $query = '',
         array $exactKeywords = [],
@@ -823,19 +894,21 @@ final class ProductSearch implements ToolInterface
             arsort($scores);
         }
 
-        // Filtruj ukryte i nieaktywne produkty (MySQL real-time) + loguj odfiltrowane
+        // Filtruj nieaktywne produkty (MySQL real-time) + loguj odfiltrowane.
+        // CHAT-T-143 (ADR-123 nota 93a): visibility NIE jest kryterium — Luigi's Box
+        // pokazuje produkty vis='none' klientom; filtr afo ponizej ZASTEPUJE visibility.
         $filteredOut = [];
         $filteredIds = array_filter(array_keys($scores), function (int $id) use ($mysqlData, &$filteredOut, $namesById) {
             $data = $mysqlData[$id] ?? null;
             if ($data === null) {
                 return true; // brak danych MySQL = zachowaj (fallback na pgvector)
             }
-            $keep = $data['active'] && $data['visible'];
+            $keep = (bool) $data['active'];
             if (!$keep) {
                 $filteredOut[] = [
                     'id' => $id,
                     'name' => $namesById[$id] ?? 'unknown',
-                    'reason' => !$data['active'] ? 'active=false' : 'visibility=none',
+                    'reason' => 'active=false',
                 ];
             }
             return $keep;
@@ -859,6 +932,26 @@ final class ProductSearch implements ToolInterface
                     'id' => $id,
                     'name' => $namesById[$id] ?? 'unknown',
                     'reason' => 'in_stock_only=true, quantity=0',
+                ];
+                return false;
+            });
+        }
+
+        // CHAT-T-143 (ADR-123): produkty wycofane ze sprzedazy (available_for_order=0)
+        // wypadaja, chyba ze include_discontinued=true (navigational — klient pyta
+        // o konkretny model; wtedy wchodza Z FLAGA available_for_order=false nizej).
+        // Decyzja 92a: Editorial Picks NIE bypassuja tego filtra (celowo BEZ
+        // sprawdzania $editorialBoosts, w odroznieniu od in_stock_only wyzej) —
+        // bypass ma sens dla braku stanu ("sprowadzimy"), nie dla wycofania.
+        if (!$includeDiscontinued) {
+            $filteredIds = array_filter($filteredIds, function (int $id) use ($mysqlData, &$filteredOut, $namesById) {
+                if (!self::isDiscontinued($mysqlData[$id] ?? null)) {
+                    return true;
+                }
+                $filteredOut[] = [
+                    'id' => $id,
+                    'name' => $namesById[$id] ?? 'unknown',
+                    'reason' => 'available_for_order=0, discontinued',
                 ];
                 return false;
             });
@@ -931,6 +1024,13 @@ final class ProductSearch implements ToolInterface
             if (isset($mysqlData[$id]['price_before_discount'])) {
                 $product['price_before_discount'] = $mysqlData[$id]['price_before_discount'];
                 $product['price_before_discount_eur'] = $mysqlData[$id]['price_before_discount_eur'] ?? null;
+            }
+
+            // CHAT-T-143 (ADR-123): wycofany przepuszczony przy include_discontinued=true
+            // MUSI niesc flage — bez niej bot nie wie, ze ma mowic "byl, juz go nie ma".
+            // Klucz dokladany TYLKO dla afo=0 (afo=1 zwraca dokladnie to co przed zmiana).
+            if (self::isDiscontinued($mysqlData[$id] ?? null)) {
+                $product['available_for_order'] = false;
             }
 
             $products[] = $product;

@@ -182,3 +182,34 @@ test PROD.
 - 858 produktow usunietych z bazy — karta 29, odlozone.
 - Guard w `ProductDetails` ~135 (ADR-121, znany dlug).
 - Jakiekolwiek zmiany w newtmp2 / module PS / embeddingach.
+
+---
+
+## Wynik (2026-07-15, DONE, DEPLOYED)
+
+**Status: DONE + DEPLOYED na chat.divezone.pl.** Wszystkie kryteria akceptacji spelnione.
+
+**Zakres wykonany (KROK 1-4 + korekta 93a + domkniecie 91a):**
+1. `enrich()`: kolumna `ps.available_for_order` w SELECT + klucz `'available_for_order' => (bool)` + docblock. Wylacznie NOWY klucz, 6 wywolujacych bez zmian.
+2. `ProductSearch`: parametr `filters.include_discontinued` (DEFAULT FALSE); filtr post-hoc z MySQL w OBU torach (mergeRRF + searchByPrice), `$filteredOut` reason `available_for_order=0, discontinued`; Editorial Picks NIE bypassuja (92a, jawnie); afo=0 przepuszczony niesie flage `available_for_order: false` (klucz TYLKO dla afo=0). Wspolny predykat: `ProductSearch::isDiscontinued()` (public static, brak danych/klucza = dostepny).
+3. **Odstepstwo od litery taska — decyzja 91a domknieta DETERMINISTYCZNIE:** test PROD v1 wykazal, ze model NIE ustawia `include_discontinued=true` przy pytaniu wprost (bot: "nie znalazlem... sprawdzimy czy mozemy sprowadzic"). Dodano `ProductSearch::shouldIncludeDiscontinued()`: navigational + exact_keywords => auto-include (dokladnie brzmienie 91a: "navigational + exact_keywords -> wchodzi z flaga"), jawny parametr nadal dziala. Wzorzec deterministyczny jak fallbacki T-017/T-020.
+4. **Korekta 93a (nota do ADR-123):** filtr `visibility` USUNIETY z ProductSearch (searchByPrice + mergeRRF); kryterium post-hoc: active + afo. Pole `visible` w `enrich()` zostaje. Skutek uboczny potwierdzony: 11 produktow vis='none'+afo=1 wraca do wynikow (poprawne).
+5. `CuratedRecommendations` + `PopularProducts`: afo=0 wypada ZAWSZE, reason `discontinued` (Curated dodatkowo error_log).
+6. `SystemPrompt`: blok PRODUKT WYCOFANY ZE SPRZEDAZY (byl/wycofany + alternatywa; odroznienie od quantity=0; zakaz zakupu i surowej flagi).
+
+**Testy:** nowy `standalone/tests/Tools/AvailableForOrderFilterTest.php` 14/14 (czysta logika, bez baz). Pelna suita bez regresji; zastane: PricingServiceTest 24/3 failed, SantiSearchTest fatal (konstruktor) — sprzed taska.
+
+**Deploy (swiat BACKEND):** backup `_deploy_bak/20260715_202636_CHAT-T-143` (5 plikow pre-task) + `_deploy_bak/20260715_203219_CHAT-T-143_v1` (ProductSearch przed domknieciem 91a). rsync 5 plikow src/, `ea-php84 -l` 5/5 OK na serwerze, **md5 local==prod 5/5**:
+- `ef2942051f01fab742863241c2067c21` Shop/MysqlProductEnrichmentService.php
+- `6042f60dbca97255722a69007a1b8057` Tools/ProductSearch.php (final, po 91a)
+- `24c74f7bf9843ac5f70ac121f1e067c0` Tools/CuratedRecommendations.php
+- `cb812218a7e54f0d8a0a2c63bd76ed64` Tools/PopularProducts.php
+- `46c9c8ce876c101238d48729d3b8c116` Chat/SystemPrompt.php
+Smoke `/api/health`: 200, postgres+mysql true. BEZ `config/tools.php`, BEZ `routes.php`.
+
+**Test PROD (kryteria 1-2): PASS.**
+- "szukam torby na sprzet nurkowy" -> 3920 NIE pojawia sie (w debug: odfiltrowany; inne wycofane z reason `available_for_order=0, discontinued`).
+- "macie torbe Mares Cruise Backpack Mesh Deluxe?" -> "zostala wycofana ze sprzedazy i nie mozna jej juz zamowic" + 2 alternatywy Mares, BEZ propozycji zakupu, BEZ surowej flagi. 3920 w tool_result z flaga `available_for_order: false`, debug `include_discontinued: true` (auto 91a).
+Rozmowy 692, 693, 694, 695 oznaczone `[test CHAT-T-143, nie klient]`, verdict NULL, updated_by NULL (41b).
+
+**Commit:** patrz git log (`CHAT-T-143 backend: filtr available_for_order ...`).

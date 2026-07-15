@@ -262,6 +262,14 @@ final class PopularProducts implements ToolInterface
             return null;
         }
 
+        // CHAT-T-143 (ADR-123): narzedzie poleca NIEPYTANY -> produkt wycofany
+        // ze sprzedazy (afo=0) wypada ZAWSZE, bez parametru.
+        // Brak klucza (dryf wersji enrich) = traktuj jak dostepny — jak w ProductSearch.
+        if (($data['available_for_order'] ?? true) === false) {
+            $skipped[] = ['product_id' => $productId, 'reason' => 'discontinued'];
+            return null;
+        }
+
         if ($data['availability'] === 'unavailable') {
             $skipped[] = ['product_id' => $productId, 'reason' => 'unavailable'];
             return null;

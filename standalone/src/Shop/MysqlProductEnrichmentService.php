@@ -40,6 +40,7 @@ final class MysqlProductEnrichmentService
      *     quantity: int,
      *     active: bool,
      *     visible: bool,
+     *     available_for_order: bool,
      *     name: string|null,
      *     url: string|null,
      *     url_en: string|null,
@@ -88,6 +89,7 @@ final class MysqlProductEnrichmentService
                 END AS availability,
                 ps.active,
                 ps.visibility,
+                ps.available_for_order,
                 plen.link_rewrite AS link_rewrite_en,
                 plpl.name AS name_pl,
                 plpl.link_rewrite AS link_rewrite_pl
@@ -148,6 +150,9 @@ final class MysqlProductEnrichmentService
                 'quantity' => (int) $row['quantity'],
                 'active' => (bool) $row['active'],
                 'visible' => $row['visibility'] !== 'none',
+                // CHAT-T-143 (ADR-123): afo=0 = produkt wycofany ze sprzedazy (szary
+                // przycisk koszyka). NIE mylic z quantity=0 (brak stanu, "zamowimy").
+                'available_for_order' => (bool) $row['available_for_order'],
                 'name' => ($namePl !== null && $namePl !== '') ? (string) $namePl : null,
                 'url' => self::buildProductUrl($row['link_rewrite_pl'] ?? null),
                 'url_en' => $urlEn,
