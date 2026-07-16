@@ -159,6 +159,79 @@ push. NIE `git add .` (drzewo ma cudze pliki). Po deployu osobny docs: commit.
 Po zweryfikowanym deployu i tescie PROD: karta → "Zrobione". Rozmowa 668 (jesli jest
 w recenzji) → oznacz markerem testu wg reguly E, verdict zostaw Karolowi.
 
+## D2. KOREKTA SEKCJI D (architekt, 2026-07-16) — WYKONAJ TO, NIE SEKCJE D
+
+**Sekcja D powyzej jest NIEAKTUALNA w trzech punktach. Nie realizuj jej.**
+Powod korekty ponizej, kazdy zweryfikowany na zywej bazie Railway 2026-07-16.
+
+### D2.1 Zla tabela
+Sekcja D mowi: INSERT do `divechat_knowledge`. **To tabela martwa.**
+Zweryfikowane: `divechat_knowledge` ma 37 wierszy (wszystkie z embeddingiem), ale
+**0 odczytow w `standalone/src`** (`_docs/44`, rozjazd R-2). Narzedzie
+`get_expert_knowledge` czyta **`encyclopedia_chunks`** (`ExpertKnowledge.php:105`).
+Wpis do `divechat_knowledge` nigdy nie trafilby do bota.
+
+**Cel: `encyclopedia_chunks`**, hasło istniejace `concept_key='AUTOMAT_ODDECHOWY'`
+(`concept_number=1`, ma juz komplet 5 chunkow: definition/faq/purchase/seller/synonyms).
+Decyzja Karola 122a: nowy chunk `chunk_type='faq'` pod istniejacym hasłem, NIE nowe hasło.
+
+### D2.2 Zly wymiar embeddingu
+Sekcja D mowi: `dimensions=1536`. **`encyclopedia_chunks.embedding` to `vector(3072)`**
+(zweryfikowane `format_type` w `pg_attribute`; `ExpertKnowledge.php:16,75` embeduje
+zapytanie z `dimensions=3072`). Model bez zmian: OpenAI `text-embedding-3-large`.
+1536 dotyczy `divechat_product_embeddings`, nie encyklopedii.
+
+### D2.3 Tresc w sekcji D jest merytorycznie BLEDNA — nie uzywaj jej
+Sekcja D zawiera wersje sprzed poprawek Karola (decyzje 107b, 111a):
+- **"Maksymalna glebokosc normy: 50 m"** — BLAD. 50 m to **warunek testu**, nie limit.
+  Norma nie wyznacza dopuszczalnej glebokosci nurkowania.
+- **"testy producentow 100-200 m"** — WYCIETE. Niepotwierdzone u zrodel, ryzyko fabrykacji.
+- **bez WOB / J/l / mbar** (111a).
+
+**Tresc ZATWIERDZONA (finalna, trzy rundy poprawek Karola — NIE MODYFIKUJ ANI SLOWA):**
+
+```sql
+INSERT INTO encyclopedia_chunks
+  (concept_key, concept_number, name_pl, name_en, chunk_type, content, metadata)
+VALUES (
+  'AUTOMAT_ODDECHOWY', 1, 'automat oddechowy', 'regulator', 'faq',
+  'FAQ: automat oddechowy
+
+Q: Do jakiej głębokości jest certyfikowany automat oddechowy? Co to norma EN 250?
+A: Obowiązująca norma dla automatów do nurkowania na sprężonym powietrzu to EN 250:2014. Określa minimalne wymagania bezpieczeństwa, metody badań i oznakowanie. Norma nie wyznacza dopuszczalnej głębokości nurkowania — opisuje warunki testu: automat bada się przy ciśnieniu 6 barów absolutnych (odpowiednik 50 m) i wentylacji 62,5 l/min, i musi tam utrzymać wymagane parametry oddechowe. To norma sprzętowa, nie zasada nurkowania. Automaty przeznaczone do zimnej wody przechodzą dodatkowy test w około 4°C — odporność na zamarzanie i brak niekontrolowanego freeflow. EN 250A dodaje test oddychania przez dwóch nurków jednocześnie z jednego pierwszego stopnia (nurek + partner na oktopusie). EN 13949 nie zastępuje EN 250 — dokłada wymagania dla automatów do nitroksu i tlenu.',
+  '{"name_en": "regulator", "name_pl": "automat oddechowy", "related_keys": ["PIERWSZY_STOPIEN", "DRUGI_STOPIEN", "OCTOPUS", "ZLACZE_DIN", "NITROKS"], "concept_number": 1, "pipeline_version": "v2", "source": "CHAT-T-138 decyzje 107b/111a"}'::jsonb
+);
+```
+
+Format `Q:`/`A:` w jednym polu `content` — zgodny z istniejacym chunkiem `faq` tego hasła
+(id 19), sprawdzony przed zapisem. Istniejacy `faq` NIE mowi nic o EN 250 ani o glebokosci
+certyfikacji — nowy chunk uzupelnia, nie zaprzecza. `id` to serial, NIE podawaj recznie.
+BEZ `[Uwaga dla bota]` w `content` — ograniczenie 45a siedzi w prompcie (juz wdrozone),
+w bazie wiedzy trafiloby do embeddingu jako instrukcja zamiast wiedzy.
+
+### D2.4 Embedding — bez tego wpis jest martwy
+Po INSERT wygeneruj `embedding` dla nowego chunku: OpenAI `text-embedding-3-large`,
+**`dimensions=3072`**, wejscie = pole `content` tego wiersza (identycznie jak reszta
+`encyclopedia_chunks`). Wpis z `embedding IS NULL` nie zostanie znaleziony przez
+`get_expert_knowledge` (SQL odsiewa po cosine `> 0.45`, `ExpertKnowledge.php:96`).
+
+### D2.5 Kolejnosc i STOP-y
+1. **pg_dump** tabeli `encyclopedia_chunks` PRZED czymkolwiek. Sciezka + rozmiar w raporcie.
+2. **STOP** — pokaz Karolowi SQL przed wykonaniem (ADR-089).
+3. INSERT → zwroc `id` nowego wiersza.
+4. Embedding 3072 → UPDATE tego `id`.
+5. Weryfikacja: `SELECT id, concept_key, chunk_type, (embedding IS NULL) AS bez_wektora,
+   vector_dims(embedding) AS wymiary FROM encyclopedia_chunks WHERE id = <nowy_id>;`
+   Oczekiwane: `bez_wektora=false`, `wymiary=3072`.
+6. Test PROD przez realny czat: "co to norma EN 250?" → bot odpowiada z bazy wiedzy
+   (norma sprzetowa, 50 m = warunek testu, NIE limit). Regresja: "szukam automatu" →
+   bot NIE podaje EN 250 z siebie.
+7. Rozmowe testowa oznacz markerem `[test CHAT-T-138, nie klient]` wg reguly E.
+
+### D2.6 Kryterium akceptacji 4 — korekta
+Punkt 4 w "Kryteria akceptacji" mowi "50 m = zakres certyfikacji" — to sformulowanie
+z bledenej wersji. Obowiazuje: **50 m = warunek testu, norma nie wyznacza limitu glebokosci**.
+
 ## Wynik (CC, 2026-07-16)
 Zakres A+B+C wykonany w SystemPrompt.php:
 - Linia 209: usuniety przyklad "dobor automatu przez glebokosc" → zastapiony realnym
@@ -184,3 +257,47 @@ o glebokosc — bug conv 668 nie wystapil). Obie rozmowy oznaczone
 updated_by=NULL) — regula E.
 Testy CLI: zielone poza stanem zastanym (PricingServiceTest 24/3, SantiSearchTest
 fatal, size_recommender e2e/parity brak MySQL lokalnie).
+
+## Wynik D2 (instancja embeddings, CC 2026-07-16) — DONE
+
+Wykonano sekcje D2 (NIE D). Operacja na danych Railway PG, zero rsync.
+
+**KROK 1 — pg_dump:** `_backups/encyclopedia_chunks_20260716_przed_T138.sql`
+(21 397 465 B ≈ 20 MB, 530 wierszy COPY). Weryfikacja D2 na żywej bazie: `embedding` =
+`vector(3072)` ✓; koncept `AUTOMAT_ODDECHOWY` (num=1) ma 5 chunkow (definition/synonyms/
+purchase/faq id19/seller); 0 istniejacych chunkow o EN 250.
+
+**KROK 2 — STOP (ADR-089):** SQL z D2.3 pokazany Karolowi, zatwierdzony bez zmian.
+
+**ODSTĘPSTWO od D2.3 (constraint, decyzja Karola):** `encyclopedia_chunks` ma UNIQUE
+`idx_enc_concept_type (concept_key, chunk_type)` — nie da sie dodac DRUGIEGO chunku `faq`
+do `AUTOMAT_ODDECHOWY` (jest juz id 19). D2.3 (INSERT nowego faq) niewykonalny; architekt
+zweryfikowal tresc i wymiar, ale nie constraint. **Decyzja Karola: dołączyć zatwierdzoną parę
+Q/A o EN 250 do istniejacego faq id 19 + re-embed.** Tekst Q/A 1:1 z D2.3 (wyodrebniony z
+task file, nie przepisywany); doklejony bez powtorzonego naglowka „FAQ: automat oddechowy".
+
+**KROK 3-4 — UPDATE + embedding:** id 19 content 1644 → 2501 znakow (5 → 6 par Q/A). Embedding
+`text-embedding-3-large`, `dimensions=3072`, wejscie = nowy `content`. UPDATE embedding id 19.
+
+**KROK 5 — weryfikacja (D2.5 pkt 5):** `id=19, concept=AUTOMAT_ODDECHOWY, chunk_type=faq,
+bez_wektora=false, wymiary=3072` ✓. Frazy zatwierdzone obecne verbatim (EN 250:2014, „6 barów
+absolutnych (odpowiednik 50 m)", „62,5 l/min", „Norma nie wyznacza dopuszczalnej głębokości",
+„EN 13949 nie zastępuje EN 250"); frazy błędne (D) nieobecne (brak „100-200 m", „testy
+producenta", „Maksymalna głębokość normy"). Test retrieval (jak `get_expert_knowledge`,
+cosine>0.45): „co to norma EN 250?" → id 19 rank1 sim 0.6044; „Do jakiej głębokości certyfikowany
+automat?" → id 19 rank1 0.5844; „szukam automatu" → id 19 POZA wynikami.
+
+**KROK 6 — test PROD przez realny czat** (HMAC `/api/chat`, customerId=0):
+- conv **715** „co to norma EN 250?" → `tools_used=[get_expert_knowledge]`, bot: „EN 250:2014…
+  **Nie wyznacza maksymalnej głębokości — to norma sprzętowa, nie przepis nurkowy.** Automat
+  testuje się przy ciśnieniu odpowiadającym 50 m (6 barów absolutnych) i wentylacji 62,5 l/min…
+  EN 250A… EN 13949" ✓ (50 m = warunek testu, NIE limit — D2.6).
+- conv **716** (regresja) „szukam automatu oddechowego" → `tools_used=[]`, bot pyta tylko o budżet
+  + zakres zestawu (sam czy z manometrem), ZERO EN 250, ZERO głębokości ✓ (bug conv 668 też nie
+  wystąpił).
+- Obie oznaczone `[test CHAT-T-138, nie klient]` w `divechat_conversation_review`
+  (status=do_weryfikacji=default, verdict=NULL, updated_by=NULL) — reguła E.
+
+**KRYTERIA (D2):** tabela właściwa (encyclopedia_chunks, nie divechat_knowledge) ✓; wymiar 3072 ✓;
+treść zatwierdzona 1:1 ✓; embedding NOT NULL ✓; bot odpowiada z bazy na EN 250 ✓; regresja (nie
+podaje z siebie) ✓; zero rsync ✓. Commit: task file (per ścieżka).
