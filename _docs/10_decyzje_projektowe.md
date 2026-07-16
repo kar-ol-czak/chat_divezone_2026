@@ -3795,7 +3795,7 @@ Przy weryfikacji implementacji CHAT-T-143 (KROK 7, przed deployem) architekt zna
 
 ### ADR-125: Kategoria w `embedding_name` — eksperyment z bramą pomiarową (wątek pochodny ADR-122)
 
-**Data:** 2026-07-15 | **Status:** EKSPERYMENT (wynik rozstrzyga bramа pomiarowa) | **Powiązane:** ADR-122 (konkatenacja `category_name`, nota nr 1 — zasięg zmiany), CHAT-T-142, CHAT-T-144, karta Trello Chat - 26. **Decyzje Karola:** 78a (założyć kartę), 101a (tylko `text_name`).
+**Data:** 2026-07-15 | **Status:** **ODRZUCONA 2026-07-16** (brama pomiarowa rozstrzygnęła negatywnie — patrz nota nr 1 na końcu ADR; kategoria zostaje wyłącznie w `text_desc`) | **Powiązane:** ADR-122 (konkatenacja `category_name`, nota nr 1 — zasięg zmiany), CHAT-T-142, CHAT-T-144, karta Trello Chat - 26. **Decyzje Karola:** 78a (założyć kartę), 101a (tylko `text_name`), **126a (odrzucenie)**.
 
 **Kontekst — skąd wątek:** przy bramie CHAT-T-142 Claude Code wykrył i zgłosił, że `category_name` zasila **wyłącznie** `text_desc` i single-vector. Zweryfikowane w `embed_target_products.py`, `build_multivector_texts()` (~74-93):
 - `text_name` = `product_name + " " + brand_name` — **BEZ kategorii**
@@ -3831,3 +3831,44 @@ Przy weryfikacji implementacji CHAT-T-143 (KROK 7, przed deployem) architekt zna
 **Konsekwencje:** zmiana dotyczy `build_multivector_texts()` — czyli `embedding_name` **całego katalogu** (2591 wpisów), nie tylko wielokategoryjnych. Re-embed pełny, ale dopiero po bramie. Zero zmian w `ProductSearch`, zero deployu (pipeline lokalny, tunel SSH).
 
 **Implementacja:** CHAT-T-145 (instancja embeddings).
+
+---
+
+#### ADR-125 — nota nr 1: WYNIK BRAMY — **STATUS: ODRZUCONA** (2026-07-16, decyzja Karola 126a)
+
+**Eksperyment wykonany, zmiana odrzucona, stan przywrócony.** Kategoria w `text_name` **rozmywa sygnał nawigacyjny** — dokładnie ryzyko przewidziane wyżej. Autor noty: architekt. Wykonanie pomiaru: CC (instancja embeddings), commit `d7dc6c0`.
+
+**Tabela PRZED/PO** (próbka 35 produktów, re-embed multi-vector, model `text-embedding-3-large` @1536):
+
+| fraza | cel | typ | `name` PRZED | `name` PO | Δ `name` | Δ `jargon` (kontrola) |
+|---|---|---|---|---|---|---|
+| „Shearwater Perdix 3" | 7641 | canonical | **0.9137** | **0.7722** | **−0.1415** | +0.0003 |
+| „Scubapro MK17 zestaw" | 7648 | canonical | 0.8612 | 0.8329 | **−0.0283** | 0.0000 |
+| „zestaw automatu Apeks MTX-RC" | 7647 | canonical | 0.7737 | 0.7740 | +0.0003 | −0.0001 |
+| „Apeks ATX40 zestaw automatu" | 2369 | multi-kat | 0.8125 | 0.8541 | +0.0416 | 0.0000 |
+| „Tecline szorty cargo 4mm" | 7545 | multi-kat | 0.8825 | 0.8513 | −0.0312 | 0.0000 |
+| „obudowa podwodna do smartfona" | 7643 | 1-kat | 0.7752 | 0.7397 | −0.0355 | 0.0000 |
+| „balast nerka 2kg" | 7634 | 1-kat | 0.6859 | 0.7121 | +0.0262 | +0.0001 |
+| „koszulka merino do suchego" | 7628 | 1-kat | 0.6720 | 0.7424 | **+0.0704** | 0.0000 |
+
+**Kontrola zadziałała:** `jargon` Δ ≤ ±0.0003 (szum float) → obserwowane zmiany `name` pochodzą ze zmiany, nie z pomiaru. Pomiar PRZED zgodny co do 4. miejsca z bramą CHAT-T-142.
+
+**Dlaczego odrzucona — trzy powody, drugi jest najważniejszy:**
+
+1. **Litera kryterium.** Kryterium brzmiało: `name` spada → odrzucamy. Flagowa fraza kanoniczna („Shearwater Perdix 3") spadła o **−0.1415**, druga o −0.0283. Kryterium spełnione wprost.
+
+2. **Konstrukcja sprzeczna z rolą toru (powód merytoryczny, ważniejszy od samych liczb).** Trzy tory istnieją po to, żeby **się różnić**: `name` = nawigacyjny (klient zna nazwę), `desc` = eksploracyjny (klient opisuje), `jargon` = slang klienta (`ProductSearch.php:14`). Kategoria **już jest w `text_desc`** (ADR-122). Wpychając ją do `text_name`, upodabniamy dwa tory do siebie i tracimy **ortogonalność, która jest sensem RRF**. Rozkład zysków to potwierdza: rosną wyłącznie frazy **opisowe** (7628 +0.0704, 7634 +0.0262, 2369 +0.0416) — czyli robota, którą tor `desc` ma wykonywać ze swojego opisu i kategorii. Kupowaliśmy w torze A to, co tor B już umie, płacąc precyzją toru A.
+
+3. **Zysk był tam, gdzie mamy pokrycie; strata tam, gdzie nie mamy.** Frazę opisową złapie `desc`. Frazy kanonicznej („znam nazwę, podaj produkt") nie złapie nic poza `name` i trigramem.
+
+**Zastrzeżenie metodologiczne (uczciwie odnotowane):** pomiar mierzy **cosine pojedynczego toru**, a do RRF wchodzi **wyłącznie ranga w torze, nie wartość cosine** (`ProductSearch.php:798`, `_docs/44` sekcja 5.1). Spadek 0.9137 → 0.7722 zmienia wynik końcowy tylko wtedy, gdy zmienia **pozycję** produktu w torze. Tego **NIE zmierzono** — decyzja zapadła na podstawie kryterium z bramy + powodu nr 2, który jest niezależny od rang. Gdyby wątek kiedyś wracał: najpierw zmierzyć rangi, nie cosine.
+
+**Stan po decyzji (zweryfikowany przez architekta niezależnie, nie z raportu CC — 2026-07-16):**
+- próbka 35 produktów **przywrócona** z dumpa `_backups/divechat_product_embeddings_20260716_przed_T145.sql` (205 MB). Pomiar kontrolny na żywej Railway: 7641 = **0.9137** (Δ −0.0000), 7647 = **0.7737** (Δ +0.0000), 7648 = **0.8606** (Δ −0.0006, poniżej progu istotności, rząd szumu float).
+- `embed_target_products.py` cofnięty — `name_parts = product_name + brand_name`, `git diff` wobec HEAD czysty.
+- katalog (2606 wpisów) **bez pełnego re-embedu** — nie doszło do niego.
+- koszt eksperymentu: **~0,02 USD**.
+
+**Co ten ADR ustalił na trwałe (wartość mimo odrzucenia):** kategoria należy do `text_desc` i **tylko** tam. Tor `name` zostaje krótki i celny. Wątek z bramy CHAT-T-142 zamknięty — nie wracać bez nowej przesłanki (a jeśli wracać, to pomiarem rang, nie cosine). To jest cel bramy pomiarowej: 0,02 USD za zamknięcie otwartego pytania.
+
+**Powiązane:** ADR-122 (konkatenacja `category_name` → `text_desc`, w mocy), `_docs/44` sekcja 2.3 (tabela źródeł kolumn wektorowych) i sekcja 5.1 (RRF: ranga, nie cosine), karta Trello Chat - 26 (zamknięta).
