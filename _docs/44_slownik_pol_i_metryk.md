@@ -587,7 +587,38 @@ bazy Railway, a inwentarz MySQL i kontrakty narzędzi — z kodu z numerami lini
 
 ---
 
-## Sekcja „PUŁAPKI" — DO DOPISANIA PRZEZ ARCHITEKTA (decyzja 117a)
+## PUŁAPKI — ŚCIĄGA. CZYTAJ PRZED DIAGNOZĄ
 
-*Ta sekcja celowo pusta. Na bazie inwentarza powyżej architekt dopisze skondensowaną listę
-pułapek „nazwa pola ≠ znaczenie" jako szybką ściągę.*
+*Napisana 2026-07-16 przez architekta na bazie inwentarza CC (decyzja 117a). Ściąga do czytania PRZED diagnozą, nie wykład. Każda pozycja to realny błąd, który kosztował czas Karola.*
+
+**Zasada nadrzędna: nazwa pola nie jest jego znaczeniem.** W jednej sesji (2026-07-15/16) architekt popełnił SIEDEM błędów tego samego typu — wnioskował z nazwy kolumny zamiast sprawdzić, co realnie zawiera i **kto ją czyta**. Drugie pytanie jest ważniejsze od pierwszego: pole może mieć poprawną zawartość i być martwe.
+
+| pole / obiekt | odruch (BŁĘDNY) | stan faktyczny | źródło prawdy |
+|---|---|---|---|
+| `pr_product_shop.visibility` | `'none'` = klient tego nie znajdzie | wyszukiwarką sklepu jest **Luigi's Box** (zewnętrzna) i **ignoruje to pole**. Produkt `vis='none'` JEST w wynikach. Dowód Karola: `divezone.pl/szukaj?s=Torba MARES Cruise` → produkt 3920 | rozjazd R-1, ADR-123 nota 93a |
+| `pr_product_shop.available_for_order` | — | **właściwe** kryterium „czy można kupić". `afo=0` = wycofany ze sprzedaży | ADR-123 |
+| `pr_orders.valid` | `0` = niezapłacone | flaga **księgowa** (logable), nie ma nic wspólnego z zapłatą. Dowód: QETUBCWYS `valid=0`, stan „Zapłacone", Tpay | `current_state` → `pr_order_state.paid` |
+| `pr_orders.total_paid_real` | ile faktycznie wpłynęło | **2× zawyżone dla 1246/1259 zamówień Tpay** (99%). Moduł zapisuje płatność dwa razy: raz z `transaction_id`, raz z pustym. Inne bramki (Przelewy24, Revolut, PayPal, PayU = 624 zam.): **zero** podwojeń | **licz `total_paid`**. Karta Sklep - 31 |
+| `pr_stock_available.quantity` | stan magazynowy | **zaślepki** (9999999, 29998). Zestawy mają `quantity=0`, bo Firmes wiąże SKU literalnie z Subiektem, a zestawy mają sklejone SKU | **Subiekt ERP** |
+| `pr_stock_available.out_of_stock` | — | `2` = „użyj domyślnego zachowania sklepu" → **zamówienie przechodzi mimo `quantity=0`**. To jest mechanizm, nie obejście | ADR-123, karta Chat - 21 |
+| **`similarity` w tool_result `search_products`** | cosine, skala 0-1 | to **`rrf_score`** — Reciprocal Rank Fusion, `1/(k+rank)`, `rrf_k=60`. **Sufit ~0,065 przy 4 torach.** `0,0713` to wynik **najlepszy z możliwych**, nie „7% dopasowania" | sekcja 5, rozjazd R-3 |
+| `similarity` w `get_expert_knowledge` | — | **tu jest prawdziwy cosine** (0-1). Dlatego próg 0,5 działa tam, a w `search_products` nie. **Dwa narzędzia, to samo pole, dwie różne skale** | `ExpertKnowledge.php` |
+| **`divechat_knowledge`** | baza wiedzy eksperta (tak mówi `02_schemat_bazy.md` i `CLAUDE.md`) | **MARTWA.** 37 wpisów, najnowszy 2026-02-19, **zero odczytów w `standalone/src`**. Wpis tam = praca w błoto | **`encyclopedia_chunks`** (`ExpertKnowledge.php:105`). Rozjazd R-2 |
+| `divechat_conversations.created_at` | — | **nie istnieje**. Kolumna nazywa się `started_at` | sekcja 2 |
+| `divechat_product_embeddings.product_id` | — | **nie istnieje**. Kolumna nazywa się `ps_product_id` | sekcja 2 |
+| recenzje rozmów | kolumny w `divechat_conversations` | **osobna tabela** `divechat_conversation_review` (`note`, `verdict`, `status`, `updated_by`) | sekcja 2 |
+| `chip_path` vs `nudge_sid` | to samo | **dwa różne mechanizmy.** `chip_path` = drzewo chipów, `nudge_sid` = zaczepka proaktywna. Rozmowa z `nudge_sid` i pustym `chip_path` to **nie** regres chipów | conv 636 |
+| `knowledge_gap` | bot nie znalazł odpowiedzi | **ZEPSUTE dla `search_products`.** Próg 0,5 (skala cosine) porównywany z `rrf_score` (sufit 0,065) → **zawsze `true`**. Do tego **sticky** (`ConversationStore` ~189: `? OR COALESCE(...)`) — raz zapalona nie gaśnie. PROD 30 dni: 126 `true` / 91 `false`, gdzie `false` = rozmowy **bez** `search_products` | sekcja 4, decyzja 115a (naprawa: osobny task) |
+| „sprzedaż" w pytaniu | kiedykolwiek | dopytaj o okres. 344/483 produktów `vis=none` nie sprzedanych **od roku**, 106 nigdy, tylko 7 w ostatnich 3 miesiącach | — |
+
+**Pułapki proceduralne (nie dotyczą pól, ale kosztują tak samo):**
+
+- **`newtmp2` to PRODUKCJA sklepu**, mimo nazwy „tmp". Nie katalog przejściowy.
+- **Kod backendu na serwerze nie ma prefiksu `standalone/`** — w repo jest, na serwerze nie.
+- **Panel PS jest źródłem prawdy dla wyboru modelu**, nie `.env` (CHAT-T-068).
+- **Pipeline embeddingów nie jest cronowany.** Nowy produkt = bot go nie zna, aż ktoś ręcznie odpali skrypt z laptopa. Stąd cichy dług („140 braków od 15 maja"). Karta Chat - 23.
+- **Filtry `in_stock_only` / `include_discontinued` działają post-hoc z MySQL**, nie w pgvector. To nie to samo miejsce w przepływie.
+- **Hasło MySQL w `.env` jest w apostrofach.** `tr -d '"'` ich nie usuwa → `Access denied`. Najprościej: skrypt PHP w katalogu aplikacji (`vendor/autoload` + `Dotenv` + `PDO`), nie CLI.
+- **Apostrofy giną w łańcuchu SSH→zsh→bash→psql.** Zapisuj SQL do pliku na serwerze (`cat > /tmp/q.sql << "EOF"`), literały przez `chr()||`. `interval` nie przyjmuje wyrażeń → `make_interval(days => 30)`.
+
+**Jak korzystać:** przed każdą diagnozą przejrzyj tabelę. Gdy wniosek opiera się na polu, którego tu nie ma — sprawdź w inwentarzu (sekcje 2-5), **co zawiera i kto to czyta**. Gdy odkryjesz nową pułapkę, dopisz ją tutaj: jedna linijka, z dowodem.
