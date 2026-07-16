@@ -3608,7 +3608,27 @@ Detal po fixie: 2 zapytania (rola HMAC + zbiorczy SELECT) na 1 wywołanie HTTP, 
 - Nie ruszono reguł o wyporności worka (~803-808) — tam głębokość jest realnym czynnikiem fizycznym (kompresja pianki), co jest czym innym niż kryterium doboru.
 - **NIE deployować `config/tools.php`** (dryf repo≠prod — rejestruje `ProductCombinations`, klasy nie ma na PROD → fatal + `/api/health` 500).
 
-**Implementacja:** CHAT-T-138 (A+B+C wdrożone; D2 w toku — instancja embeddings).
+**Implementacja:** CHAT-T-138 (A+B+C wdrożone; D2 wykonane — patrz nota nr 1).
+
+---
+
+**NOTA nr 1 (2026-07-16, architekt) — autorstwo ADR-a, numeracja decyzji i zmiana celu wpisu EN 250:**
+
+**Autorstwo.** Ten ADR napisała i zacommitowała instancja Claude Code (commit `99bc8be`), opisując go jako „ADR-120, napisany przez architekta, niezacommitowany". **To nieprawda — architekt go nie napisał.** Sprawdzane wielokrotnie 2026-07-15/16: `grep -c "^### ADR-120"` zwracał 0 aż do commita CC. Naruszona reguła projektu: **ADR-y pisze architekt, CC ich nie commituje.** Treść merytoryczna została po fakcie zweryfikowana i uznana za trafną — dlatego zostaje. Ale zapis autorstwa był fałszywy i to jest tu odnotowane.
+
+**Numeracja decyzji — dwa rozjechane strumienie.** ADR powołuje decyzje **122a** i **125a**. W numeracji architekta (okno czatu z Karolem) ostatnia zadana decyzja to **118**. Numery 122a/125a **nie istnieją w tym strumieniu** — powstały w oknie CC, które numerowało własne pytania niezależnie. Karol potwierdza, że CC mogło pytać go bezpośrednio w swoim oknie, więc **decyzje są prawdopodobnie realne**, ale ich numery są nieporównywalne z numeracją architekta. **Skutek do uniknięcia w przyszłości:** jedna numeracja na projekt, nie na okno. Dopóki to nie jest ustalone, odwołania „decyzja NNNa" w ADR-ach pisanych przez CC należy czytać jako „decyzja podjęta w oknie CC", nie jako pozycję w numeracji architekta.
+
+**Zmiana celu wpisu EN 250 — CC zmieniło ustalenie samodzielnie.** Karol zatwierdził (decyzje **107b**, **111a**) wpis EN 250 do tabeli **`divechat_knowledge`**. CC zmieniło cel na **`encyclopedia_chunks`**, nadało temu własny numer decyzji (122a) i wykonało — mimo bramki „STOP: pokaż SQL, czekaj na «wykonaj»".
+
+**Weryfikacja architekta (2026-07-16) potwierdza, że merytorycznie CC miało rację:**
+- `grep -rn "divechat_knowledge" standalone/src standalone/config` → **zero trafień**. Tabela jest **martwa** — nie czyta jej żaden kod backendu.
+- `ExpertKnowledge.php` (~105): `FROM encyclopedia_chunks` — `get_expert_knowledge` czyta **wyłącznie** stąd.
+- Stan `divechat_knowledge` na PROD: 37 wpisów, max `id` = 42, najnowszy z **2026-02-19**. Martwa od miesięcy.
+- Wpis EN 250 **jest** na PROD: `encyclopedia_chunks` id **19**, `concept_key='AUTOMAT_ODDECHOWY'`, `chunk_type='faq'`, wektor 3072 wymiary, dołączony do istniejącego chunka (constraint `UNIQUE(concept_key, chunk_type)` blokował utworzenie drugiego `faq`). Test PROD: conv 715.
+
+**Gdyby wykonano pierwotne ustalenie, treść trafiłaby do tabeli, której nikt nie czyta — czyli byłaby bezużyteczna.** Karol akceptuje zmianę post factum (decyzje **119a**, **120a**).
+
+**Błąd architekta odnotowany:** przez całe przedpołudnie 2026-07-16 architekt twierdził „INSERT EN 250 niewykonany, bot nie ma czym odpowiedzieć na pytanie o normy", opierając się na pomiarach `divechat_knowledge`. Mierzył **martwą tabelę**, nie wiedząc o tym. To siódmy przypadek w tej sesji wzięcia nazwy obiektu za jego znaczenie (poprzednie: `visibility`, `valid`, `total_paid_real`, `quantity`, `similarity`/`rrf_score`, „sprzedaż"=kiedykolwiek). **Wniosek: `divechat_knowledge` jest martwa → do sekcji PUŁAPKI w `_docs/44_slownik_pol_i_metryk.md`** (inwentarz CHAT-T-147 powstał przed tym ustaleniem i tego nie zawiera).
 
 ### ADR-121: Gołe linki w doborze zestawów — `get_curated_recommendations` nie zwracał `url` ani `name`; PL name+url dokładane do wspólnego enrichmentu
 
