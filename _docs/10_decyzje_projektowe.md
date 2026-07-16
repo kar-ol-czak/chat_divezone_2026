@@ -3571,6 +3571,45 @@ Detal po fixie: 2 zapytania (rola HMAC + zbiorczy SELECT) na 1 wywołanie HTTP, 
 - Deploy = ręczny rsync Karola (port 5739, `--exclude config_pl.xml`, bez `--delete`), po nim skasować `var/cache/prod` + flush LSCache. NIE deployować `config/tools.php` (dryf repo≠prod, CHAT-T-132).
 - Weryfikacja: zamówienie testowe z aktywną rozmową → rekord w tabeli z poprawnym id_order + chat_session_id + typem; zamówienie bez czatu → brak rekordu.
 
+### ADR-120: Głębokość nie jest kryterium doboru sprzętu — sklep nie ocenia certyfikatów ani nie poucza o limitach
+
+**Data:** 2026-07-16 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-138 (implementacja), karta Trello „Chat - 20", ADR-118 (SystemPrompt — ton i niejednoznaczność intencji; ten ADR usuwa część reguł z tego samego bloku), ADR-089 (STOP-gate przed deployem i zapisem do PG), ADR-012 (model embeddingów). **Decyzje Karola:** 41b, 42c, 43b, 44a, 45a, 107b, 111a, 122a, 125a.
+
+**Kontekst (objaw):** bot traktował głębokość nurkowania jako parametr doboru sprzętu i pouczał klientów o limitach. Dowód (conv 668, dobór automatu): po dwóch sensownych pytaniach różnicujących bot dorzucał „I czy to do nurkowania rekreacyjnego (do 40 m)?" — pytanie zbędne. Źródło błędu było w prompcie w dwóch miejscach: linia ~209 wprost podawała „dobór automatu przez głębokość" jako przykład kryterium doboru, a blok „GŁĘBOKOŚĆ I KWALIFIKACJE — KRYTYCZNE" (~271-281) rozbudowanie pouczał o limicie 40 m, blokował dobór i podważał certyfikaty klienta.
+
+**Ustalenie faktograficzne (dane PROD, MySQL — nie hipoteza):**
+- Automaty (kategoria 286): **0 produktów** ma cechę „Głębokość"/„Max. głębokość" (id_feature 3/16). Głębokość nie jest parametrem automatu w naszym katalogu.
+- 110 automatów wspomina głębokość w opisie, ale wyłącznie jako opis zachowania („oddycha lekko na każdej głębokości") — **nigdy** jako limit typu „max 50 m". Producenci nie podają maksymalnej głębokości operacyjnej automatu.
+- Komputery (kat. 60): 21 produktów ma „Max. głębokość", ale to limit sprzętu (zwykle 100+ m), który w zakresie rekreacyjnym niczego nie różnicuje.
+- EN 250 występuje w opisach 49 automatów, ale **każdy** sprzedawany automat ma tę normę — nie różnicuje niczego, jak homologacja auta.
+
+**Zasada (Karol):** sklep sprzedaje sprzęt, nie jest instruktorem ani strażnikiem przepisów. Sprzedawca motocykla nie poucza klienta o limitach prędkości. Każdy nowoczesny automat obsłuży nurkowanie rekreacyjne — wybór zależy od budżetu, warunków (zimna woda), preferencji, prestiżu, **nie** od deklarowanej głębokości. Klient nurkujący na 20 m może chcieć najdroższy zestaw; ktoś na 40 m może wziąć ATX40.
+
+**Decyzja:**
+1. **Głębokość znika jako kryterium doboru (42c).** Linia ~209: przykład „dobór automatu przez głębokość" zastąpiony realnym kryterium — „dobór automatu do zimnej wody" (to JEST kryterium: EN 250A, wody poniżej 10°C). Pozostałe przykłady (styl pływacki dla płetw, temperatura wody dla pianek) zostają — są realne.
+2. **Blok „GŁĘBOKOŚĆ I KWALIFIKACJE" przepisany na „GŁĘBOKOŚĆ I CERTYFIKATY — NIE JEST TO NASZA ROLA" (43b + 44a).** Usunięte: pouczanie o limicie 40 m, blokada doboru („NIE dobieraj bezkrytycznie"), warunek „pomoc dopiero gdy jasne, że to rekreacja". Bot nie pyta profilaktycznie o głębokość ani o to, czy nurkowanie jest rekreacyjne czy techniczne.
+3. **Neutralność wobec certyfikatów — ani potwierdzanie, ani podważanie (44a).** Usunięte podważanie („fikcyjne lub błędne nazwy... nie istnieją lub są dyskusyjne"). Gdy klient powołuje się na uprawnienia, także nieznane: „Nie mam kompetencji do oceny certyfikatów nurkowych" — i przejście do doboru sprzętu. Nurek odpowiada za swoje decyzje.
+4. **EN 250 wyłącznie na wprost zadane pytanie (45a).** Bot nigdy nie podaje normy z siebie przy doborze — każdy automat ją ma, więc wzmianka o „50 m" odtworzyłaby dokładnie to fałszywe skojarzenie „głębokość = kryterium", które ten ADR usuwa. Ograniczenie siedzi w prompcie, **nie** w treści wpisu w bazie wiedzy (w bazie trafiłoby do embeddingu jako instrukcja zamiast wiedzy).
+5. **Wiedza o EN 250 trafia do `encyclopedia_chunks`, nie do `divechat_knowledge` (122a).** Nowy chunk `chunk_type='faq'` pod istniejącym hasłem `concept_key='AUTOMAT_ODDECHOWY'`, embedding `text-embedding-3-large` z **`dimensions=3072`**.
+6. **Treść wpisu: 50 m to warunek testu, nie limit (107b, 111a, 125a).** Norma bada automat przy 6 barach absolutnych (odpowiednik 50 m) i wentylacji 62,5 l/min. Norma **nie wyznacza** dopuszczalnej głębokości nurkowania — jest sprzętowa, nie jest zasadą nurkowania.
+7. **CC oznacza swoje rozmowy testowe (41b).** Po teście PROD przez realny czat CC dopisuje do `divechat_conversation_review.note` marker `[test CHAT-T-NNN, nie klient]` (dopisanie, nie nadpisanie; guard idempotentny). **Nie nadaje verdict** — ocena należy do Karola; `updated_by=NULL`. Powód: conv 667/668 były testami CC nieodróżnialnymi od klienckich i zaśmiecały kolejkę recenzji.
+
+**Alternatywy rozważane:**
+- Zostawić ostrzeżenie o 40 m „na wszelki wypadek" — odrzucone: głębokość nie jest cechą żadnego automatu w katalogu (0 produktów), więc ostrzeżenie nie wynika z danych, tylko z wyobrażenia o roli sklepu. Pouczanie odpycha klienta, który wie więcej od bota.
+- Podważanie nieznanych certyfikatów — odrzucone: bot nie ma jak zweryfikować uprawnień, a błędna ocena obraża klienta z realnymi kwalifikacjami. Neutralność jest jedyną uczciwą pozycją.
+- Nowe hasło `concept_key='NORMA_EN_250'` zamiast chunku pod `AUTOMAT_ODDECHOWY` — odrzucone (122a): wyszukiwanie jest semantyczne, pytanie o normę trafi w hasło o automatach; osobne hasło konkurowałoby semantycznie z istniejącym, które ma już komplet 5 chunków.
+- Wpis do `divechat_knowledge` zgodnie z pierwotną treścią tasku — **odrzucone jako błąd faktograficzny**: tabela ma 37 wierszy, ale **0 odczytów w `standalone/src`**; `get_expert_knowledge` czyta `encyclopedia_chunks` (`ExpertKnowledge.php:105`). Wpis nigdy nie trafiłby do bota. Patrz `_docs/44`, rozjazd R-2.
+- Treść „maksymalna głębokość normy: 50 m" + „testy producentów 100-200 m" (pierwotna wersja CC) — **odrzucone jako nieprawda**: 50 m to warunek testu, a testy producentów okazały się niepotwierdzone u źródeł (ryzyko fabrykacji). Parametry WOB/J/l/mbar wycięte (111a): mało który nurek wie, że taki parametr istnieje, a `get_expert_knowledge` szuka semantycznie — wpis o automatach będzie trafiany przy pytaniach o automaty, więc im mniej treści, o które klient nie pytał, tym mniej jest czym sypać.
+
+**Konsekwencje:**
+- Część promptowa (A+B+C): zmiana wyłącznie w `standalone/src/Chat/SystemPrompt.php` (świat BACKEND), zero zmian w module PS. Wdrożone 2026-07-16: backup `_deploy_bak/SystemPrompt.php.20260716_073433.bak`, md5 local==prod `de64aa30069397092441ed84335aa506`, `ea-php84 -l` clean, `/api/health` 200.
+- Test PROD: conv 710 (60 m + „Deep Air Diver 60" → bez pouczania o limicie, „nie mam kompetencji do oceny certyfikatów", dobór Shearwater/Suunto), conv 711 („szukam automatu" → pytania o budżet/zimną wodę/zestaw, **zero** pytań o głębokość — bug conv 668 nie wystąpił). Obie oznaczone markerem wg reguły 7.
+- Część D (wpis do bazy wiedzy) realizowana osobno przez instancję embeddings — sekcja **D2** tasku CHAT-T-138 (sekcja D pierwotna jest błędna i unieważniona). STOP przed zapisem do PG (ADR-089) + pg_dump przed INSERT.
+- Nie ruszono reguł o wyporności worka (~803-808) — tam głębokość jest realnym czynnikiem fizycznym (kompresja pianki), co jest czym innym niż kryterium doboru.
+- **NIE deployować `config/tools.php`** (dryf repo≠prod — rejestruje `ProductCombinations`, klasy nie ma na PROD → fatal + `/api/health` 500).
+
+**Implementacja:** CHAT-T-138 (A+B+C wdrożone; D2 w toku — instancja embeddings).
+
 ### ADR-121: Gołe linki w doborze zestawów — `get_curated_recommendations` nie zwracał `url` ani `name`; PL name+url dokładane do wspólnego enrichmentu
 
 **Data:** 2026-07-15 | **Status:** PRZYJĘTA | **Powiązane:** CHAT-T-139 (implementacja), karta Trello 18, ADR-065 (curated MVP + twardy staleness), ADR-106/CHAT-T-115 (`url_en` i `price_eur` w enrichment), ADR-115 (`get_popular_products` — wzorzec guarda na pusty slug), ADR-114 (dobór pod budżet — ścieżka, w której bug się ujawnia), ADR-117 (redukcja round-tripów — argument przeciw wariantowi b), ADR-119 (atrybucja — gołe linki psują też pomiar). **Decyzje Karola:** 52a, 52a-i.
