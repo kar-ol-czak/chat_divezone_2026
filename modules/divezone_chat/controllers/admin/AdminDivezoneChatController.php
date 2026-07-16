@@ -72,6 +72,9 @@ class AdminDivezoneChatController extends ModuleAdminController
     const TAB_EDITORIAL       = 'editorial';
     // CHAT-T-084 (ADR-090 faza 2 krok 3/3): raport CTR nudge (admin-only).
     const TAB_NUDGE_CTR       = 'nudge_ctr';
+    // CHAT-T-146 (ADR-124): atrybucja sprzedazy z czatu — dane z MySQL PS
+    // (pr_divechat_order_attribution + pr_orders). Widoczna dla WSZYSTKICH rol (106a).
+    const TAB_ATTRIBUTION     = 'attribution';
     // CHAT-T-084: prog "za mala proba" dla flagi w UI (sekcja 7 spec).
     const NUDGE_CTR_MIN_SAMPLE = 100;
 
@@ -127,7 +130,7 @@ class AdminDivezoneChatController extends ModuleAdminController
 
         // 1. Aktywna zakladka — z querystring lub form submit, default Rozmowy (CHAT-T-048, 106a).
         $activeTab = (string) Tools::getValue('tab', self::TAB_CONVERSATIONS);
-        if (!in_array($activeTab, array(self::TAB_CONVERSATIONS, self::TAB_RECOMMENDATIONS, self::TAB_MODELS, self::TAB_CONFIG, self::TAB_ANALYTICS, self::TAB_EDITORIAL, self::TAB_NUDGE_CTR), true)) {
+        if (!in_array($activeTab, array(self::TAB_CONVERSATIONS, self::TAB_RECOMMENDATIONS, self::TAB_MODELS, self::TAB_CONFIG, self::TAB_ANALYTICS, self::TAB_EDITORIAL, self::TAB_NUDGE_CTR, self::TAB_ATTRIBUTION), true)) {
             $activeTab = self::TAB_CONVERSATIONS;
         }
 
@@ -201,6 +204,10 @@ class AdminDivezoneChatController extends ModuleAdminController
             $tabContent = $this->renderNudgeCtrSection($employeeId);
         } elseif ($activeTab === self::TAB_EDITORIAL) {
             $tabContent = $this->renderEditorialSection($employeeId);
+        } elseif ($activeTab === self::TAB_ATTRIBUTION) {
+            // CHAT-T-146 (ADR-124): atrybucja czyta MySQL PS bezposrednio (Db::getInstance()),
+            // zero round-tripow do Railway PG. Widoczna dla wszystkich rol (106a).
+            $tabContent = $this->renderAttributionSection($employeeId);
         } else {
             $recommendations = $this->callBackend(self::ENDPOINT_RECOMMENDATIONS, $employeeId);
             $tabContent = $this->renderRecommendationsSection($recommendations);
@@ -397,6 +404,7 @@ class AdminDivezoneChatController extends ModuleAdminController
         $baseUrl = $this->context->link->getAdminLink('AdminDivezoneChat');
         $conv = $baseUrl . '&tab=' . self::TAB_CONVERSATIONS;
         $rec  = $baseUrl . '&tab=' . self::TAB_RECOMMENDATIONS;
+        $atr  = $baseUrl . '&tab=' . self::TAB_ATTRIBUTION;
         $ana  = $baseUrl . '&tab=' . self::TAB_ANALYTICS;
         $ctr  = $baseUrl . '&tab=' . self::TAB_NUDGE_CTR;
         $edi  = $baseUrl . '&tab=' . self::TAB_EDITORIAL;
@@ -405,6 +413,7 @@ class AdminDivezoneChatController extends ModuleAdminController
 
         $clsConv = $activeTab === self::TAB_CONVERSATIONS   ? ' is-active' : '';
         $clsRec  = $activeTab === self::TAB_RECOMMENDATIONS ? ' is-active' : '';
+        $clsAtr  = $activeTab === self::TAB_ATTRIBUTION     ? ' is-active' : '';
         $clsAna  = $activeTab === self::TAB_ANALYTICS       ? ' is-active' : '';
         $clsCtr  = $activeTab === self::TAB_NUDGE_CTR       ? ' is-active' : '';
         $clsEdi  = $activeTab === self::TAB_EDITORIAL       ? ' is-active' : '';
@@ -416,6 +425,9 @@ class AdminDivezoneChatController extends ModuleAdminController
         $html  = '<nav class="dz-tabs-nav" role="tablist">';
         $html .= '<a href="' . htmlspecialchars($conv, ENT_QUOTES) . '" class="dz-tab-link' . $clsConv . '" role="tab">' . $this->l('Rozmowy') . '</a>';
         $html .= '<a href="' . htmlspecialchars($rec, ENT_QUOTES) . '" class="dz-tab-link' . $clsRec . '" role="tab">' . $this->l('Rekomendacje') . '</a>';
+        // CHAT-T-146 (106a): Atrybucja POZA blokiem $isAdmin — widoczna dla wszystkich rol,
+        // inaczej niz Analityka i CTR zachety. Kolejnosc: po Rekomendacjach, przed Analityka.
+        $html .= '<a href="' . htmlspecialchars($atr, ENT_QUOTES) . '" class="dz-tab-link' . $clsAtr . '" role="tab">' . $this->l('Atrybucja') . '</a>';
         if ($isAdmin) {
             $html .= '<a href="' . htmlspecialchars($ana, ENT_QUOTES) . '" class="dz-tab-link' . $clsAna . '" role="tab">' . $this->l('Analityka') . '</a>';
             // CHAT-T-084 (ADR-090 faza 2): raport CTR nudge — admin-only (endpoint
@@ -2511,6 +2523,233 @@ JS;
 
         $html .= '</div></div>';
         return $html;
+    }
+
+    // ============================================================================
+    // SEKCJA: Atrybucja sprzedazy z czatu (CHAT-T-146, ADR-124, any-role 106a)
+    // ============================================================================
+    // Zrodlo danych: MySQL PrestaShop (Db::getInstance()), NIE Railway PG. Tabela
+    // pr_divechat_order_attribution + pr_orders sa w tej samej bazie — jeden JOIN.
+    // KRYTYCZNE (ADR-124):
+    //  - kwoty z o.total_paid, NIGDY total_paid_real (zawyzone 2x dla ~99% Tpay).
+    //  - "zaplacone" = os.paid=1 (pr_order_state), NIE o.valid (flaga ksiegowa).
+    private function renderAttributionSection($employeeId)
+    {
+        // Whitelist filtra okresu — jak w renderAnalyticsSection.
+        $days = (int) Tools::getValue('days', 30);
+        if (!in_array($days, array(7, 30, 90), true)) {
+            $days = 30;
+        }
+
+        $idLang = (int) $this->context->language->id;
+
+        // Prefiks z _DB_PREFIX_ (nie hardkodujemy "pr_"). $days i $idLang to (int) —
+        // bezpieczne do interpolacji; zadnych surowych wartosci z inputu w SQL.
+        $sql = 'SELECT a.id_order, a.chat_session_id, a.attribution_type, a.conversation_last_at,'
+             . ' o.reference, o.total_paid, o.date_add AS order_date, o.current_state,'
+             . ' osl.name AS stan_platnosci, os.paid AS czy_oplacone'
+             . ' FROM `' . _DB_PREFIX_ . 'divechat_order_attribution` a'
+             . ' JOIN `' . _DB_PREFIX_ . 'orders` o ON a.id_order = o.id_order'
+             . ' LEFT JOIN `' . _DB_PREFIX_ . 'order_state` os ON o.current_state = os.id_order_state'
+             . ' LEFT JOIN `' . _DB_PREFIX_ . 'order_state_lang` osl ON os.id_order_state = osl.id_order_state'
+             . ' AND osl.id_lang = ' . $idLang
+             . ' WHERE o.date_add >= DATE_SUB(NOW(), INTERVAL ' . (int) $days . ' DAY)'
+             . ' ORDER BY o.date_add DESC';
+
+        $rows = Db::getInstance()->executeS($sql);
+        if (!is_array($rows)) {
+            $rows = array();
+        }
+
+        $html  = '<div class="panel" style="border-top-left-radius:0;">';
+        $html .= '<div class="panel-heading"><i class="icon-shopping-cart"></i> ' . $this->l('Atrybucja — sprzedaz z czatu') . ' (' . $days . ' ' . $this->l('dni') . ')</div>';
+        $html .= '<div style="padding:18px;">';
+
+        $html .= $this->renderAttributionFilters($days);
+
+        // Nota metodologiczna (ADR-124) — zeby czytajacy wiedzial, co liczymy.
+        $html .= '<div style="margin:14px 0;padding:12px 14px;background:#f7f9fa;border:1px solid #e2e6e8;border-radius:4px;font-size:12px;color:#555;line-height:1.55;">';
+        $html .= '<strong>' . $this->l('Co liczy raport:') . '</strong> ' . $this->l('zamowienia klientow, ktorzy przed zakupem rozmawiali z czatem (cookie 30 dni). ');
+        $html .= $this->l('Kwota = wartosc zamowienia (total_paid). ');
+        $html .= '<strong>' . $this->l('Suma zamowiona') . '</strong> = wszystkie zamowienia; <strong>' . $this->l('suma oplacona') . '</strong> = tylko ze stanem oznaczonym jako oplacony. ';
+        $html .= $this->l('Zamowienie "oczekujace na przelew" to realna sprzedaz z czatu — klient kupil, jeszcze nie zaplacil.');
+        $html .= '</div>';
+
+        // Podsumowanie + tabela (jedno przejscie po $rows: sumy, mediana, wiersze).
+        $html .= $this->renderAttributionSummaryAndTable($rows);
+
+        $html .= '</div></div>';
+        return $html;
+    }
+
+    private function renderAttributionFilters($days)
+    {
+        $token = Tools::getAdminTokenLite('AdminDivezoneChat');
+
+        $html  = '<form method="get" class="dz-analytics-filters" action="">';
+        $html .= '<input type="hidden" name="controller" value="AdminDivezoneChat">';
+        $html .= '<input type="hidden" name="token" value="' . htmlspecialchars($token, ENT_QUOTES) . '">';
+        $html .= '<input type="hidden" name="tab" value="' . self::TAB_ATTRIBUTION . '">';
+
+        $html .= '<div><label for="dz-atr-days">' . $this->l('Okres (dni)') . '</label>';
+        $html .= '<select id="dz-atr-days" name="days" onchange="this.form.submit()">';
+        foreach (array(7, 30, 90) as $d) {
+            $sel = $d === $days ? ' selected' : '';
+            $html .= '<option value="' . $d . '"' . $sel . '>' . $d . '</option>';
+        }
+        $html .= '</select></div>';
+
+        $html .= '<noscript><button type="submit" style="padding:6px 14px;">' . $this->l('Zastosuj') . '</button></noscript>';
+        $html .= '</form>';
+        return $html;
+    }
+
+    /**
+     * CHAT-T-146: podsumowanie (2 sumy + mediana + liczba) i tabela zamowien.
+     * Jedno przejscie po wierszach — sumy i czasy liczymy tu, nie w SQL, bo total_paid
+     * trzeba sumowac warunkowo (opłacona vs zamowiona) a mediane liczymy z tablicy.
+     */
+    private function renderAttributionSummaryAndTable($rows)
+    {
+        $baseUrl = $this->context->link->getAdminLink('AdminDivezoneChat');
+
+        $count       = 0;
+        $sumOrdered  = 0.0;   // suma zamowiona = SUM(total_paid) wszystkich
+        $sumPaid     = 0.0;   // suma oplacona = SUM(total_paid) gdzie os.paid=1
+        $durations   = array(); // sekundy rozmowa->zakup (tylko gdy znamy conversation_last_at)
+        $tableRows   = '';
+
+        foreach ($rows as $r) {
+            $count++;
+            $totalPaid = isset($r['total_paid']) ? (float) $r['total_paid'] : 0.0;
+            $isPaid    = isset($r['czy_oplacone']) && (int) $r['czy_oplacone'] === 1;
+            $sumOrdered += $totalPaid;
+            if ($isPaid) {
+                $sumPaid += $totalPaid;
+            }
+
+            $reference = isset($r['reference']) ? (string) $r['reference'] : ('#' . (isset($r['id_order']) ? (int) $r['id_order'] : 0));
+            $idOrder   = isset($r['id_order']) ? (int) $r['id_order'] : 0;
+            $orderDate = isset($r['order_date']) ? (string) $r['order_date'] : '';
+            $convLast  = isset($r['conversation_last_at']) ? (string) $r['conversation_last_at'] : '';
+            $stanName  = isset($r['stan_platnosci']) ? (string) $r['stan_platnosci'] : '';
+            $type      = isset($r['attribution_type']) ? (string) $r['attribution_type'] : '';
+            $sessionId = isset($r['chat_session_id']) ? (string) $r['chat_session_id'] : '';
+
+            // Czas rozmowa -> zakup: order_date - conversation_last_at (sekundy).
+            $durSeconds = null;
+            if ($convLast !== '' && $orderDate !== '') {
+                $tsOrder = strtotime($orderDate);
+                $tsConv  = strtotime($convLast);
+                if ($tsOrder !== false && $tsConv !== false && $tsOrder >= $tsConv) {
+                    $durSeconds = $tsOrder - $tsConv;
+                    $durations[] = $durSeconds;
+                }
+            }
+
+            // Link do zamowienia w PS.
+            $orderLink = $this->context->link->getAdminLink('AdminOrders') . '&id_order=' . $idOrder . '&vieworder';
+            // Link do rozmowy: zakladka Rozmowy z session_id (chat_session_id = cookie widgetu,
+            // ten sam identyfikator co session_id rozmowy — patrz hookActionValidateOrder).
+            $convLink = $baseUrl . '&tab=' . self::TAB_CONVERSATIONS . '&session_id=' . rawurlencode($sessionId);
+
+            // Typ atrybucji — czytelna etykieta.
+            $typeLabel = $type === 'last_touch'
+                ? $this->l('ostatni kontakt')
+                : ($type === 'assist' ? $this->l('wspomaganie') : htmlspecialchars($type, ENT_QUOTES));
+
+            // Wyroznienie stanu oplaconego.
+            $paidBadge = $isPaid
+                ? '<span style="display:inline-block;padding:2px 8px;border-radius:3px;background:#dff0d8;color:#3c763d;font-weight:600;font-size:0.85em;">' . htmlspecialchars($stanName !== '' ? $stanName : $this->l('Zaplacone'), ENT_QUOTES) . '</span>'
+                : '<span style="color:#8a6d3b;">' . htmlspecialchars($stanName !== '' ? $stanName : $this->l('(brak stanu)'), ENT_QUOTES) . '</span>';
+
+            $tableRows .= '<tr' . ($isPaid ? ' style="background:#fbfffb;"' : '') . '>';
+            $tableRows .= '<td><a href="' . htmlspecialchars($orderLink, ENT_QUOTES) . '" target="_blank" rel="noopener"><strong>' . htmlspecialchars($reference, ENT_QUOTES) . '</strong></a></td>';
+            $tableRows .= '<td>' . htmlspecialchars($this->formatConvDate($orderDate), ENT_QUOTES) . '</td>';
+            $tableRows .= '<td style="text-align:right;white-space:nowrap;"><strong>' . number_format($totalPaid, 2, ',', ' ') . ' zl</strong></td>';
+            $tableRows .= '<td>' . $paidBadge . '</td>';
+            $tableRows .= '<td>' . $typeLabel . '</td>';
+            $tableRows .= '<td style="white-space:nowrap;">' . ($durSeconds === null ? '<span style="color:#bbb;">&mdash;</span>' : htmlspecialchars($this->formatDuration($durSeconds), ENT_QUOTES)) . '</td>';
+            $tableRows .= '<td>' . ($sessionId !== '' ? '<a href="' . htmlspecialchars($convLink, ENT_QUOTES) . '">' . $this->l('rozmowa') . '</a>' : '<span style="color:#bbb;">&mdash;</span>') . '</td>';
+            $tableRows .= '</tr>';
+        }
+
+        // Mediana czasu rozmowa -> zakup.
+        $medianLabel = '&mdash;';
+        if (!empty($durations)) {
+            sort($durations, SORT_NUMERIC);
+            $n = count($durations);
+            $mid = (int) floor($n / 2);
+            $median = ($n % 2 === 1) ? $durations[$mid] : (int) round(($durations[$mid - 1] + $durations[$mid]) / 2);
+            $medianLabel = $this->formatDuration($median);
+        }
+
+        // Podsumowanie (decyzja 104b: dwie sumy).
+        $html  = '<div class="dz-analytics-kpi-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;">';
+        $html .= $this->renderAttributionKpiCard($this->l('Zamowienia z czatu'), (string) $count, '');
+        $html .= $this->renderAttributionKpiCard($this->l('Suma zamowiona'), number_format($sumOrdered, 2, ',', ' ') . ' zl', $this->l('wszystkie zamowienia'));
+        $html .= $this->renderAttributionKpiCard($this->l('Suma oplacona'), number_format($sumPaid, 2, ',', ' ') . ' zl', $this->l('stan oznaczony jako oplacony'));
+        $html .= $this->renderAttributionKpiCard($this->l('Mediana rozmowa -> zakup'), $medianLabel, '');
+        $html .= '</div>';
+
+        if ($count === 0) {
+            $html .= '<p style="padding:14px;background:#f7f9fa;border:1px solid #e2e6e8;border-radius:4px;color:#777;">'
+                   . $this->l('Brak zamowien z czatu w wybranym okresie. Sprobuj wydluzyc okres lub poczekaj na ruch.')
+                   . '</p>';
+            return $html;
+        }
+
+        $html .= '<table class="table" style="margin-top:8px;">';
+        $html .= '<thead><tr>';
+        $html .= '<th>' . $this->l('Zamowienie') . '</th>';
+        $html .= '<th>' . $this->l('Data') . '</th>';
+        $html .= '<th style="text-align:right;">' . $this->l('Kwota') . '</th>';
+        $html .= '<th>' . $this->l('Stan platnosci') . '</th>';
+        $html .= '<th>' . $this->l('Typ') . '</th>';
+        $html .= '<th>' . $this->l('Rozmowa -> zakup') . '</th>';
+        $html .= '<th>' . $this->l('Rozmowa') . '</th>';
+        $html .= '</tr></thead><tbody>';
+        $html .= $tableRows;
+        $html .= '</tbody></table>';
+
+        return $html;
+    }
+
+    private function renderAttributionKpiCard($title, $value, $sub)
+    {
+        $html  = '<div class="dz-analytics-kpi-card" style="background:#fff;border:1px solid #e2e6e8;border-radius:6px;padding:14px 16px;">';
+        $html .= '<div class="dz-kpi-title" style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#888;font-weight:600;">' . htmlspecialchars($title, ENT_QUOTES) . '</div>';
+        $html .= '<div class="dz-kpi-main" style="font-size:22px;font-weight:700;color:#1a5e5a;margin-top:4px;">' . htmlspecialchars($value, ENT_QUOTES) . '</div>';
+        if ($sub !== '') {
+            $html .= '<div class="dz-kpi-sub" style="font-size:11px;color:#999;margin-top:2px;">' . htmlspecialchars($sub, ENT_QUOTES) . '</div>';
+        }
+        $html .= '</div>';
+        return $html;
+    }
+
+    /**
+     * CHAT-T-146: sekundy -> czytelny czas ("23 min", "2 h 15 min", "3 dni").
+     */
+    private function formatDuration($seconds)
+    {
+        $seconds = (int) $seconds;
+        if ($seconds < 60) {
+            return $this->l('mniej niz min');
+        }
+        $minutes = (int) floor($seconds / 60);
+        if ($minutes < 60) {
+            return $minutes . ' ' . $this->l('min');
+        }
+        $hours = (int) floor($minutes / 60);
+        if ($hours < 24) {
+            $remMin = $minutes % 60;
+            return $remMin > 0
+                ? $hours . ' h ' . $remMin . ' ' . $this->l('min')
+                : $hours . ' h';
+        }
+        $dayCount = (int) floor($hours / 24);
+        $dayWord  = ($dayCount === 1) ? $this->l('dzien') : $this->l('dni');
+        return $dayCount . ' ' . $dayWord;
     }
 
     // ============================================================================
