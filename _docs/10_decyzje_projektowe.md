@@ -3731,3 +3731,44 @@ Przy weryfikacji implementacji CHAT-T-143 (KROK 7, przed deployem) architekt zna
 **Poza zakresem (osobne decyzje):** strumień GA4 (dataLayer + GTM) — druga połowa ADR-119, do zrobienia po panelu; naprawa podwójnych płatności Tpay (Sklep - 31); atrybucja `assist` vs `last_touch` w rozbiciu na kanały.
 
 **Implementacja:** CHAT-T-145 (instancja frontend/PS). Deploy: świat SHOP+WIDGET (`newtmp2`), ręczny rsync Karola, potem czyszczenie `var/cache/prod` + LSCache.
+
+---
+
+### ADR-125: Kategoria w `embedding_name` — eksperyment z bramą pomiarową (wątek pochodny ADR-122)
+
+**Data:** 2026-07-15 | **Status:** EKSPERYMENT (wynik rozstrzyga bramа pomiarowa) | **Powiązane:** ADR-122 (konkatenacja `category_name`, nota nr 1 — zasięg zmiany), CHAT-T-142, CHAT-T-144, karta Trello Chat - 26. **Decyzje Karola:** 78a (założyć kartę), 101a (tylko `text_name`).
+
+**Kontekst — skąd wątek:** przy bramie CHAT-T-142 Claude Code wykrył i zgłosił, że `category_name` zasila **wyłącznie** `text_desc` i single-vector. Zweryfikowane w `embed_target_products.py`, `build_multivector_texts()` (~74-93):
+- `text_name` = `product_name + " " + brand_name` — **BEZ kategorii**
+- `text_desc` = `Kategoria: {category_name}. {opis[:500]}. Cechy: {...}` — kategoria TYLKO tu
+- `text_jargon` = `", ".join(search_phrases)` — **BEZ kategorii**
+
+`ProductSearch.php` (~413-415) odpytuje wszystkie trzy tory równolegle i łączy wyniki (RRF). Zatem konkatenacja z ADR-122 poprawiła tylko tor `desc` (7647: **+0.0421**), a tory `name`/`jargon` pozostały nietknięte (Δ=0.0000 w bramie — nie mogły się zmienić).
+
+**Pytanie do rozstrzygnięcia:** czy dołożenie `category_name` do `text_name` poprawia trafność, czy rozmywa sygnał?
+
+**Decyzja 101a — testujemy WYŁĄCZNIE `text_name`.** Jeden wariant, jeden pomiar.
+- **Odrzucone (b) `name` + `jargon` naraz:** dwie zmienne w jednym pomiarze = nie wiadomo, która zadziałała.
+- **Odrzucone (c) tylko `jargon`:** `text_jargon` to `search_phrases` — kuratorowana lista **języka klienta** („perdix", „komputer techniczny", „automat na zimną wodę"). Wrzucanie tam taksonomii sklepu miesza dwie różne rzeczy. `text_name` już zawiera markę, czyli element taksonomii — kategoria jest tam naturalnym rozszerzeniem, nie ciałem obcym.
+
+**Ryzyko (uzasadnia bramę):** `text_name` jest dziś **najcelniejszym** torem — 0.9137 dla „Shearwater Perdix 3", 0.8612 dla „Scubapro MK17 zestaw". Jest krótki (2-6 słów), więc każde słowo waży dużo. Doklejenie do 4 nazw kategorii może sprawić, że nazwa produktu przestanie dominować i utonie wśród taksonomii. **Ryzykujemy popsucie tego, co działa najlepiej.**
+
+**Brama pomiarowa (wzór 72b z ADR-122) — warunek konieczny:**
+1. `pg_dump` przed czymkolwiek.
+2. Próbka 30-50, obowiązkowo zawierająca: 7641, 7648, 7647, 2369, 7545 + kilka jednokategoryjnych jako kontrola.
+3. Pomiar PRZED/PO na frazach bazowych (zmierzone w CHAT-T-142, brama):
+
+| fraza | `name` PRZED | `jargon` PRZED |
+|---|---|---|
+| „Shearwater Perdix 3" → 7641 | **0.9137** | 0.9137 |
+| „Scubapro MK17 zestaw" → 7648 | **0.8612** | 0.8600 |
+| „zestaw automatu Apeks MTX-RC" → 7647 | **0.7737** | 0.7686 |
+
+4. **Kryterium rozstrzygające:** `name` rośnie lub bez zmian → wdrażamy na całym katalogu. `name` **spada** → **odrzucamy zmianę**, przywracamy stan z `pg_dump`, ADR dostaje status ODRZUCONA z liczbami.
+5. STOP przed pełnym przebiegiem — decyzję podejmuje Karol na podstawie tabeli PRZED/PO.
+
+**Uwaga metodologiczna:** `jargon` musi zostać nietknięty, żeby służył jako **kontrola** — jeśli `name` spadnie, a `jargon` nie, wiemy, że przyczyną jest zmiana, nie szum pomiaru.
+
+**Konsekwencje:** zmiana dotyczy `build_multivector_texts()` — czyli `embedding_name` **całego katalogu** (2591 wpisów), nie tylko wielokategoryjnych. Re-embed pełny, ale dopiero po bramie. Zero zmian w `ProductSearch`, zero deployu (pipeline lokalny, tunel SSH).
+
+**Implementacja:** CHAT-T-145 (instancja embeddings).
