@@ -3696,3 +3696,38 @@ Przy weryfikacji implementacji CHAT-T-143 (KROK 7, przed deployem) architekt zna
 **Decyzja 93a:** **usunąć filtr `visibility` z `ProductSearch` (obie lokalizacje)**. Kryterium zostaje: `active` + `available_for_order`. Uzasadnienie: filtr `afo` **zastępuje** filtr `visibility` — po to powstał. Luigi's Box pokazuje produkty `vis='none'` klientom (ADR-122 nota nr 3), więc bot, który ich nie widzi, jest gorszy niż sklep. Zostawienie obu filtrów = T-143 rozwiązuje 47 z 520 przypadków.
 **Skutek uboczny do odnotowania:** 11 produktów `visibility='none'` + `available_for_order=1` (ukryte, ale **da się zamówić**) dziś wypada z wyników — po zmianie wejdą normalnie. To poprawne: skoro da się je kupić i Luigi's Box je pokazuje, bot ma je znać.
 **Pole `visible` w `enrich()` zostaje** (może być użyte gdzie indziej) — usuwamy tylko jego użycie jako kryterium filtrowania w `ProductSearch`.
+
+---
+
+### ADR-124: Widok atrybucji czatu w panelu PS — sprzedaż z rozmów widoczna bez SSH
+
+**Data:** 2026-07-15 | **Status:** PRZYJĘTA | **Powiązane:** ADR-119 (architektura atrybucji, strumień deterministyczny), CHAT-T-136 (implementacja cookie+hook+tabela), karta Trello Chat - 17, karta Sklep - 31 (podwójne płatności Tpay), ADR-070 (panel standalone wygaszany). **Decyzje Karola:** 102c, 104b, 105a (= potwierdzenie wdrożonej 34b), 106a.
+
+**Kontekst — mechanizm działa, ale nikt go nie widzi:** CHAT-T-136 wdrożył strumień deterministyczny (cookie `divechat_session_id` → hook `actionValidateOrder` → tabela `pr_divechat_order_attribution`). Zweryfikowane na PROD 2026-07-15: tabela istnieje, hook zarejestrowany (`actionValidateOrder` + `displayFooter`), cookie ma `maxAge = 2592000` (30 dni, decyzja 34b). **Mechanizm złapał 2 realne zamówienia klientów bez żadnego testu:**
+
+| zamówienie | kwota | rozmowa → zakup | stan |
+|---|---|---|---|
+| QETUBCWYS (122970) | 3619,00 zł | 21:33 → 21:56 (**23 min**) | Zapłacone (Tpay) |
+| UDRDJMBTG (122952) | 312,80 zł | 15:28 → 15:32 (**4 min**) | Oczekiwanie na przelew |
+
+**Problem:** dane siedzą w tabeli MySQL, do której zagląda wyłącznie ktoś z SSH. Brak widoku w panelu, brak raportu. Drugi strumień z ADR-119 (GA4 przez dataLayer/GTM) **nie jest zaimplementowany**.
+
+**Decyzja 102c — kolejność: najpierw panel PS, GA4 potem.** Uzasadnienie: dane już są i są kompletne. Strumień deterministyczny nie zależy od zgody na cookies ani od blokerów reklam, więc jest **dokładniejszy niż GA4**. Panel da prawdę o sprzedaży z czatu w tydzień. GA4 dołoży lejki i porównania z innymi kanałami, ale jest wtórny: gdy GA4 pokaże mniej niż tabela, wiemy, że to bloker, nie brak sprzedaży.
+
+**Decyzja 104b — co liczymy jako sprzedaż z czatu:** wszystkie ważne zamówienia, **ze stanem płatności jako osobną kolumną**. Nie tylko opłacone (104a) — UDRDJMBTG (312,80 zł, czeka na przelew) to realna sprzedaż z czatu, klient kupił, tylko jeszcze nie zapłacił; filtrowanie po `paid=1` zaniżyłoby wynik czatu. Nie wszystkie ze stanami (104c) — zaśmieciłoby widok rzeczami, które i tak widać w PS. Widok pokazuje **dwie sumy: zamówioną i opłaconą**.
+
+**KRYTYCZNE — liczymy `total_paid`, NIE `total_paid_real`:** zweryfikowane na PROD, `total_paid_real` jest **zawyżone dwukrotnie dla 1246 z 1259 zamówień Tpay** (99%) — moduł Tpay zapisuje płatność dwa razy, raz z `transaction_id`, raz z pustym (karta Sklep - 31). Tpay to dominująca metoda płatności, więc raport na `total_paid_real` pokazałby ~2× przychód. `total_paid` jest poprawne.
+
+**Decyzja 105a — okno atrybucji 30 dni.** Potwierdzenie stanu wdrożonego (decyzja 34b): `widget-bundle.js` ustawia `divechat_session_id` i `divechat_last_at` z `max-age=2592000`. Standard w e-commerce (tyle ma domyślnie GA4 dla `last_touch`), uzasadniony asortymentem — zestaw za 3619 zł rzadko kupuje się w dniu rozmowy. **Nota:** architekt zadał to pytanie, nie sprawdziwszy, że decyzja była już podjęta i wdrożona.
+
+**Decyzja 106a — dostęp:** zakładka widoczna dla wszystkich z dostępem do panelu czatu, bez osobnych uprawnień. Panel i tak pokazuje pełną treść rozmów z klientami, więc kwoty zamówień nie są większą tajemnicą. Ograniczanie dostępu = praca przy zerowym zysku.
+
+**Zakres widoku (zakładka „Atrybucja" w `AdminDivezoneChatController`):**
+- lista zamówień z czatu: numer (`reference`), data, kwota (`total_paid`), stan płatności (`pr_order_state_lang.name` + flaga `paid`), typ atrybucji (`last_touch` / `assist`), czas rozmowa → zakup, link do rozmowy (`conversation_id`) i do zamówienia w PS
+- filtr okresu (domyślnie 30 dni)
+- podsumowanie: liczba zamówień, **suma zamówiona**, **suma opłacona**, mediana czasu rozmowa → zakup
+- **świat: moduł PS** (`newtmp2`), NIE panel standalone (ADR-070 — wygaszany)
+
+**Poza zakresem (osobne decyzje):** strumień GA4 (dataLayer + GTM) — druga połowa ADR-119, do zrobienia po panelu; naprawa podwójnych płatności Tpay (Sklep - 31); atrybucja `assist` vs `last_touch` w rozbiciu na kanały.
+
+**Implementacja:** CHAT-T-145 (instancja frontend/PS). Deploy: świat SHOP+WIDGET (`newtmp2`), ręczny rsync Karola, potem czyszczenie `var/cache/prod` + LSCache.
