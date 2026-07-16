@@ -3730,7 +3730,7 @@ Przy weryfikacji implementacji CHAT-T-143 (KROK 7, przed deployem) architekt zna
 
 **Poza zakresem (osobne decyzje):** strumień GA4 (dataLayer + GTM) — druga połowa ADR-119, do zrobienia po panelu; naprawa podwójnych płatności Tpay (Sklep - 31); atrybucja `assist` vs `last_touch` w rozbiciu na kanały.
 
-**Implementacja:** CHAT-T-145 (instancja frontend/PS). Deploy: świat SHOP+WIDGET (`newtmp2`), ręczny rsync Karola, potem czyszczenie `var/cache/prod` + LSCache.
+**Implementacja:** CHAT-T-146 (instancja frontend/PS). Deploy: świat SHOP+WIDGET (`newtmp2`), ręczny rsync Karola, potem czyszczenie `var/cache/prod` + LSCache.
 
 ---
 
