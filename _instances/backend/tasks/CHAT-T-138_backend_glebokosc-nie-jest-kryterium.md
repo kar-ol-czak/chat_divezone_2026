@@ -158,3 +158,29 @@ push. NIE `git add .` (drzewo ma cudze pliki). Po deployu osobny docs: commit.
 ## Domkniecie
 Po zweryfikowanym deployu i tescie PROD: karta → "Zrobione". Rozmowa 668 (jesli jest
 w recenzji) → oznacz markerem testu wg reguly E, verdict zostaw Karolowi.
+
+## Wynik (CC, 2026-07-16)
+Zakres A+B+C wykonany w SystemPrompt.php:
+- Linia 209: usuniety przyklad "dobor automatu przez glebokosc" → zastapiony realnym
+  "dobor automatu do zimnej wody" (42c).
+- Blok "GLEBOKOSC I KWALIFIKACJE — KRYTYCZNE" przepisany na "GLEBOKOSC I CERTYFIKATY —
+  NIE JEST TO NASZA ROLA" wg sekcji B (43b+44a); usuniete pouczanie o 40 m, blokada
+  doboru, podwazanie certyfikatow, case "Deep Air Diver 60"; nowy bug-case conv 668.
+- Dodany akapit o normach sprzetowych (EN 250 TYLKO na wprost zadane pytanie — 45a,
+  strona promptowa).
+- Grep C: poza zmienionymi liniami brak innych miejsc uczacych "glebokosc = kryterium";
+  wypornosc worka (~803-808) i sekcja instruktorow nietkniete.
+Czesc D (INSERT EN 250 do divechat_knowledge + embedding): WSTRZYMANA — tresc czeka
+na akceptacje Karola, potem instancja embeddings.
+Deploy: rsync SystemPrompt.php → chat.divezone.pl/src/Chat/ 2026-07-16, backup
+_deploy_bak/SystemPrompt.php.20260716_073433.bak, ea-php84 -l clean,
+md5 local==prod (de64aa30069397092441ed84335aa506), /api/health 200.
+Test PROD: conv 710 (60 m + Deep Air Diver 60 → bez pouczania o 40 m, "Nie mam
+kompetencji do oceny certyfikatow nurkowych", dobor Shearwater/Suunto; jedna miekka
+wzmianka "upewnij sie ze masz uprawnienia" w 1. turze — bez ostrzezen o limicie),
+conv 711 ("szukam automatu" → pyta o budzet/zimna woda/zestaw-czy-sam, ZERO pytan
+o glebokosc — bug conv 668 nie wystapil). Obie rozmowy oznaczone
+[test CHAT-T-138, nie klient] w divechat_conversation_review (bez verdict,
+updated_by=NULL) — regula E.
+Testy CLI: zielone poza stanem zastanym (PricingServiceTest 24/3, SantiSearchTest
+fatal, size_recommender e2e/parity brak MySQL lokalnie).
