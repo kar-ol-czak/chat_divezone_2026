@@ -595,13 +595,13 @@ bazy Railway, a inwentarz MySQL i kontrakty narzędzi — z kodu z numerami lini
 
 | pole / obiekt | odruch (BŁĘDNY) | stan faktyczny | źródło prawdy |
 |---|---|---|---|
-| `pr_product_shop.visibility` | `'none'` = klient tego nie znajdzie | wyszukiwarką sklepu jest **Luigi's Box** (zewnętrzna) i **ignoruje to pole**. Produkt `vis='none'` JEST w wynikach. Dowód Karola: `divezone.pl/szukaj?s=Torba MARES Cruise` → produkt 3920 | rozjazd R-1, ADR-123 nota 93a |
+| `pr_product_shop.visibility` | `'none'` = klient tego nie znajdzie | wyszukiwarką sklepu jest **Luigi's Box** (zewnętrzna) i **ignoruje to pole**. Produkt `vis='none'` JEST w wynikach. Dowód Karola: `divezone.pl/szukaj?s=Torba MARES Cruise` → produkt 3920 | rozjazd R-3, ADR-123 nota 93a |
 | `pr_product_shop.available_for_order` | — | **właściwe** kryterium „czy można kupić". `afo=0` = wycofany ze sprzedaży | ADR-123 |
 | `pr_orders.valid` | `0` = niezapłacone | flaga **księgowa** (logable), nie ma nic wspólnego z zapłatą. Dowód: QETUBCWYS `valid=0`, stan „Zapłacone", Tpay | `current_state` → `pr_order_state.paid` |
 | `pr_orders.total_paid_real` | ile faktycznie wpłynęło | **2× zawyżone dla 1246/1259 zamówień Tpay** (99%). Moduł zapisuje płatność dwa razy: raz z `transaction_id`, raz z pustym. Inne bramki (Przelewy24, Revolut, PayPal, PayU = 624 zam.): **zero** podwojeń | **licz `total_paid`**. Karta Sklep - 31 |
 | `pr_stock_available.quantity` | stan magazynowy | **zaślepki** (9999999, 29998). Zestawy mają `quantity=0`, bo Firmes wiąże SKU literalnie z Subiektem, a zestawy mają sklejone SKU | **Subiekt ERP** |
 | `pr_stock_available.out_of_stock` | — | `2` = „użyj domyślnego zachowania sklepu" → **zamówienie przechodzi mimo `quantity=0`**. To jest mechanizm, nie obejście | ADR-123, karta Chat - 21 |
-| **`similarity` w tool_result `search_products`** | cosine, skala 0-1 | to **`rrf_score`** — Reciprocal Rank Fusion, `1/(k+rank)`, `rrf_k=60`. **Sufit ~0,065 przy 4 torach.** `0,0713` to wynik **najlepszy z możliwych**, nie „7% dopasowania" | sekcja 5, rozjazd R-3 |
+| **`similarity` w tool_result `search_products`** | cosine, skala 0-1 | to **`rrf_score`** — Reciprocal Rank Fusion, `1/(k+rank)`, `rrf_k=60`. **Sufit ~0,065 przy 4 torach.** `0,0713` to wynik **najlepszy z możliwych**, nie „7% dopasowania" | sekcja 5 (`ProductSearch.php:19,769-1074`) |
 | `similarity` w `get_expert_knowledge` | — | **tu jest prawdziwy cosine** (0-1). Dlatego próg 0,5 działa tam, a w `search_products` nie. **Dwa narzędzia, to samo pole, dwie różne skale** | `ExpertKnowledge.php` |
 | **`divechat_knowledge`** | baza wiedzy eksperta (tak mówi `02_schemat_bazy.md` i `CLAUDE.md`) | **MARTWA.** 37 wpisów, najnowszy 2026-02-19, **zero odczytów w `standalone/src`**. Wpis tam = praca w błoto | **`encyclopedia_chunks`** (`ExpertKnowledge.php:105`). Rozjazd R-2 |
 | `divechat_conversations.created_at` | — | **nie istnieje**. Kolumna nazywa się `started_at` | sekcja 2 |

@@ -28,13 +28,15 @@ Czat AI ze wyszukiwaniem semantycznym dla sklepu nurkowego divezone.pl (PrestaSh
 
 **REGUŁA BRZYTWY OKHAMA:** po każdym deployu widgetu/modułu NAJPIERW najprostsza hipoteza = cache (przeglądarka + sklep), zanim diagnozować kod/API. Nie rozbierać na części tego, co już zweryfikowane jako poprawne.
 
+**⚠️ REGUŁA: NAZWA POLA NIE JEST JEGO ZNACZENIEM — `_docs/44_slownik_pol_i_metryk.md` CZYTAJ PRZED DIAGNOZĄ.** Inwentarz pól obu baz, kontraktów `tool_result`, skal metryk i rozjazdów kod↔ADR (CHAT-T-147). **Zaczynaj od sekcji „PUŁAPKI — ŚCIĄGA"** (koniec pliku): skondensowana lista pól, których nazwa kłamie. Zweryfikowane pułapki m.in.: `visibility` (ignoruje ją Luigi's Box — wyszukiwarka sklepu), `pr_orders.valid` (flaga księgowa, nie zapłata — ta jest w `current_state`→`pr_order_state.paid`), `total_paid_real` (2× zawyżone dla Tpay), `pr_stock_available.quantity` (zaślepki, źródło prawdy = Subiekt), `similarity` w `search_products` (to `rrf_score`, skala 0–0,065, NIE cosine), `divechat_knowledge` (MARTWA — bot czyta `encyclopedia_chunks`). **Dwa pytania przed każdym wnioskiem o polu: co realnie zawiera i KTO to czyta.** Drugie jest ważniejsze — pole może mieć poprawną treść i być martwe. Nową pułapkę dopisuj do tej sekcji: jedna linijka, z dowodem.
+
 **GIT NA SMB (repo leży na sieciowym share `/Volumes/karol`):** operacje gita bywają wolne, a `git add` sporadycznie pada na `fatal: unable to write new index file` (błąd przejściowy — ponowienie zawsze pomaga, nic nie ginie; przyczyna niezdiagnozowana, sam zapis i rename działają w izolacji 20/20 i 30/30). Usprawnienie zmierzone 2026-07-15: `git config core.untrackedCache true` + `git config core.preloadIndex true` → `git status` z 0,98 s na ~0,07 s (13x). Ustawienia są lokalne dla klonu (`.git/config`, niewersjonowane) — po świeżym klonie trzeba włączyć ponownie. Gdy błąd zapisu wróci: po prostu ponowić.
 
 ## Status projektu (2026-02-20)
 
 ### Ukończone
 - [x] Architektura: ADR-001 do ADR-018 w _docs/10_decyzje_projektowe.md
-- [x] Baza Q&A: 37 wpisów z embeddingami (divechat_knowledge)
+- [x] ~~Baza Q&A: 37 wpisów z embeddingami (divechat_knowledge)~~ — **NIEAKTUALNE. `divechat_knowledge` jest MARTWA** (37 wpisów, najnowszy 2026-02-19, zero odczytów w `standalone/src`, zweryfikowane 2026-07-16). Bazą wiedzy eksperta jest **`encyclopedia_chunks`** (530 chunków, 106 haseł, vector 3072), czytana przez `get_expert_knowledge` (`ExpertKnowledge.php:105`). Wpis do `divechat_knowledge` = praca w błoto. Rozjazd R-2 w `_docs/44`.
 - [x] Embeddingi produktów: 2670 aktywnych produktów (divechat_product_embeddings)
 - [x] Model embeddingów: text-embedding-3-large, dimensions=1536 (ADR-012)
 - [x] Mapa 79 marek aktywnych w sklepie (_docs/11_mapa_marek.md)
@@ -110,12 +112,24 @@ Chat_dla_klientow_2026/
 ```
 
 ## Dokumentacja (_docs/)
-- `00_architektura_projektu.md` — architektura systemu
-- `02_schemat_bazy.md` — tabele PostgreSQL (vector 1536 dim)
-- `04_qa_baza_wiedzy.md` — baza Q&A (37 wpisów)
+- **`44_slownik_pol_i_metryk.md` — INWENTARZ PÓL I METRYK. CZYTAJ PRZED KAŻDĄ DIAGNOZĄ.**
+  Stan faktyczny kodu i obu baz (nie stan projektowany w ADR): pola PG, pola MySQL PS,
+  kontrakty `tool_result` (12 narzędzi), skale metryk (`rrf_score` vs cosine), przepływ
+  end-to-end, rozjazdy kod↔ADR (R-1..R-7), „NIE USTALONO". **Sekcja „PUŁAPKI — ŚCIĄGA"
+  na końcu = pola, których nazwa kłamie.** Każde twierdzenie ma źródło (plik+linia /
+  tabela+kolumna / wynik zapytania). Gdy dokument poniżej mówi co innego niż `44` —
+  **obowiązuje `44`** (opisuje kod, tamte bywają projektowe).
+- `00_architektura_projektu.md` — architektura systemu (**nie zawiera RRF ani `knowledge_gap`** — patrz `44`)
+- `02_schemat_bazy.md` — tabele PostgreSQL. **UWAGA: nieaktualny** (wersja 1.2, 2026-02-20).
+  Opisuje 3 tabele, realnie jest 30 `divechat_*`; twierdzi „Gemini embedding-001", realnie
+  **OpenAI text-embedding-3-large**; opisuje `divechat_knowledge` jako bazę wiedzy — **martwa**.
+  Rozjazdy R-1, R-2, R-7 w `44`. Realny schemat: `44` sekcja 2.
+- `04_qa_baza_wiedzy.md` — baza Q&A (37 wpisów). **UWAGA: opisuje MARTWĄ `divechat_knowledge`.**
+  Żywa baza wiedzy = `encyclopedia_chunks` (`get_expert_knowledge`). Rozjazd R-2.
 - `08_testy_i_ewaluacja.md` — pytania testowe, metryki
-- `10_decyzje_projektowe.md` — ADR-001 do ADR-019
-- `11_mapa_marek.md` — 79 marek aktywnych
+- `10_decyzje_projektowe.md` — ADR-001 do **ADR-125** (stan 2026-07-16; przed nowym ADR sprawdź `grep '^### ADR-' | tail`)
+- `11_mapa_marek-reviewed.md` — **mapa marek po korekcie Karola. TEJ używaj** (encyklopedia, czat AI)
+- `11_mapa_marek.md` — wersja pierwotna, 79 marek. **Zastąpiona przez `-reviewed`**
 - `11_workflow_i_organizacja.md` — workflow, instancje
 - `12_plan_testow_modeli.md` — plan testów Claude/OpenAI
 - `13_wymagania_panel_admina.md` — wymagania panelu admina
