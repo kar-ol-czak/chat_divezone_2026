@@ -148,3 +148,45 @@ Raport: sciezka pg_dump, tabela PRZED/PO dla `name` i `jargon`, wniosek, koszt.
 - `text_desc` (dziala, +0.0421 z T-142).
 - Widok atrybucji (CHAT-T-146, inny swiat).
 - Automatyzacja pipeline (karta Chat - 23).
+
+---
+
+## WYNIK — EKSPERYMENT ODRZUCONY (decyzja Karola 126a, 2026-07-16)
+
+**Status ADR-125: ODRZUCONA.** Brama pomiarowa wypadla negatywnie na frazach
+kanonicznych — kategoria w `text_name` rozmywa tor `name`, ktory jest sensem
+ortogonalnosci RRF. Kategoria juz zasila `text_desc` (ADR-122); to tam ma pracowac.
+
+**Dump PRZED:** `_backups/divechat_product_embeddings_20260716_przed_T145.sql`
+(215 287 970 B ~205 MB, serwer PG 18.3, pg_dump libpq 18.4).
+
+**Kontrola pomiaru:** PRZED zgodne co do 4. miejsca z brama T-142
+(7641 0.9137/0.9137, 7648 0.8612/0.8600, 7647 0.7737/0.7686). Pomiar porownywalny.
+
+**Tabela PRZED / PO** (probka 35, re-embed multi-vector `--skip-single`):
+
+| fraza | cel | typ | name PRZED | name PO | Δ name | jargon PRZED | jargon PO | Δ jargon |
+|---|---|---|---|---|---|---|---|---|
+| Shearwater Perdix 3 | 7641 | canonical | 0.9137 | 0.7722 | **−0.1415** | 0.9137 | 0.9140 | +0.0003 |
+| Scubapro MK17 zestaw | 7648 | canonical | 0.8612 | 0.8329 | **−0.0283** | 0.8600 | 0.8600 | 0.0000 |
+| zestaw automatu Apeks MTX-RC | 7647 | canonical | 0.7737 | 0.7740 | +0.0003 | 0.7686 | 0.7685 | −0.0001 |
+| Apeks ATX40 zestaw automatu | 2369 | multi-nat | 0.8125 | 0.8541 | +0.0416 | 0.7201 | 0.7201 | 0.0000 |
+| Tecline szorty cargo 4mm | 7545 | multi-nat | 0.8825 | 0.8513 | **−0.0312** | 0.9365 | 0.9365 | 0.0000 |
+| obudowa podwodna do smartfona | 7643 | single-ctrl | 0.7752 | 0.7397 | **−0.0355** | 0.7933 | 0.7933 | 0.0000 |
+| balast nerka 2kg | 7634 | single-ctrl | 0.6859 | 0.7121 | +0.0262 | 0.7304 | 0.7305 | +0.0001 |
+| koszulka merino do suchego | 7628 | single-ctrl | 0.6720 | 0.7424 | +0.0704 | 0.6903 | 0.6903 | 0.0000 |
+
+**Odczyt:** kontrola `jargon` Δ≤±0.0003 (szum float) → pomiar wiarygodny. `name`
+spada na krotkich, celnych nazwach (7641 flagowiec −0.1415 — dokladnie ryzyko z ADR),
+rosnie tylko na frazach opisowych/rozmytych. Kryterium ADR-125 „name spada → odrzucamy".
+
+**Rollback (KROK 1–3):**
+1. Przywrocone `embedding_name` dla 35 ID probki z dumpa (staging temp + UPDATE 35).
+2. Weryfikacja pomiarem: 7641 name **0.9137** ✓, 7648 **0.8612** ✓, 7647 **0.7736**
+   (target 0.7737, Δ0.0001 = szum zapytania po stronie OpenAI; wektor z dumpa).
+3. Zmiana w `build_multivector_texts()` cofnieta — `git diff` pliku pusty wzgledem HEAD.
+
+**Koszt:** ~0,02 USD (35×3 embed + 3× 8 fraz pomiarowych, text-embedding-3-large @1536).
+
+**Commitowane:** ten task. NIE commitowane: `embed_target_products.py` (diff pusty),
+ADR-125 (status wpisuje architekt), `_backups/`, `*.jsonl`, cudze zmiany w drzewie.
