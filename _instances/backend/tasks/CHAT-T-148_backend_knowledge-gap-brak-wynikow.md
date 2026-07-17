@@ -59,12 +59,35 @@ Utwórz **dwa** pliki (konwencja `sql/`, ostatnia migracja to 041):
 - **istnieje** wywołanie `get_expert_knowledge` z `knowledge_gap = true` w `search_diagnostics` (stara reguła nadal obowiązuje dla encyklopedii), **LUB**
 - **istnieje** wywołanie `search_products` z `result_count = 0` (nowa reguła 128b).
 
-**GRANICA — czego migracja NIE RUSZA (krytyczne):**
+**GRANICA — czego migracja NIE RUSZA (krytyczne, ZAKTUALIZOWANE decyzją 130b):**
+
+Dwa zbiory zostają **nietknięte**, oba z tego samego powodu: **nie da się odtworzyć, czy była tam luka**, a zerowanie na ślepo = fabrykacja danych.
+
+**1. Brak diagnostyki (94 rozmowy):**
+```sql
+search_diagnostics IS NOT NULL AND jsonb_array_length(search_diagnostics) > 0
 ```
-WHERE search_diagnostics IS NOT NULL
-  AND jsonb_array_length(search_diagnostics) > 0
+
+**2. Diagnostyka NIEPEŁNA (86 rozmów) — ADR-126 nota nr 1, decyzja 130b:**
+```sql
+jsonb_array_length(search_diagnostics) = (
+  SELECT count(*) FROM jsonb_array_elements(messages) m,
+         jsonb_array_elements(COALESCE(m->'tool_calls','[]'::jsonb)) tc
+  WHERE tc->>'name' IN ('search_products','get_expert_knowledge'))
 ```
-**94 rozmowy** mają `knowledge_gap = true` i **nie mają `search_diagnostics`** (sprzed wprowadzenia diagnostyki). Nie da się odtworzyć, czy była tam luka. **Zostają nietknięte.** Wyzerowanie na ślepo = fabrykacja danych (zasada projektu: zero fabrykacji).
+
+**Dlaczego (przeczytaj, zanim uznasz to za nadmiarowe):** `search_diagnostics` jest **nadpisywany przy każdej turze** — trzyma migawkę ostatniej, nie całą historię. `knowledge_gap` jest **sticky**. Rozmowa, gdzie tura 1 miała `search_products` bez wyników (flaga `true`), a tura 2 tylko encyklopedię z trafieniem, ma dziś w diagnostyce **wyłącznie turę 2**. Przeliczenie z niej **gubi realny sygnał luki**.
+
+Zmierzone na produkcji: **191 rozmów** ma diagnostykę == pełna historia, **86 rozmów** ma uboższą (łącznie **200 wywołań bez śladu**). Bez tego warunku migracja zgasiłaby **80 flag na niepewnych danych**.
+
+**Struktura `messages`** (zweryfikowana na produkcji — NIE jest to format Anthropic `content[].type='tool_use'`):
+```json
+[ { "role": "user", "content": "Co lepsze: Suunto Ocean czy Garmin Descent?" },
+  { "role": "assistant", "content": null,
+    "tool_calls": [ { "id": "call_0Hhp…", "name": "get_expert_knowledge", "arguments": {...} } ] },
+  { "role": "tool_result", "name": "get_expert_knowledge", "content": "{\"knowledge\":[…]}" } ]
+```
+Wywołania liczymy z `messages[].tool_calls[].name`. `COALESCE(m->'tool_calls','[]'::jsonb)` jest konieczny — wiadomości `user`/`tool_result` nie mają tego klucza.
 
 **Struktura `search_diagnostics`** (jsonb, tablica wywołań) — zweryfikowana na produkcji:
 ```json
@@ -77,12 +100,23 @@ WHERE search_diagnostics IS NOT NULL
 ```
 Rozbijaj przez `jsonb_array_elements(search_diagnostics)`. **Nie ruszaj** `search_debug` — do reguły wystarczy `tool` + `result_count`.
 
-**Rollback:** przywraca `knowledge_gap = true` dla wszystkich rozmów objętych migracją (stan przed = wszystkie true). Zapisz w nagłówku pliku, że to stan zastany, nie „poprawny".
+**Rollback:** przywraca `knowledge_gap = true` **wyłącznie dla zbioru objętego migracją** (scope 191). Po zawężeniu 130b jest to **dokładne**: wszystkie 143 zmienione rozmowy były `true`, a `false → true` = 0, więc rollback nie over-restore'uje niczego. W nagłówku pliku zapisz, że autorytatywnym rollbackiem pozostaje `pg_dump` z KROKU 4.1.
 
-**Oczekiwany wynik migracji (zmierzony, użyj jako asercji):**
-- rozmów z `search_products`: **237**
-- z nich z `result_count = 0` w którymkolwiek wywołaniu: **15**
-- rozmów `true` bez `search_diagnostics` (nietkniętych): **94**
+**Oczekiwany wynik migracji (ZMIERZONY na produkcji 2026-07-16 — użyj jako asercji):**
+
+| metryka | wartość |
+|---|---|
+| scope migracji (pełna diagnostyka) | **191** |
+| z tego `true → false` | **143** |
+| z tego `false → true` | **0** |
+| NIETKNIĘTE: niepełna diagnostyka | **86** |
+| NIETKNIĘTE: brak diagnostyki | **94** |
+| panel globalnie `true`: przed → po | **339 → 196** |
+| kohorta `search_products`: `true` po | **94** |
+
+**Liczby „15 / 237 / 116" z wcześniejszej wersji tasku i z ADR są NIEAKTUALNE** — nie uwzględniały reguły OR ani zawężenia 130b. Obowiązuje tabela powyżej.
+
+Jeśli którakolwiek asercja się nie zgadza → **STOP, zaraportuj, nie wykonuj migracji.**
 
 ## KROK 3 — STOP. Nie wykonuj migracji.
 
@@ -100,7 +134,7 @@ Zaraportuj: treść obu plików SQL + wynik `SELECT` **symulującego** migrację
 
 ## KROK 5 — weryfikacja (dowody, nie deklaracje)
 
-1. `SELECT count(*) FILTER (WHERE knowledge_gap) ...` — oczekiwane: **15** z 237 rozmów z `search_products`, **94** nietknięte bez diagnostyki.
+1. Liczby po migracji muszą zgadzać się z tabelą asercji z KROKU 2: globalnie **196** rozmów `true` (było 339), scope 191 → **143** zgaszone, **86 + 94 = 180** nietkniętych.
 2. Nowa rozmoma testowa z trafnym zapytaniem produktowym (np. „Shearwater Perdix 3") → flaga **`false`**. To jest test, który przed naprawą był niemożliwy.
 3. Rozmowa z zapytaniem bez wyników → flaga **`true`**.
 4. Panel PS: checkbox „Luki wiedzy" zawęża listę. **Bez zmian w module** — tylko sprawdź, że działa.
