@@ -10,6 +10,10 @@ Czat AI ze wyszukiwaniem semantycznym dla sklepu nurkowego divezone.pl (PrestaSh
 - **ŚWIAT 1 — BACKEND standalone.** Osobna domena `chat.divezone.pl`, PHP 8.4. Kod na serwerze w `~/public_html/chat.divezone.pl/src|public|config` (BEZ prefiksu `standalone/` — w repo lokalnym jest `standalone/`). Deploy = rsync `standalone/` → `chat.divezone.pl/` + backup `_deploy_bak/` + md5 + `php -l` + smoke `/api/health`, STOP przed rsync (ADR-089). Łączy się z Railway PG (`divechat_*`, `chip_path`) i MySQL PrestaShop (read-only).
 - **ŚWIAT 2 — SKLEP + WIDGET + PANEL PS.** Cała instalacja PrestaShop w `~/public_html/newtmp2` (**newtmp2 TO PRODUKCJA sklepu**). Moduł czatu w `~/public_html/newtmp2/modules/divezone_chat/`. Widget: `modules/divezone_chat/views/js/widget-bundle.js` + `transport.js`. Panel admina/recenzji: `modules/divezone_chat/controllers/admin/AdminDivezoneChatController.php`. Deploy = ręczny rsync Karola (port 5739, `--exclude config_pl.xml`, bez `--delete`).
 
+**TRZECIE MIEJSCE (nie „świat", bo bez rsync do docrootu): skrypty poza `public_html`** — `/home/divezone/security/`, `/home/divezone/.scripts/`, `/home/divezone/_diag/` oraz `/home/divezone/scripts/embeddings/` (pipeline embeddingów, ADR-128, CHAT-T-150). Czytają `.env` **ścieżką bezwzględną** z `~/public_html/chat.divezone.pl/.env` — **bez kopii sekretu**. Python: `/usr/bin/python3.12` (3.12.13); `/usr/bin/python3` = 3.6.8, za stary.
+
+**`_docs/47_prompt_startowy.md` to instrukcja ARCHITEKTA, nie Twoja.** Nie czytaj jej jako swoich procedur i nie wpinaj tam nic dla siebie. Twoja instrukcja to ten plik.
+
 **Task frontend/widget/panel-PS → ŚWIAT 2. Task backend/API → ŚWIAT 1.** To dwa różne rsynce w dwa różne katalogi. Zmiana widgetu/panelu PS NIE działa dopóki nie trafi do `newtmp2` (weryfikować md5 + grep markerów taska w pliku na produkcji).
 
 **DRYF `config/tools.php` (repo ≠ prod) — pułapka deployu (CHAT-T-132, incydent 500 2026-07-14):** repozytoryjny `tools.php` rejestruje WSZYSTKIE narzędzia, w tym `ProductCombinations` (CHAT-T-129 — zacommitowane, ale CELOWO niewdrożone, czeka na kolumnę `nazwa_pl` z projektu Atrybuty). Klasy nie ma na serwerze → rsync repo `tools.php` 1:1 daje fatal „Class not found" i `/api/health` 500. Zasada: przy KAŻDYM deployu dotykającym `tools.php` NAJPIERW `diff` z wersją produkcyjną i deploy wariantu produkcyjnego z własną zmianą (dopisać tylko nowe narzędzie), albo wdrożyć CHAT-T-129 w komplecie (co dryf zlikwiduje). Smoke `/api/health` po rsync jest bramką, która to łapie — nie pomijać.
@@ -28,7 +32,7 @@ Czat AI ze wyszukiwaniem semantycznym dla sklepu nurkowego divezone.pl (PrestaSh
 
 **REGUŁA BRZYTWY OKHAMA:** po każdym deployu widgetu/modułu NAJPIERW najprostsza hipoteza = cache (przeglądarka + sklep), zanim diagnozować kod/API. Nie rozbierać na części tego, co już zweryfikowane jako poprawne.
 
-**⚠️ REGUŁA: NAZWA POLA NIE JEST JEGO ZNACZENIEM — `_docs/44_slownik_pol_i_metryk.md` CZYTAJ PRZED DIAGNOZĄ.** Inwentarz pól obu baz, kontraktów `tool_result`, skal metryk i rozjazdów kod↔ADR (CHAT-T-147). **Zaczynaj od sekcji „PUŁAPKI — ŚCIĄGA"** (koniec pliku): skondensowana lista pól, których nazwa kłamie. Zweryfikowane pułapki m.in.: `visibility` (ignoruje ją Luigi's Box — wyszukiwarka sklepu), `pr_orders.valid` (flaga księgowa, nie zapłata — ta jest w `current_state`→`pr_order_state.paid`), `total_paid_real` (2× zawyżone dla Tpay), `pr_stock_available.quantity` (zaślepki, źródło prawdy = Subiekt), `similarity` w `search_products` (to `rrf_score`, skala 0–0,065, NIE cosine), `divechat_knowledge` (MARTWA — bot czyta `encyclopedia_chunks`). **Dwa pytania przed każdym wnioskiem o polu: co realnie zawiera i KTO to czyta.** Drugie jest ważniejsze — pole może mieć poprawną treść i być martwe. Nową pułapkę dopisuj do tej sekcji: jedna linijka, z dowodem.
+**⚠️ REGUŁA: NAZWA POLA NIE JEST JEGO ZNACZENIEM — `_docs/44_slownik_pol_i_metryk.md` CZYTAJ PRZED DIAGNOZĄ.** Inwentarz pól obu baz, kontraktów `tool_result`, skal metryk i rozjazdów kod↔ADR (CHAT-T-147). **Zaczynaj od sekcji „PUŁAPKI — ŚCIĄGA"** (koniec pliku): skondensowana lista pól, których nazwa kłamie. Zweryfikowane pułapki m.in.: `visibility` (ignoruje ją Luigi's Box — wyszukiwarka sklepu), `pr_orders.valid` (flaga księgowa, nie zapłata — ta jest w `current_state`→`pr_order_state.paid`), `total_paid_real` (2× zawyżone dla Tpay), `pr_stock_available.quantity` (zaślepki, źródło prawdy = Subiekt), `similarity` w `search_products` (to `rrf_score`, NIE cosine — sufit **ZMIERZONY na produkcji: 0,1230**; liczba 0,065 to wyliczenie teoretyczne, było zaniżone, bo pomijało boosty. Cytuj pomiar, nie wyliczenie), `divechat_knowledge` (MARTWA — bot czyta `encyclopedia_chunks`). **Dwa pytania przed każdym wnioskiem o polu: co realnie zawiera i KTO to czyta.** Drugie jest ważniejsze — pole może mieć poprawną treść i być martwe. Nową pułapkę dopisuj do tej sekcji: jedna linijka, z dowodem.
 
 **GIT NA SMB (repo leży na sieciowym share `/Volumes/karol`):** operacje gita bywają wolne, a `git add` sporadycznie pada na `fatal: unable to write new index file` (błąd przejściowy — ponowienie zawsze pomaga, nic nie ginie; przyczyna niezdiagnozowana, sam zapis i rename działają w izolacji 20/20 i 30/30). Usprawnienie zmierzone 2026-07-15: `git config core.untrackedCache true` + `git config core.preloadIndex true` → `git status` z 0,98 s na ~0,07 s (13x). Ustawienia są lokalne dla klonu (`.git/config`, niewersjonowane) — po świeżym klonie trzeba włączyć ponownie. Gdy błąd zapisu wróci: po prostu ponowić.
 
@@ -112,6 +116,12 @@ Chat_dla_klientow_2026/
 ```
 
 ## Dokumentacja (_docs/)
+- **`46_instrukcja_architekta.md` — instrukcja ARCHITEKTA** (sesja czatu z Karolem), nie CC.
+  Ten plik, `CLAUDE.md`, jest odpowiednikiem dla CC. **CC nie musi go czytać**, ale musi
+  wiedzieć, że istnieje: zawiera mapę „zadanie → dokument", **katalog gotowych narzędzi
+  diagnostycznych** (`_diag_local/chat_verification/`: `sql.py`, `check_deploy.py`,
+  `list_open_problems.py`, `show_conversation.py`) i pułapki narzędziowe.
+  **Zanim napiszesz jednorazową sondę — sprawdź, czy narzędzie już tam jest.**
 - **`44_slownik_pol_i_metryk.md` — INWENTARZ PÓL I METRYK. CZYTAJ PRZED KAŻDĄ DIAGNOZĄ.**
   Stan faktyczny kodu i obu baz (nie stan projektowany w ADR): pola PG, pola MySQL PS,
   kontrakty `tool_result` (12 narzędzi), skale metryk (`rrf_score` vs cosine), przepływ

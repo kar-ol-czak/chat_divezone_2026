@@ -23,6 +23,7 @@ ich treści — kopia rozjeżdża się cicho (to jest zasada projektu, nie styli
 | „dlaczego zdecydowaliśmy X" | **`_docs/10`** | ADR-y. Korekta decyzji = nota w istniejącym ADR, nie nowy |
 | infrastruktura, ścieżki, cache | **`CLAUDE.md`**, „Mapa infrastruktury" | jedno źródło prawdy, nie dubluj |
 | pisanie tasku dla CC | `_instances/{nazwa}/tasks/` | konwencja: `CHAT-T-NNN_INSTANCJA_opis.md` |
+| „wczytaj prompt startowy", start sesji | **`_docs/47`** | treść instrukcji projektu (rola, adresy, dyscyplina). Karol wkleja tylko odsyłacz. Aktualizuje **architekt** |
 
 **Reguła pierwszeństwa:** gdy `_docs/02`, `_docs/04` lub `CLAUDE.md` mówią co innego
 niż **`_docs/44`** — obowiązuje `44`, bo opisuje realny kod, tamte bywają projektowe.
