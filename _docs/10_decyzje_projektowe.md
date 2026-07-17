@@ -3872,3 +3872,58 @@ Przy weryfikacji implementacji CHAT-T-143 (KROK 7, przed deployem) architekt zna
 **Co ten ADR ustalił na trwałe (wartość mimo odrzucenia):** kategoria należy do `text_desc` i **tylko** tam. Tor `name` zostaje krótki i celny. Wątek z bramy CHAT-T-142 zamknięty — nie wracać bez nowej przesłanki (a jeśli wracać, to pomiarem rang, nie cosine). To jest cel bramy pomiarowej: 0,02 USD za zamknięcie otwartego pytania.
 
 **Powiązane:** ADR-122 (konkatenacja `category_name` → `text_desc`, w mocy), `_docs/44` sekcja 2.3 (tabela źródeł kolumn wektorowych) i sekcja 5.1 (RRF: ranga, nie cosine), karta Trello Chat - 26 (zamknięta).
+
+---
+
+### ADR-126: `knowledge_gap` dla `search_products` — luka to brak wyników, nie niski wynik
+
+**Data:** 2026-07-16 | **Status:** ZATWIERDZONA, do wdrożenia (CHAT-T-148) | **Powiązane:** `_docs/44` sekcja 4 + 5.1 + PUŁAPKI, ADR-111 (panel recenzji), decyzja 115a (odłożenie naprawy do raportu T-147). **Decyzje Karola:** 128b (reguła), 129b (migracja SQL).
+
+**Problem — narzędzie recenzji, które nie recenzuje.** Filtr „Luki wiedzy" w panelu PS miał odpowiadać na pytanie „o co klienci pytają, a bot nie umie odpowiedzieć". Realnie nie filtruje niczego: **237 rozmów z `search_products` na produkcji, 237 z flagą `knowledge_gap = true`, zero z `false`.**
+
+**Przyczyna — jeden próg na dwie różne skale.** `ChatService::buildSearchDiagnostic()` (`:432-447`):
+```php
+$searchTools = ['search_products', 'get_expert_knowledge'];
+$items = $result['products'] ?? $result['knowledge'] ?? [];
+$similarities = array_map(fn(array $item) => (float) ($item['similarity'] ?? 0), $items);
+$gap = empty($items) || ($maxSim !== null && $maxSim < $threshold);   // $threshold = 0.5
+```
+Oba narzędzia zwracają pole `similarity`, ale **znaczy ono co innego**:
+- `get_expert_knowledge` → **prawdziwy cosine**, skala 0–1 (`ExpertKnowledge.php:103,128`). Próg 0,5 **działa poprawnie** (SQL odsiewa < 0,45, więc 0,45–0,50 to realne pasmo „słabe trafienie").
+- `search_products` → **`rrf_score`**, skala zupełnie inna (`ProductSearch.php:798`). Mierzy **zgodność torów co do rangi**, nie jakość dopasowania.
+
+**Dowód empiryczny (Railway, 2026-07-16, 1605 pozycji ze wszystkich wywołań `search_products`):**
+
+| metryka | wartość |
+|---|---|
+| `rrf_score` max | **0,122951** |
+| `rrf_score` min | 0,028629 |
+| pozycji `>= 0,5` | **0** |
+
+**Zero na 1605.** Najlepszy wynik w historii produkcji to **1/4 progu**. Flaga nie może zgasnąć — to nie jest „źle dobrany próg", to **porównywanie metrów z kilogramami**.
+
+> **Korekta liczby (architekt, ten sam dzień):** wcześniejsze wersje `_docs/44` i moich analiz podawały sufit `rrf_score` ≈ **0,065** (wyliczenie teoretyczne 4×1/61). **To było zaniżone** — pomijało boosty (editorial ×1.15, multi-atrybut do ×1.5). Zmierzony sufit to **0,1230**. Teza się nie zmienia, wręcz twardnieje: dowód jest teraz empiryczny, nie teoretyczny. Wniosek na przyszłość: **cytuj pomiar, nie wyliczenie.**
+
+**Decyzja 128b — dla `search_products` luka = ZERO WYNIKÓW.** Bez progu.
+```php
+$gap = empty($items);   // search_products
+$gap = empty($items) || $maxSim < $threshold;   // get_expert_knowledge — BEZ ZMIAN
+```
+
+**Odrzucone warianty:**
+- **(a) Nowy próg w skali RRF (np. 0,03).** `rrf_score` **nie mierzy jakości dopasowania**, tylko na ilu torach produkt wyszedł wysoko. Produkt niszowy, znaleziony przez jeden tor, dostanie niski wynik — mimo że jest dokładnie tym, czego klient chciał. Próg karałby trafienia niszowe. Do tego trzeba by **zgadnąć liczbę**, której nie da się uzasadnić danymi (por. zasada projektu: dynamiczne źródła prawdy nad stałymi w kodzie).
+- **(c) Usunąć flagę dla `search_products`.** Pustka to realny sygnał i mamy go za darmo.
+
+**Świadome ograniczenie (zapisane wprost, żeby nie wracało jako „bug"):** reguła **nie łapie** przypadku „bot znalazł, ale bzdurę". Nie da się go złapać **żadnym** progiem, bo dla produktów **nie mamy miary jakości** — `rrf_score` nią nie jest. Od oceny trafności jest recenzja rozmów w panelu (oś `verdict`). **Flaga ma być zawężaczem listy, nie sędzią.**
+
+**Skutek dla panelu:** ten sam checkbox „Luki wiedzy" (`AdminDivezoneChatController.php:1673`), bez zmian we froncie, zacznie pokazywać **15 zamiast 237**. UI jest kompletne i wdrożone (md5 prod == repo, `472701c6…`) — brakowało sygnału, nie interfejsu.
+
+**Sticky bez zmian.** `ConversationStore.php:189` (`knowledge_gap = (? ::boolean OR COALESCE(knowledge_gap, false))`) — raz zapalona nie gaśnie do końca rozmowy. Przy regule 128b to **zachowanie pożądane**: „w tej rozmowie padło pytanie bez odpowiedzi" jest faktem trwałym.
+
+**Decyzja 129b — historię przeliczamy migracją SQL** (`sql/`, wersjonowana), nie skryptem PHP. `search_diagnostics` (jsonb) zawiera `tool` + `result_count` per wywołanie, więc reguła daje się wyrazić deklaratywnie, bez pętli aplikacyjnej. Skrypt jednorazowy zrobiłby to samo, ale zniknąłby bez śladu.
+
+**Granica migracji — czego NIE ruszamy:** **94 rozmowy** mają `knowledge_gap = true` i **nie mają `search_diagnostics`** (sprzed wprowadzenia diagnostyki). Nie da się odtworzyć, czy była tam luka. **Zostają nietknięte** — wyzerowanie na ślepo byłoby fabrykacją danych (zasada: zero fabrykacji). Warunek `WHERE` musi to jawnie zabezpieczyć.
+
+**Kolejność wdrożenia (dwa światy, ADR-089):** backend `chat.divezone.pl` (kod) → STOP → migracja PG → weryfikacja. **Moduł PS bez zmian** — front już umie.
+
+**Implementacja:** CHAT-T-148 (instancja backend).
