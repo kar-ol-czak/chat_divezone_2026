@@ -389,14 +389,36 @@ skalach.** To jest źródło błędu #5 i błędu w `knowledge_gap`.
   boolean re-rank multi-atrybutowy (`× (1 + 0.5·ratio)`, max +50%, `:1122`).
 
 **Realny sufit skali:**
-- Wszystkie 5 torów na 1. miejscu: `5 × 1/(60+1) = 5/61 ≈ 0.0820`.
-- Realnie tor `fts` często pusty → **4 tory na miejscu 1: `4/61 ≈ 0.0656`** — to praktyczny sufit.
-- Z boostami może przekroczyć 0.08, ale **nigdy nie zbliża się do 1.0.**
+- Wszystkie 5 torów na 1. miejscu: `5 × 1/(60+1) = 5/61 ≈ 0.0820` (baza, bez boostów).
+- Realnie tor `fts` często pusty → 4 tory na miejscu 1: `4/61 ≈ 0.0656`.
+- **ZMIERZONY sufit produkcyjny: `0.1230`** — patrz „Pomiar z produkcji" niżej. Boosty
+  (editorial ×1.15, multi-atrybut do ×1.5) podnoszą wynik **wyraźnie powyżej sumy rang**.
+- **Nigdy nie zbliża się do 1.0.** To jest jedyna teza, która ma tu znaczenie.
 
-**Przykład (do zacytowania):** produkt z `name_rank=1, jargon_rank=1, trigram_rank=1, desc_rank=4`:
-`3/61 + 1/64 = 0.04918 + 0.01563 = 0.0648` (bez boostów). Z boostem multi-atrybutowym ~1.1×
-daje **≈0.0713** — czyli **wynik najlepszy z możliwych**, a w polu `similarity` wygląda jak
-„7% dopasowania".
+**Przykład teoretyczny:** produkt z `name_rank=1, jargon_rank=1, trigram_rank=1, desc_rank=4`:
+`3/61 + 1/64 = 0.04918 + 0.01563 = 0.0648` (bez boostów). Z boostem ~1.1× daje **≈0.0713** —
+a w polu `similarity` wygląda jak „7% dopasowania".
+
+> **KOREKTA 2026-07-16 (architekt, przy CHAT-T-148).** Wcześniejsza wersja tej sekcji podawała
+> **„praktyczny sufit ≈0.0656"** jako liczbę operacyjną. **To było zaniżone** — wyliczenie
+> teoretyczne nie uwzględniało realnego wpływu boostów. **Pomiar z produkcji (niżej) daje 0.1230.**
+> Liczby `0.0656`/`0.0713` zostawione jako ilustracja arytmetyki RRF, **nie jako sufit**.
+> Wniosek dla diagnoz: **nie cytuj sufitu z wyliczenia, cytuj pomiar.** Rząd wielkości (setne,
+> nie jedności) był i jest poprawny — i tylko on jest potrzebny do tezy „próg 0,5 nigdy nie zgaśnie".
+
+**POMIAR Z PRODUKCJI (Railway, 2026-07-16, źródło rozstrzygające):**
+Wszystkie pozycje ze wszystkich wywołań `search_products` w `search_diagnostics`
+(`jsonb_array_elements(d->'search_debug'->'items')`, `d->>'tool' = 'search_products'`):
+
+| metryka | wartość |
+|---|---|
+| pozycji w próbie | **1605** |
+| `rrf_score` **max** | **0.122951** |
+| `rrf_score` **min** | **0.028629** |
+| pozycji `>= 0.5` (próg `knowledge_gap`) | **0** |
+
+**Zero na 1605.** Najlepszy wynik w całej historii produkcji to **1/4 progu 0,5**. Dowód, że
+`knowledge_gap` dla `search_products` **nie może zgasnąć** — empiryczny, nie teoretyczny (ADR-126).
 
 **Dowód z produkcji** (Railway, `divechat_conversations.search_diagnostics`, conv 636 —
 zapytanie „maska snorkeling lustrzana szyba mirror"): najlepszy wynik miał `rrf_score = 0.048799`
@@ -601,14 +623,14 @@ bazy Railway, a inwentarz MySQL i kontrakty narzędzi — z kodu z numerami lini
 | `pr_orders.total_paid_real` | ile faktycznie wpłynęło | **2× zawyżone dla 1246/1259 zamówień Tpay** (99%). Moduł zapisuje płatność dwa razy: raz z `transaction_id`, raz z pustym. Inne bramki (Przelewy24, Revolut, PayPal, PayU = 624 zam.): **zero** podwojeń | **licz `total_paid`**. Karta Sklep - 31 |
 | `pr_stock_available.quantity` | stan magazynowy | **zaślepki** (9999999, 29998). Zestawy mają `quantity=0`, bo Firmes wiąże SKU literalnie z Subiektem, a zestawy mają sklejone SKU | **Subiekt ERP** |
 | `pr_stock_available.out_of_stock` | — | `2` = „użyj domyślnego zachowania sklepu" → **zamówienie przechodzi mimo `quantity=0`**. To jest mechanizm, nie obejście | ADR-123, karta Chat - 21 |
-| **`similarity` w tool_result `search_products`** | cosine, skala 0-1 | to **`rrf_score`** — Reciprocal Rank Fusion, `1/(k+rank)`, `rrf_k=60`. **Sufit ~0,065 przy 4 torach.** `0,0713` to wynik **najlepszy z możliwych**, nie „7% dopasowania" | sekcja 5 (`ProductSearch.php:19,769-1074`) |
+| **`similarity` w tool_result `search_products`** | cosine, skala 0-1 | to **`rrf_score`** — Reciprocal Rank Fusion, `1/(k+rank)`, `rrf_k=60`. **Sufit ZMIERZONY na produkcji: `0,1230`** (1605 pozycji, max 0,122951, min 0,028629; **0 pozycji ≥ 0,5**). Nie mylić z wyliczeniem teoretycznym ≈0,0656 — było zaniżone, bo pomijało boosty. Liczy się rząd wielkości: **setne, nie jedności** | sekcja 5.1 — pomiar (`ProductSearch.php:19,769-1074`) |
 | `similarity` w `get_expert_knowledge` | — | **tu jest prawdziwy cosine** (0-1). Dlatego próg 0,5 działa tam, a w `search_products` nie. **Dwa narzędzia, to samo pole, dwie różne skale** | `ExpertKnowledge.php` |
 | **`divechat_knowledge`** | baza wiedzy eksperta (tak mówi `02_schemat_bazy.md` i `CLAUDE.md`) | **MARTWA.** 37 wpisów, najnowszy 2026-02-19, **zero odczytów w `standalone/src`**. Wpis tam = praca w błoto | **`encyclopedia_chunks`** (`ExpertKnowledge.php:105`). Rozjazd R-2 |
 | `divechat_conversations.created_at` | — | **nie istnieje**. Kolumna nazywa się `started_at` | sekcja 2 |
 | `divechat_product_embeddings.product_id` | — | **nie istnieje**. Kolumna nazywa się `ps_product_id` | sekcja 2 |
 | recenzje rozmów | kolumny w `divechat_conversations` | **osobna tabela** `divechat_conversation_review` (`note`, `verdict`, `status`, `updated_by`) | sekcja 2 |
 | `chip_path` vs `nudge_sid` | to samo | **dwa różne mechanizmy.** `chip_path` = drzewo chipów, `nudge_sid` = zaczepka proaktywna. Rozmowa z `nudge_sid` i pustym `chip_path` to **nie** regres chipów | conv 636 |
-| `knowledge_gap` | bot nie znalazł odpowiedzi | **ZEPSUTE dla `search_products`.** Próg 0,5 (skala cosine) porównywany z `rrf_score` (sufit 0,065) → **zawsze `true`**. Do tego **sticky** (`ConversationStore` ~189: `? OR COALESCE(...)`) — raz zapalona nie gaśnie. PROD 30 dni: 126 `true` / 91 `false`, gdzie `false` = rozmowy **bez** `search_products` | sekcja 4, decyzja 115a (naprawa: osobny task) |
+| `knowledge_gap` | bot nie znalazł odpowiedzi | **ZEPSUTE dla `search_products`** (naprawa: ADR-126 / CHAT-T-148). Próg 0,5 (skala cosine) porównywany z `rrf_score` (sufit zmierzony **0,1230**) → **zawsze `true`**. Dowód empiryczny: **0 z 1605** pozycji na produkcji osiągnęło 0,5. Do tego **sticky** (`ConversationStore:189`: `? OR COALESCE(...)`) — raz zapalona nie gaśnie. PROD: **237 rozmów** z `search_products`, **237 z flagą** `true` → filtr „Luki wiedzy" nie filtruje niczego. Po naprawie (reguła: `gap = zero wyników`) zostanie **15**. Uwaga: **94 rozmowy** mają flagę `true` bez `search_diagnostics` (sprzed diagnostyki) — nieprzeliczalne, migracja ich nie rusza | sekcja 4, ADR-126, decyzja 128b |
 | „sprzedaż" w pytaniu | kiedykolwiek | dopytaj o okres. 344/483 produktów `vis=none` nie sprzedanych **od roku**, 106 nigdy, tylko 7 w ostatnich 3 miesiącach | — |
 
 **Pułapki proceduralne (nie dotyczą pól, ale kosztują tak samo):**
