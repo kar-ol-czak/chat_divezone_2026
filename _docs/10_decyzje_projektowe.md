@@ -3969,10 +3969,44 @@ jsonb_array_length(search_diagnostics) = (
 
 **Skutek dla decyzji 128b: żaden.** Reguła w kodzie bez zmian — nowe rozmowy liczone poprawnie od pierwszej tury, gdzie migawka **jest** kompletna. Zawężenie dotyczy **wyłącznie migracji historii**.
 
-**Konsekwencja dla rollbacku (odpowiedź na pytanie 3 od CC):** przy zawężeniu wszystkie 143 zmienione rozmowy były `true`, więc rollback `→ true` **dla faktycznie zmienionego zbioru jest dokładny** — znika problem over-restore 32 encyklopedycznych. Autorytatywnym rollbackiem pozostaje `pg_dump` z KROKU 4.
+**Konsekwencja dla rollbacku (odpowiedź na pytanie 3 od CC): ~~przy zawężeniu wszystkie 143 zmienione rozmowy były `true`, więc rollback `→ true` dla faktycznie zmienionego zbioru jest dokładny — znika problem over-restore 32 encyklopedycznych.~~ TO ZDANIE BYŁO BŁĘDNE — patrz nota nr 2.** Autorytatywnym rollbackiem pozostaje `pg_dump` z KROKU 4.
 
 **Odrzucone:**
 - **(a) migrować cały scope 277** — 80 zgaszeń na niepewnych danych, nieodróżnialnych od reszty.
 - **(c) nie migrować historii** — 143 pewne zgaszenia to większość realnego zysku, szkoda ją tracić.
 
 **Dług do rozważenia osobno (nie w tym tasku):** `search_diagnostics` jako migawka ostatniej tury to **strata danych diagnostycznych** przy każdej rozmowie wieloturowej (200 wywołań bez śladu w 86 rozmowach). Jeśli diagnostyka ma służyć recenzji, powinna **akumulować** tury, nie nadpisywać. To zmiana kontraktu zapisu — osobna decyzja, osobna karta.
+
+---
+
+#### ADR-126 — nota nr 2: ROLLBACK jest przybliżeniem, `pg_dump` jest źródłem prawdy (2026-07-17, decyzja Karola 132a)
+
+**Sprostowanie mojego błędu z noty nr 1.** Napisałem tam, że po zawężeniu 130b rollback `→ true` na scope 191 jest **dokładny**. **To było błędne.** Wykrył to CC (instancja backend) przy poprawionym KROKU 3; zweryfikowane samodzielnie na Railway.
+
+**Na czym polegał błąd — w rozumowaniu, nie w liczbie.** Policzyłem poprawnie, że **wszystkie zmienione rozmowy były `true`** (143 ze 160) i wywnioskowałem z tego, że rollback na scope jest dokładny. **Non sequitur:** plik rollback nie zna zbioru „zmienione" — zna wyłącznie warunek `WHERE`. A w `WHERE`-scope siedzą też rozmowy, których migracja **nie dotknęła**.
+
+**Pomiar (Railway, 2026-07-17), rozkład scope 191 przed migracją:**
+
+| | rozmów |
+|---|---|
+| scope (pełna diagnostyka) | **191** |
+| przed migracją `true` | **160** |
+| przed migracją **`false`** | **31** |
+| zmienionych `true → false` | **143** |
+| `false` → zostaje `false` (nietknięte przez forward) | **31** |
+
+Te **31** to rozmowy **encyklopedia-only**, gdzie próg 0,5 **działał poprawnie** (prawdziwy cosine). Rollback `UPDATE … SET knowledge_gap = true WHERE <scope 191>` zapaliłby je **bez powodu**.
+
+**Dlaczego zawężenie 130b tego nie usunęło:** 31 z tych 32 rozmów (problem sygnalizowany już w pierwszej iteracji) siedzi w **pełnej** diagnostyce, więc przeszło przez filtr 130b. Po migracji **żaden warunek SQL ich nie odróżni** od 143 zgaszonych — jedne i drugie mają `knowledge_gap = false` i identyczny odcisk reguły. Informacja o stanie sprzed migracji **nie istnieje w tabeli**.
+
+**Decyzja 132a — rollback zostaje whole-scope (191 → `true`), z jawnie udokumentowanym over-restore 31.**
+
+**Uzasadnienie (nie to, które podało CC).** CC argumentowało „kierunek błędu jest bezpieczny". To prawda, ale drugorzędne. Rozstrzyga: **KROK 4.1 wykonuje `pg_dump` tabeli PRZED migracją, więc dokładny rollback już istnieje.** Plik `042_rollback.sql` jest **ścieżką awaryjną**, gdyby dump był niedostępny — a wtedy over-restore 31 rozmów kosztuje **31 fałszywych alarmów w panelu, czyli 31 kliknięć**. Ta sama asymetria, którą przyjęliśmy w 130b.
+
+**Odrzucone:**
+- **(b) tabela backup `divechat_conversations_042_bak`** (forward zapisuje, rollback czyta) — dawałaby 1:1, ale **dubluje funkcję `pg_dump`**, tworzy nowy byt do utrzymania i sprzątania oraz łamie konwencję dwóch plików w `sql/`. Rozwiązywanie problemu, który jest już rozwiązany.
+- **(c) lista 143 `session_id` wklejona w plik rollback** — zamrożony snapshot stanu z 2026-07-17. Gdyby ktokolwiek dotknął flagi między migracją a rollbackiem, lista **kłamie po cichu**. Dokładnie ten typ stałej w kodzie, którego projekt unika na rzecz dynamicznych źródeł prawdy.
+
+**Zasada do zapamiętania (szersza niż ten task):** **rollback regułowy jest z natury przybliżeniem**, gdy forward niszczy informację potrzebną do odtworzenia stanu. `UPDATE` kasujący poprzednią wartość jest nieodwracalny regułą — odwraca go tylko kopia. **Dump nie jest formalnością przed migracją; jest jedynym dokładnym rollbackiem.** Nagłówek każdego pliku `*_rollback.sql`, który jest przybliżeniem, musi to mówić wprost.
+
+**Wniosek o procesie:** CC złapało dwa realne błędy w moich specyfikacjach w jednym tasku (nota nr 1 — skala migawki; nota nr 2 — dokładność rollbacku). Brama STOP przed migracją (ADR-089) zadziałała dokładnie tak, jak miała.
