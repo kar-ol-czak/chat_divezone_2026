@@ -185,7 +185,9 @@ final class ConversationStore
                  tools_used = ?::jsonb,
                  model_used = COALESCE(?, model_used),
                  response_times = ?::jsonb,
-                 search_diagnostics = ?::jsonb,
+                 -- Akumulacja tur: dokladamy wywolania biezacej tury zamiast nadpisywac
+                 -- kolumne (ADR-127) — symetrycznie do sticky OR ponizej.
+                 search_diagnostics = COALESCE(search_diagnostics, \'[]\'::jsonb) || ?::jsonb,
                  knowledge_gap = (? ::boolean OR COALESCE(knowledge_gap, false)),
                  updated_at = NOW()
              WHERE session_id = ? AND closed_at IS NULL',
