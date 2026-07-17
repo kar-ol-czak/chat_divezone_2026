@@ -4061,3 +4061,83 @@ Najdłuższa rozmowa (21 wywołań) urośnie do **~28 kB** — wobec limitu 255 
 **Weryfikacja po wdrożeniu — test wieloturowy jest sednem, nie formalnością:** rozmowa z **dwiema** turami wyszukującymi musi zostawić w `search_diagnostics` **oba** wywołania. Dziś zostawia jedno. Dodatkowo: `jsonb_array_length(search_diagnostics)` = liczba `messages[].tool_calls[]` dla nowych rozmów (dokładnie ten test, który wykrył dług).
 
 **Implementacja:** CHAT-T-149 (instancja backend). Świat: backend `chat.divezone.pl`, **zero migracji PG**, moduł PS bez zmian.
+
+---
+
+### ADR-128: Automatyzacja pipeline'u embeddingów produktów — delta po hashu, cron na serwerze
+
+**Data:** 2026-07-17 | **Status:** ZATWIERDZONA, do wdrożenia (CHAT-T-150) | **Powiązane:** ADR-088 (`.env`, sekrety), ADR-089 (STOP-gate), ADR-123 nota 93a (usunięcie filtra visibility), TASK-ENC-013 decyzja 252a (wzorzec hash-delty dla encyklopedii — ten ADR stosuje ten sam wzorzec do produktów). **Decyzje Karola:** 141b, 142c, 144a, 145a, 146c.
+
+**Problem — pipeline nie jest zautomatyzowany.** Nowy produkt jest niewidoczny dla bota, dopóki ktoś ręcznie nie odpali skryptu z laptopa. Nie ma crona, nie ma kodu na serwerze, nie ma alertu — awaria jest cicha.
+
+**Stan zweryfikowany na produkcji 2026-07-17 (nie z karty Trello):**
+- `crontab -l`: 48 aktywnych wpisów, **zero embeddingów**. Potwierdzone.
+- `~/public_html/chat.divezone.pl/embeddings/` **nie istnieje** — pipeline żyje wyłącznie lokalnie. Potwierdzone.
+- `/usr/bin/python3.12` = **3.12.13**, pip 23.2.1, venv dostępne. `/usr/bin/python3` = 3.6.8 (za stary). Potwierdzone.
+- `extract_products.py:217-243` — `open_ssh_tunnel()` otwiera tunel z laptopa (`-L 33060:127.0.0.1:3306`). Na serwerze tunelowałby sam do siebie.
+
+**KOREKTA STANU Z KARTY (Chat - 23).** Karta twierdziła: „ostatni przebieg 2026-05-15". **Pomiar zaprzecza:** `divechat_product_embeddings` — 2606 rekordów, `max(updated_at)` = **2026-07-16 18:40 UTC**, `min(updated_at)` = 2026-07-15 17:31, zero NULL-i w `embedding`. Cała tabela została odświeżona ręcznie 15-16 lipca, najpewniej po CHAT-T-144. Karta była nieaktualna o 2 miesiące. **Wniosek: dane są świeże, ale mechanizm ich odświeżania nadal nie istnieje** — to nie zmienia sensu tej karty, zmienia tylko pilność.
+
+---
+
+**Decyzja 141b — kryterium delty: hash treści dokumentu, nie `date_upd`.**
+
+`date_upd` NIE wystarcza jako jedyne kryterium. Dowód (pomiar, `SHOW COLUMNS` 2026-07-17):
+- `pr_product_lang` — **brak kolumny czasowej** (nazwa, opis)
+- `pr_category_product` — **brak kolumny czasowej** (przypisania kategorii)
+- CHAT-T-144 zmienił zawartość `document_text` przez zmianę **kodu pipeline'u**, bez jakiejkolwiek zmiany w MySQL — żadne kryterium czasowe tego nie złapie
+
+Mechanizm: extract z MySQL jest **zawsze pełny** (2664 wiersze, jedno zapytanie, zero kosztu API). Dla każdego produktu budujemy `document_text` i liczymy `sha256`. Porównujemy z `sha256(document_text)` **policzonym w locie z wiersza w PG**. Embedding wywołujemy wyłącznie przy rozjeździe.
+
+**Zero nowych kolumn i zero migracji.** `document_text` jest już w tabeli i jest dokładnie tym, co embedujemy. Przechowywanie osobnego `document_text_hash` byłoby drugim źródłem prawdy, które może rozjechać się z treścią — dokładnie ten błąd, który ten projekt zwalcza. (Architekt początkowo rekomendował migrację 043 z kolumną na hash — **to było błędne**, patrz nota nr 1.)
+
+Skala oszczędności (pomiar): `pr_product` `active=1` → 43 zmiany/7 dni, 1/dobę, 4 nowe/30 dni. Tabela ma **cztery** wektory na produkt (`embedding`, `embedding_name`, `embedding_desc`, `embedding_jargon` — po 2606 każdy). Pełny re-embed = **10 424 wywołania API**; delta ≈ 6 produktów/dobę × 4 = **24**. Różnica ~430×.
+
+**Odrzucone:**
+- `date_upd > last_run` (141a) — ślepe na `pr_product_lang`, `pr_category_product` i na zmiany w kodzie pipeline'u
+- pełny re-embed co noc (141c) — koszt bez uzasadnienia
+
+**Decyzja 142c + 146c — cron 02:15, plus zachowany tryb ręczny `--full`.**
+
+Godzina wybrana z **pomiaru zajętości crona** (`crontab -l`, 2026-07-17), nie z założenia. Blok 03:00-05:30 jest gęsty: indeksery faceted search (03:20, 03:30), `sec_scan_layered COLD` (03:30, timeout 1800), klaviyo (03:40), webp_converter (04:10), `sentinel.sh --full` (04:30, **timeout 3600 → do 05:30**). Wolne okno: 01:40-03:00 (po gsitemap 01:27). **02:15 daje ~45 min zapasu z obu stron.** Poza oknem strat pakietów Railway (15-22 CEST, `_docs/46` §3).
+
+Wpis owinięty w `timeout 1800`, żeby zawieszony przebieg nie wszedł w blok 03:00.
+
+Tryb `--full` zostaje do ręcznego wymuszenia po zmianie kodu pipeline'u (przypadek T-144).
+
+**Decyzja 145a — kod poza docrootem, sekret jeden, czytany ścieżką bezwzględną.**
+
+Lokalizacja: **`/home/divezone/scripts/embeddings/`** + własny venv (python3.12).
+`.env`: **`/home/divezone/public_html/chat.divezone.pl/.env`**, czytany ścieżką bezwzględną. **Bez kopii klucza.**
+
+Zweryfikowane 2026-07-17: proces python3.12 uruchomiony z `/home/divezone` czyta ten `.env` (`os.access(R_OK)` = True, `OPENAI_API_KEY` obecny, 164 znaki, prefiks `sk-proj`). Docroot ogranicza to, co widzi WWW, nie odczyt z CLI.
+
+**`OPENAI_API_KEY` już był na serwerze** — używa go backend czatu. To nie jest decyzja bezpieczeństwa o wnoszeniu nowego sekretu; nowy sekret nie powstaje.
+
+Wzorzec „skrypt poza `public_html`" jest na tym serwerze ustalony: `/home/divezone/security/` (triage.py, cron), `/home/divezone/.scripts/` (klaviyo), `/home/divezone/_diag/` (railway_monitor).
+
+**Odrzucone:** kopia klucza w osobnym `.env` (145b) — dwa miejsca rotacji, cichy rozjazd. Katalog pod docrootem (145c) — zbędna ekspozycja kodu.
+
+**Decyzja 144a — alert mailem + heartbeat.**
+
+Kanał: `DIVECHAT_COST_ALERT_EMAIL` (klucz istnieje w `.env`, kanał już służy alertom kosztowym czatu).
+Dwa wyzwalacze:
+1. **Przebieg padł** — niezerowy exit, wyjątek, błąd API
+2. **Heartbeat: brak udanego przebiegu przez 48 h** — bez tego cichy zgon crona powtórzy się dokładnie tak, jak dotąd. Cisza nie jest dowodem sukcesu.
+
+Log: `/home/divezone/logs/divechat_embeddings.log` (katalog `~/logs` już używany przez inne crony czatu — wiersze 26 i 30 crontaba).
+
+Odrzucone: kolejka `security/triage.py --send-queue` (144c) — to kod projektu Security, cudza karta.
+
+**Zakres refaktoru MySQL:** `get_mysql_connection()` (`extract_products.py:246-256`) już bierze usera, hasło i bazę ze zmiennych; na sztywno jest tylko `host="127.0.0.1"` i `port=LOCAL_MYSQL_PORT`. Wystarczy sterowanie przez `MYSQL_LOCAL_SOCKET`/env: **tryb serwerowy** → bezpośrednio `localhost:3306`, bez tunelu; **tryb laptopowy** → tunel jak dziś. `open_ssh_tunnel()`/`close_ssh_tunnel()` zostają, wołane warunkowo. Tryb lokalny musi działać bez zmian — to jedyna ścieżka debugowania.
+
+**Implementacja:** CHAT-T-150 (instancja embeddings). Świat: **żaden z dwóch światów wdrożeniowych** — kod idzie do `/home/divezone/scripts/embeddings/`, nie do `chat.divezone.pl/` ani `newtmp2/`. **Zero migracji PG. Zero rsync `standalone/`.**
+
+**Nota nr 1 (2026-07-17, architekt) — korekta rekomendacji 141b przed wdrożeniem.**
+Architekt rekomendując 141b twierdził, że hash wymaga **nowej kolumny `document_text_hash` i migracji 043**. **To było błędne z dwóch powodów, oba wykryte po zatwierdzeniu decyzji, przed napisaniem tasku:**
+1. `document_text` **już jest w tabeli** (`information_schema.columns`, sprawdzone) — hash liczy się z niego w locie, po obu stronach porównania. Osobna kolumna byłaby drugim źródłem prawdy dla tej samej treści.
+2. Wzorzec hash-delty **był już zaprojektowany w tym projekcie**: TASK-ENC-013, decyzja 252a — „hash treści w `metadata`, ZERO nowych tabel", `sha256` z kanonicznego JSON-a. Architekt projektował drugi mechanizm obok istniejącego, nie sprawdziwszy `_instances/embeddings/tasks/`.
+
+Treść decyzji 141b (delta po hashu zamiast po `date_upd`) **pozostaje w mocy** — zmienia się wyłącznie realizacja: bez migracji. Kanoniczność hasha przejęta z ENC-013: liczyć z **znormalizowanego** `document_text`, nie z surowego bufora, żeby różnice białych znaków nie wywoływały re-embeddingu.
+
+Zasada, która zawiodła: „zanim uznasz coś za niezrobione, sprawdź, czy nie jest już zrobione gdzie indziej" (`_docs/46` §5.3).
