@@ -3916,14 +3916,63 @@ $gap = empty($items) || $maxSim < $threshold;   // get_expert_knowledge — BEZ 
 
 **Świadome ograniczenie (zapisane wprost, żeby nie wracało jako „bug"):** reguła **nie łapie** przypadku „bot znalazł, ale bzdurę". Nie da się go złapać **żadnym** progiem, bo dla produktów **nie mamy miary jakości** — `rrf_score` nią nie jest. Od oceny trafności jest recenzja rozmów w panelu (oś `verdict`). **Flaga ma być zawężaczem listy, nie sędzią.**
 
-**Skutek dla panelu:** ten sam checkbox „Luki wiedzy" (`AdminDivezoneChatController.php:1673`), bez zmian we froncie, zacznie pokazywać **15 zamiast 237**. UI jest kompletne i wdrożone (md5 prod == repo, `472701c6…`) — brakowało sygnału, nie interfejsu.
+**Skutek dla panelu:** ten sam checkbox „Luki wiedzy" (`AdminDivezoneChatController.php:1673`), bez zmian we froncie, zacznie realnie zawężać listę. UI jest kompletne i wdrożone (md5 prod == repo, `472701c6…`) — brakowało sygnału, nie interfejsu. **Liczby: patrz nota nr 1** (pierwotne „15 zamiast 237" nie uwzględniało reguły OR ani zawężenia scope’u; obowiązuje **339 → 196** globalnie).
 
 **Sticky bez zmian.** `ConversationStore.php:189` (`knowledge_gap = (? ::boolean OR COALESCE(knowledge_gap, false))`) — raz zapalona nie gaśnie do końca rozmowy. Przy regule 128b to **zachowanie pożądane**: „w tej rozmowie padło pytanie bez odpowiedzi" jest faktem trwałym.
 
 **Decyzja 129b — historię przeliczamy migracją SQL** (`sql/`, wersjonowana), nie skryptem PHP. `search_diagnostics` (jsonb) zawiera `tool` + `result_count` per wywołanie, więc reguła daje się wyrazić deklaratywnie, bez pętli aplikacyjnej. Skrypt jednorazowy zrobiłby to samo, ale zniknąłby bez śladu.
 
-**Granica migracji — czego NIE ruszamy:** **94 rozmowy** mają `knowledge_gap = true` i **nie mają `search_diagnostics`** (sprzed wprowadzenia diagnostyki). Nie da się odtworzyć, czy była tam luka. **Zostają nietknięte** — wyzerowanie na ślepo byłoby fabrykacją danych (zasada: zero fabrykacji). Warunek `WHERE` musi to jawnie zabezpieczyć.
+**Granica migracji — czego NIE ruszamy:** **94 rozmowy** mają `knowledge_gap = true` i **nie mają `search_diagnostics`** (sprzed wprowadzenia diagnostyki). Nie da się odtworzyć, czy była tam luka. **Zostają nietknięte** — wyzerowanie na ślepo byłoby fabrykacją danych (zasada: zero fabrykacji). Warunek `WHERE` musi to jawnie zabezpieczyć. **Nota nr 1 rozszerza tę granicę** o kolejne **86 rozmów** z diagnostyką *częściową* (migawka ostatniej tury) — z tego samego powodu.
 
 **Kolejność wdrożenia (dwa światy, ADR-089):** backend `chat.divezone.pl` (kod) → STOP → migracja PG → weryfikacja. **Moduł PS bez zmian** — front już umie.
 
 **Implementacja:** CHAT-T-148 (instancja backend).
+
+---
+
+#### ADR-126 — nota nr 1: ZAWĘŻENIE MIGRACJI — `search_diagnostics` bywa migawką, nie historią (2026-07-16, decyzja Karola 130b)
+
+**Korekta założenia z treści ADR powyżej. Myliłem się: `search_diagnostics` NIE wystarcza do przeliczenia historii wszystkich rozmów.** Wątek podniosło CC (instancja backend) przy KROKU 3 tasku CHAT-T-148, zgłaszając „5 rozmów encyklopedia-only, które migracja gasi nieprzewidzianie". **Teza była trafna, skala czterokrotnie zaniżona** — zweryfikowane samodzielnie przez architekta na Railway.
+
+**Mechanizm.** `search_diagnostics` jest nadpisywany przy każdej turze (`ConversationStore::update…`), a `knowledge_gap` jest **sticky** (`ConversationStore.php:189`). Rozmowa, w której tura 1 miała `search_products` bez wyników (flaga → `true`), a tura 2 tylko encyklopedię z trafieniem, ma dziś w `search_diagnostics` **wyłącznie migawkę tury 2**. Przeliczenie z takiej migawki gubi realny sygnał luki.
+
+**Pomiar (Railway, 2026-07-16, 277 rozmów z niepustą diagnostyką).** Test: `jsonb_array_length(search_diagnostics)` vs liczba wywołań `search_products`/`get_expert_knowledge` w `messages[].tool_calls[]`:
+
+| werdykt | rozmów | zgubionych wywołań |
+|---|---|---|
+| diagnostyka **= cała historia** | **191** | 0 |
+| diagnostyka **uboższa (migawka)** | **86** | **200** |
+
+Efekt na pierwotnym planie migracji (cały scope 277): gaszonych `true→false` **223**, z tego **80 na niepełnej diagnostyce**. CC raportowało 5 — patrzyło tylko na podzbiór encyklopedyczny, nie na całkowity efekt reguły.
+
+**Decyzja 130b — migrujemy WYŁĄCZNIE rozmowy z pełną diagnostyką.** Warunek deterministyczny, bez zgadywania:
+```sql
+jsonb_array_length(search_diagnostics) = (
+  SELECT count(*) FROM jsonb_array_elements(messages) m,
+         jsonb_array_elements(COALESCE(m->'tool_calls','[]'::jsonb)) tc
+  WHERE tc->>'name' IN ('search_products','get_expert_knowledge'))
+```
+
+**Uzasadnienie:** to **ta sama zasada**, którą ADR powyżej zastosował do 94 rozmów bez diagnostyki („nie da się odtworzyć → nie ruszamy; zerowanie na ślepo = fabrykacja"). Rozmowy z diagnostyką **częściową** niosą **identyczne** ryzyko co te bez — różnią się tylko tym, że kłamią mniej oczywiście. Asymetria kosztów jest rozstrzygająca: **fałszywy alarm kosztuje jedno kliknięcie recenzenta; zgaszona prawdziwa luka jest niewidzialna na zawsze.**
+
+**Liczby po zawężeniu (zmierzone, asercje dla CHAT-T-148):**
+
+| metryka | wartość |
+|---|---|
+| scope migracji (pełna diagnostyka) | **191** |
+| z tego `true → false` | **143** |
+| z tego `false → true` | **0** |
+| NIETKNIĘTE: niepełna diagnostyka | **86** |
+| NIETKNIĘTE: brak diagnostyki | **94** |
+| panel globalnie `true`: przed → po | **339 → 196** |
+| kohorta `search_products`: `true` po | **94** |
+
+**Skutek dla decyzji 128b: żaden.** Reguła w kodzie bez zmian — nowe rozmowy liczone poprawnie od pierwszej tury, gdzie migawka **jest** kompletna. Zawężenie dotyczy **wyłącznie migracji historii**.
+
+**Konsekwencja dla rollbacku (odpowiedź na pytanie 3 od CC):** przy zawężeniu wszystkie 143 zmienione rozmowy były `true`, więc rollback `→ true` **dla faktycznie zmienionego zbioru jest dokładny** — znika problem over-restore 32 encyklopedycznych. Autorytatywnym rollbackiem pozostaje `pg_dump` z KROKU 4.
+
+**Odrzucone:**
+- **(a) migrować cały scope 277** — 80 zgaszeń na niepewnych danych, nieodróżnialnych od reszty.
+- **(c) nie migrować historii** — 143 pewne zgaszenia to większość realnego zysku, szkoda ją tracić.
+
+**Dług do rozważenia osobno (nie w tym tasku):** `search_diagnostics` jako migawka ostatniej tury to **strata danych diagnostycznych** przy każdej rozmowie wieloturowej (200 wywołań bez śladu w 86 rozmowach). Jeśli diagnostyka ma służyć recenzji, powinna **akumulować** tury, nie nadpisywać. To zmiana kontraktu zapisu — osobna decyzja, osobna karta.
