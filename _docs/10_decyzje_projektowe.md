@@ -4010,3 +4010,54 @@ Te **31** to rozmowy **encyklopedia-only**, gdzie próg 0,5 **działał poprawni
 **Zasada do zapamiętania (szersza niż ten task):** **rollback regułowy jest z natury przybliżeniem**, gdy forward niszczy informację potrzebną do odtworzenia stanu. `UPDATE` kasujący poprzednią wartość jest nieodwracalny regułą — odwraca go tylko kopia. **Dump nie jest formalnością przed migracją; jest jedynym dokładnym rollbackiem.** Nagłówek każdego pliku `*_rollback.sql`, który jest przybliżeniem, musi to mówić wprost.
 
 **Wniosek o procesie:** CC złapało dwa realne błędy w moich specyfikacjach w jednym tasku (nota nr 1 — skala migawki; nota nr 2 — dokładność rollbacku). Brama STOP przed migracją (ADR-089) zadziałała dokładnie tak, jak miała.
+
+---
+
+### ADR-127: `search_diagnostics` akumuluje tury zamiast je nadpisywać
+
+**Data:** 2026-07-17 | **Status:** ZATWIERDZONA, do wdrożenia (CHAT-T-149) | **Powiązane:** ADR-126 + nota nr 1 (wątek macierzysty — to tam dług wykryto), `_docs/44` PUŁAPKI, ADR-089 (STOP-gate). **Decyzje Karola:** 134a (`||` w SQL), 135a (bez odtwarzania historii).
+
+**Problem — diagnostyka pamięta tylko ostatnią turę.** Wykryty przy CHAT-T-148: **86 z 277 rozmów** ma w `search_diagnostics` mniej wywołań, niż faktycznie było — łącznie **200 wywołań bez śladu**. Skutek: każda analiza historii oparta na tej kolumnie liczy z niepełnych danych. To zmusiło nas do wyłączenia 86 rozmów z migracji 042 (decyzja 130b).
+
+**Mechanizm (zweryfikowany w kodzie 2026-07-17):**
+- `ChatService.php:129` — `$searchDiagnostics = []` startuje **puste przy każdej turze**
+- `ChatService.php:276` — dopisuje wyłącznie wywołania z bieżącej tury
+- `ChatService.php:372` → `ConversationStore.php:188` — `SET search_diagnostics = ?::jsonb` **nadpisuje kolumnę w całości**
+
+Kod **nigdy nie czyta poprzedniej wartości**. Rozmowa 5-turowa zostawia diagnostykę jednej tury.
+
+**Dlaczego to nie zepsuło `knowledge_gap`:** flaga w tej samej instrukcji `UPDATE` jest **sticky** (`:189`, `? OR COALESCE(knowledge_gap, false)`) — dokłada, nie nadpisuje. Kolumna obok robi więc dokładnie to, czego brakuje diagnostyce. **ADR-127 usuwa tę asymetrię.**
+
+**Decyzja 134a — akumulacja w SQL, przez konkatenację jsonb:**
+```sql
+search_diagnostics = COALESCE(search_diagnostics, '[]'::jsonb) || ?::jsonb
+```
+
+**Uzasadnienie:** operacja jest **atomowa i w tej samej instrukcji `UPDATE`** co reszta zapisu — zero dodatkowego zapytania, zero wyścigu przy równoległych turach. Jest **symetryczna do sticky OR** stojącego linijkę niżej: ta sama filozofia „dokładaj, nie nadpisuj", ta sama instrukcja, spójny zapis.
+
+**Odrzucone:**
+- **(b) scalanie w PHP** (odczyt → merge → zapis) — dodatkowe zapytanie, okno wyścigu między odczytem a zapisem, więcej kodu w miejscu, gdzie SQL wystarcza.
+- **(c) osobna tabela `divechat_search_diagnostics`** (wiersz per wywołanie) — czystsze relacyjnie i docelowo lepsze, ale wymaga migracji, przepisania odczytu w panelu PS (`AdminDivezoneChatController.php:2098-2123`) i w API. Nieproporcjonalne, dopóki jsonb wystarcza. **Do rozważenia, jeśli diagnostyka kiedyś urośnie w wymagania** (indeksy, raporty agregujące).
+
+**Koszt — świadomy kompromis, nie przeoczenie.** Kolumna rośnie z każdą turą, bez limitu. Pomiar produkcyjny (2026-07-17):
+
+| metryka | wartość |
+|---|---|
+| `search_diagnostics` łącznie (655 rozmów) | **841 kB** |
+| największa pojedyncza wartość | **14 kB** |
+| średnia | **1,3 kB** |
+| max wywołań w jednej turze | 5 |
+| **max wywołań w całej rozmowie** | **21** |
+| średnio wywołań na rozmowę | 2,3 |
+
+Najdłuższa rozmowa (21 wywołań) urośnie do **~28 kB** — wobec limitu 255 MB na wartość jsonb bez znaczenia. **Gdyby kiedyś rozmowy stały się bardzo długie**, wraca opcja (c) albo przycinanie do N ostatnich wywołań. Odnotowane, nie blokuje.
+
+**Front bez zmian.** Panel PS renderuje diagnostykę jako `<pre>` z `max-height:300px; overflow:auto` (`:2119-2122`) — dłuższa tablica po prostu scrolluje. **Zero założeń o długości**, zmiana jest dla panelu przezroczysta. Świat PS nietknięty.
+
+**Decyzja 135a — historii NIE odtwarzamy.** Naprawa dotyczy wyłącznie nowych rozmów. Te 86 zostaje z flagą `true`, czyli **jest widoczne w panelu jako podejrzane** — to fałszywy alarm, nie utrata sygnału. Odtworzenie byłoby archeologią o niepewnej wartości.
+
+> **Ustalenie na przyszłość (gdyby jednak było warto):** `divechat_messages` ma **1312 wierszy `role='tool'` w 458 rozmowach** — surowe `tool_result` per tura, **których nikt nie nadpisuje**. Nie ma tam `rrf_score` ani `max_similarity` (`ChatService.php:281` robi `unset($resultForAI['search_debug'])` przed zapisem), **ale jest `result_count`** — czyli dokładnie to, czego wymaga reguła 128b. To jest ścieżka odtworzenia tych 86 rozmów, jeśli filtr zacznie przeszkadzać w praktyce. Decyzja: dopiero mając dowód potrzeby.
+
+**Weryfikacja po wdrożeniu — test wieloturowy jest sednem, nie formalnością:** rozmowa z **dwiema** turami wyszukującymi musi zostawić w `search_diagnostics` **oba** wywołania. Dziś zostawia jedno. Dodatkowo: `jsonb_array_length(search_diagnostics)` = liczba `messages[].tool_calls[]` dla nowych rozmów (dokładnie ten test, który wykrył dług).
+
+**Implementacja:** CHAT-T-149 (instancja backend). Świat: backend `chat.divezone.pl`, **zero migracji PG**, moduł PS bez zmian.
