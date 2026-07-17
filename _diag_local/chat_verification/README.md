@@ -24,13 +24,31 @@ sondy, ktore wczesniej powstawaly ad-hoc i ginely po sesji.
 - `show_conversation.py <conv_id>` — pelny przebieg jednej rozmowy.
     python3 show_conversation.py 634
     python3 show_conversation.py 634 --tools # z tool_result
+- `sql.py` — dowolny SQL na Railway BEZ pulapki apostrofow (SSH->zsh->bash->psql).
+  Domyslnie READ-ONLY: bez --write transakcja jest wycofywana.
+    python3 sql.py -c "SELECT count(*) FROM divechat_conversations"
+    python3 sql.py --file zapytanie.sql
+    python3 sql.py -c "SELECT ..." --csv     # do dalszej obrobki
+    python3 sql.py -c "UPDATE ..." --write   # zapis WYMAGA jawnej flagi
+- `check_deploy.py <sciezka_w_repo>` — kontrola wdrozenia jednym poleceniem:
+  md5 local<->prod + php -l (ea-php84) + smoke /api/health. Sam mapuje repo->serwer
+  (standalone/ -> chat.divezone.pl BEZ prefiksu; modules/ -> newtmp2 = PRODUKCJA).
+    python3 check_deploy.py standalone/src/Chat/ChatService.php
+    python3 check_deploy.py standalone/src/Chat/X.php --grep "ADR-126"  # marker taska
+    python3 check_deploy.py --smoke-only
 
 ## Zasada pracy z Trello (tablica "Projekty 2026")
-Karty problemow czatu maja tytul "Chat - ...". Cykl:
-  Backlog -> W trakcie (start) -> Do weryfikacji (wdrozone, czeka na sprawdzenie
-  przez Karola) -> Zrobione (Karol potwierdza).
-Instancja/CC przesuwa karte tylko do "Do weryfikacji" po potwierdzeniu na danych,
-ze sprawa zalatwiona. "Zrobione" ustawia Karol.
+Karty problemow czatu maja tytul "Chat - NN - opis [T-NNN]". Cykl:
+  Backlog -> W trakcie (start) -> Do weryfikacji -> Zrobione.
+
+ZASADA (Karol, 2026-07-14): gdy fix jest ZWERYFIKOWANY (md5 prod==local + test PROD
+przez realna sciezke), Claude/CC SAM domyka sprawe — przesuwa karte do "Zrobione"
+ORAZ zamyka rozmowy w bazie recenzji (patrz `_docs/42` sekcja 5). NIE czekaj na Karola.
+"Do weryfikacji" to przystanek TYLKO wtedy, gdy weryfikacja jeszcze trwa albo zalezy
+od czegos poza kodem (np. Karol musi zobaczyc efekt w widgecie/panelu).
+
+Uwaga: `move_card` WYMAGA jawnego `boardId` (mimo ze opis mowi "opcjonalny").
+Po timeoucie/bledzie NAJPIERW `get_cards_by_list_id` — nie ponawiaj na slepo.
 
 ## Zasada: nie ufaj pamieci, sprawdz baze
 Liczby (ile otwartych, ktore zamkniete) zmieniaja sie na biezaco. Zawsze uruchom

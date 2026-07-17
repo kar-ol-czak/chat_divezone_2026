@@ -1,5 +1,9 @@
 # 42. Weryfikacja rozmow czatu — procedura
 
+> **Nadrzedna instrukcja architekta: `_docs/46_instrukcja_architekta.md`** (mapa
+> „zadanie -> dokument", wszystkie narzedzia, gdzie sekrety, pulapki narzedziowe).
+> Ten dokument opisuje JEDNO zadanie: „przejrzyj czaty do weryfikacji".
+
 Dokument trwaly. Opisuje, jak wykonac zadanie "przejrzyj czaty do weryfikacji
 i zaproponuj naprawe". Cel: przy kazdym powtorzeniu tego zadania zaczynac od
 gotowego, nie od zera. Powstal, bo narzedzia do tego byly budowane ad-hoc i ginely.
