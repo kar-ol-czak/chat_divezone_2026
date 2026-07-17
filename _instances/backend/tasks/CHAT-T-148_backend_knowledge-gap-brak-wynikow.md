@@ -167,3 +167,54 @@ Raport: ścieżka dumpa, md5 local↔prod, wynik `php -l`, smoke, liczby z weryf
 - `search_debug`, `max_similarity`, `min_similarity` — zostają.
 - ADR-y (pisze architekt), `CLAUDE.md`, `_docs/44`, karty Trello.
 - Niezacommitowane zmiany innych sesji: `_ops/newtmp2_root/purge_litespeed.php` (**zawiera sekret**), `standalone/config/routes.php`.
+
+---
+
+## Wynik
+
+**Status: DONE** (2026-07-17, instancja backend). Decyzje wykonane: 128b (reguła), 129b (migracja SQL), 130b (zawężenie do pełnej diagnostyki), 132a (rollback whole-scope + `pg_dump` autorytatywny).
+
+### Kod
+`standalone/src/Chat/ChatService.php` — `buildSearchDiagnostic()` rozdziela regułę per narzędzie: `search_products` → `$gap = empty($items)` (bez progu, ADR-126); `get_expert_knowledge` → bez zmian (`empty || maxSim < $threshold`). `$threshold`, `knowledge_gap_threshold`, `max_similarity`/`min_similarity` nietknięte.
+
+### Deploy (chat.divezone.pl)
+- `pg_dump` przed migracją: `_backups/divechat_conversations_pre042_20260717_085336.sql` — **11 MB, 655 wierszy**. Autorytatywny rollback (decyzja 132a).
+- `_deploy_bak/CHAT-T-148_20260717_085424/src/Chat/ChatService.php` (md5 stanu prod: `715d48cea1050850c144db06caee4bd8`).
+- **Wdrożono TYLKO `src/Chat/ChatService.php`**, NIE blanket-rsync `standalone/`. Powód: dry-run pokazał 146 plików do wypchnięcia, w tym `config/tools.php` (dryf repo≠prod, potwierdzony `diff` → gwarantowany fatal 500, CLAUDE.md) i `config/routes.php` (niezacommitowana zmiana innej sesji, na liście NIE RUSZAJ). Zakres zmiany taska = 1 plik.
+- md5 local ↔ prod: **`6ad5558fc19c992fbed8bc48251b8b39`** (zgodne).
+- `ea-php84 -l`: *No syntax errors detected*.
+- Smoke `/api/health`: **HTTP 200**, `{"status":"ok","php":"8.4.23","postgres":true,"mysql":true}`.
+- Migracja `sql/042` na Railway (`psql -f -`): **`UPDATE 191`, COMMIT**.
+
+### Weryfikacja (dowody)
+
+Wszystkie 7 asercji decyzji 130b zgodne. Panel globalnie **339 → 196**.
+
+| klasa | rozmów | `true` po | status |
+|---|---|---|---|
+| pełna diagnostyka (migrowane) | 191 | 17 (przed: 160) → **143 zgaszone** | zmienione |
+| niepełna diagnostyka (migawka) | 86 | 85 | **NIETKNIĘTE** |
+| brak diagnostyki | 378 | **94** | **NIETKNIĘTE** |
+| **globalnie** | 655 | **196** | 339 → 196 |
+
+Kohorta `search_products`: 237 → **94 `true`** (14 pełna diagnostyka + 80 nietkniętych niepełnych). Nietknięte łącznie: 86 + 94 = **180**.
+
+**Rozmowa testowa (PROD, realny czat HMAC):** „Shearwater Perdix 3" → `search_products` rc=5, **maxSim = 0,123**, flaga **`false`** ✅. To dokładnie zmierzony sufit RRF — pod starą regułą 0,123 < 0,5 dawało `true`. Test przed naprawą **niemożliwy**.
+
+**Gałąź `rc=0 → true`:** nie udało się wywołać promptem (wyszukiwarka wektorowa zwraca top-N nawet na bzdurę — `Blorptronix 9000` dał rc=5, maxSim 0,046, flaga `false`; to udokumentowane ograniczenie ADR-126 „znalazł, ale bzdurę"). Historyczne zera pochodzą z wieloturowego kontekstu z filtrami. Dowiedzione **deterministycznie na wdrożonym pliku prod** (refleksja, plik tymczasowy usunięty) — 5/5 PASS:
+
+| przypadek | gap | oczek. |
+|---|---|---|
+| `search_products`, 0 wyników | `true` | `true` ✅ |
+| `search_products`, rrf 0,046–0,123 (<0,5) | `false` | `false` ✅ |
+| `get_expert_knowledge`, cosine 0,46 (<0,5) | `true` | `true` ✅ |
+| `get_expert_knowledge`, cosine 0,72 | `false` | `false` ✅ |
+| `get_expert_knowledge`, 0 wyników | `true` | `true` ✅ |
+
+**Reguła E:** 5 rozmów testowych oznaczone w `divechat_conversation_review` markerem `[test CHAT-T-148, nie klient]`, `verdict=NULL`, `updated_by=NULL`.
+
+**Panel PS:** bez zmian w module (zgodnie z taskiem). Filtr „Luki wiedzy" zawęża teraz do 196 z 655 zamiast 339 — klik-test UI po stronie Karola (wymaga sesji admina PS).
+
+### Uwagi
+- Rollback `sql/042_..._rollback.sql` over-restore'uje 31 rozmów encyklopedycznych (udokumentowane w nagłówku, decyzja 132a) — autorytatywny jest `pg_dump` powyżej.
+- **Dług (poza taskiem, ADR-126 nota nr 1):** `search_diagnostics` jako migawka ostatniej tury = 200 wywołań bez śladu w 86 rozmowach. Jeśli diagnostyka ma służyć recenzji, powinna akumulować tury.

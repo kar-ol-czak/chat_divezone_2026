@@ -443,7 +443,16 @@ final class ChatService
 
         $maxSim = !empty($similarities) ? max($similarities) : null;
         $minSim = !empty($similarities) ? min($similarities) : null;
-        $gap = empty($items) || ($maxSim !== null && $maxSim < $threshold);
+
+        // Dwie ścieżki, bo `similarity` znaczy co innego w każdym narzędziu (ADR-126):
+        // search_products zwraca `rrf_score` (ranga na torach, sufit ~0,12) — próg 0,5
+        // jest tam nieosiągalny, więc luka = ZERO WYNIKÓW; get_expert_knowledge zwraca
+        // prawdziwy cosine (0–1), gdzie próg 0,5 działa poprawnie.
+        if ($toolCall->name === 'search_products') {
+            $gap = empty($items);
+        } else {
+            $gap = empty($items) || ($maxSim !== null && $maxSim < $threshold);
+        }
 
         $diag = [
             'tool' => $toolCall->name,
