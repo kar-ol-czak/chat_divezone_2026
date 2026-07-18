@@ -13,6 +13,7 @@ use DiveChat\Tools\CuratedRecommendations;
 use DiveChat\Tools\ExpertKnowledge;
 use DiveChat\Tools\GetShopLinks;
 use DiveChat\Tools\GetShopSchedule;
+use DiveChat\Tools\InternationalShipping;
 use DiveChat\Tools\OrderStatus;
 use DiveChat\Tools\PopularProducts;
 use DiveChat\Tools\ProductCombinations;
@@ -43,6 +44,9 @@ return static function (EmbeddingService $embeddingService): ToolRegistry {
     $registry->register(new ExpertKnowledge($embeddingService, $pg));
     $registry->register(new OrderStatus());
     $registry->register(new ShippingInfo($pg));
+    // CHAT-T-151 (ADR-129): wysyłka ZAGRANICZNA kurierem DPD — żywe stawki ze stref
+    // PrestaShop (MySQL), osobne od get_shipping_info (Railway PG, zone=PL/EU).
+    $registry->register(new InternationalShipping(MysqlConnection::getInstance()));
     $registry->register(new GetShopLinks($pg));
     $registry->register(new GetShopSchedule(new ShopCalendar(new DbOverrideProvider($pg))));
     $registry->register(new CuratedRecommendations($pg, $enrichmentService));

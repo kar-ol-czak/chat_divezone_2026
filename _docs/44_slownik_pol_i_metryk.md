@@ -642,9 +642,12 @@ bazy Railway, a inwentarz MySQL i kontrakty narzędzi — z kodu z numerami lini
 - **`newtmp2` to PRODUKCJA sklepu**, mimo nazwy „tmp". Nie katalog przejściowy.
 - **Kod backendu na serwerze nie ma prefiksu `standalone/`** — w repo jest, na serwerze nie.
 - **Panel PS jest źródłem prawdy dla wyboru modelu**, nie `.env` (CHAT-T-068).
-- **Pipeline embeddingów nie jest cronowany.** Nowy produkt = bot go nie zna, aż ktoś ręcznie odpali skrypt z laptopa. Stąd cichy dług („140 braków od 15 maja"). Karta Chat - 23.
+- **Pipeline embeddingów JEST cronowany od CHAT-T-150** (cron 02:15 delta po hashu + watchdog 08:30, `/home/divezone/scripts/embeddings/`, ADR-128). Wcześniej nie był (stąd historyczny dług „140 braków od 15 maja"). Nowy/zmieniony produkt wchodzi automatycznie następnej nocy.
+- **`config/tools.php` ma DWUKIERUNKOWY dryf repo↔prod** (repo `ProductCombinations` martwa, prod `GetProductCombinations` żywa, ATTR-T-052). Blanket-rsync = fatal 500 + zabicie cudzej rejestracji. Deploy tools.php TYLKO wariantem „prod + nowe linie". Karta Chat - 42.
 - **Filtry `in_stock_only` / `include_discontinued` działają post-hoc z MySQL**, nie w pgvector. To nie to samo miejsce w przepływie.
 - **Hasło MySQL w `.env` jest w apostrofach.** `tr -d '"'` ich nie usuwa → `Access denied`. Najprościej: skrypt PHP w katalogu aplikacji (`vendor/autoload` + `Dotenv` + `PDO`), nie CLI.
 - **Apostrofy giną w łańcuchu SSH→zsh→bash→psql.** Zapisuj SQL do pliku na serwerze (`cat > /tmp/q.sql << "EOF"`), literały przez `chr()||`. `interval` nie przyjmuje wyrażeń → `make_interval(days => 30)`.
+
+- **Nazwy krajów/stref w PrestaShop bywają poprzedzone twardą spacją U+00A0 (nbsp, bajty C2A0).** SQL `TRIM` usuwa tylko 0x20, więc „Austria" wraca jako „ Austria" i nie matchuje po nazwie. Czyść w PHP: `preg_replace('/^[\s\x{00A0}]+|[\s\x{00A0}]+$/u','',$s)`. Dowód: `pr_country_lang` id_lang=1, CHAT-T-151 `InternationalShipping::cleanName()`.
 
 **Jak korzystać:** przed każdą diagnozą przejrzyj tabelę. Gdy wniosek opiera się na polu, którego tu nie ma — sprawdź w inwentarzu (sekcje 2-5), **co zawiera i kto to czyta**. Gdy odkryjesz nową pułapkę, dopisz ją tutaj: jedna linijka, z dowodem.
