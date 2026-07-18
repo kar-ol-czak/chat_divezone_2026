@@ -126,6 +126,8 @@ Przygotuj i przedstaw do zatwierdzenia:
 2. Dopiero po zgodzie: realny przebieg delty.
 3. Sprawdź `max(updated_at)` w PG i log.
 
+**DOWÓD, ŻE DELTA=0 JEST POPRAWNA (architekt, weryfikacja niezależna 2026-07-18).** Lokalny dry-run CC dał delta 0/2606. To NIE jest „nic nie znalazł" — to potwierdzenie mechanizmu na realnym przypadku brzegowym. W MySQL produkt **4290** (Kompas TECLINE) ma `date_upd = 2026-07-17 12:03`, czyli PO ostatnim embeddingu (2026-07-16 20:40 CEST). Kryterium `date_upd > last_run` (odrzucone 141a) wysłałoby go na zbędny re-embed 4 wektorów. Ale jego cena BRUTTO się nie zmieniła (MySQL `price=202.097561` netto × 1.23 = **248.58** = dokładnie to, co siedzi w `document_text` w PG), więc treść dokumentu jest identyczna → hash się zgadza → delta słusznie go pomija. **`date_upd` skłamał, hash nie.** Dokładnie o to chodziło w 141b. Dry-run na serwerze (KROK 6) ma powtórzyć delta ≈ 0 — jeśli tak, ten sam mechanizm potwierdzony też z serwerowej ścieżki.
+
 ## KROK 7 — STOP. Wpis do crona
 
 **STOP. Crontab to wspólny zasób — inne projekty mają tam swoje wpisy. Nie edytuj bez zgody.**
