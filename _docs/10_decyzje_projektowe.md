@@ -4141,3 +4141,8 @@ Architekt rekomendując 141b twierdził, że hash wymaga **nowej kolumny `docume
 Treść decyzji 141b (delta po hashu zamiast po `date_upd`) **pozostaje w mocy** — zmienia się wyłącznie realizacja: bez migracji. Kanoniczność hasha przejęta z ENC-013: liczyć z **znormalizowanego** `document_text`, nie z surowego bufora, żeby różnice białych znaków nie wywoływały re-embeddingu.
 
 Zasada, która zawiodła: „zanim uznasz coś za niezrobione, sprawdź, czy nie jest już zrobione gdzie indziej" (`_docs/46` §5.3).
+
+**Nota nr 2 (2026-07-18, architekt) — dead-man watchdog dochodzi do dec. 144a (decyzja Karola 148b).**
+Weryfikacja pierwszej tury CC ujawniła lukę w dec. 144a: heartbeat sprawdzany **na starcie runnera** łapie „przebiegi lecą, ale padają", NIE łapie „cron w ogóle nie wystartował" — a to dokładnie scenariusz, który uśpił pipeline na 2 miesiące (runner się nie odpala → nikt nie czyta heartbeatu). Dokładany **osobny cron-strażnik** `watchdog.sh`: niezależna linia w crontabie (08:30), sprawdza wiek `last_success`, alert `sendmail` gdy > 26 h. Obserwuje plik, nie runner samego siebie, więc działa mimo zniknięcia głównego wpisu. Granica: nie łapie śmierci całego `crond` (wymagałaby monitoringu spoza serwera — poza zakresem). Realizacja: CHAT-T-150 KROK 4 + druga linia crontaba w KROKU 7.
+
+**Weryfikacja serwera 2026-07-18 (potwierdzenie dec. 144a i 145a):** `DIVECHAT_COST_ALERT_EMAIL` obecny w serwerowym `.env`, `/usr/sbin/sendmail` istnieje, `DB_HOST=localhost` + port 3306 otwarty + socket żyje. Tryb `server` dostanie działające MySQL bez tunelu. Zastrzeżenie PyMySQL: `localhost`≠`127.0.0.1` (socket vs TCP) — zapisane w tasku.

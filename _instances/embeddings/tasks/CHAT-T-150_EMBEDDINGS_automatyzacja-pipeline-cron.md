@@ -40,6 +40,17 @@ Etap 2 zależy od etapu 1. Cron musi odpalić **oba, w tej kolejności, na tym s
 
 ---
 
+## USTALENIA WERYFIKACJI SERWERA (architekt, 2026-07-18) — czytaj, oszczędza rundę pytań
+
+Pierwsza tura prac CC (przerwana blokadą macOS TCC) zgłosiła cztery rozbieżności task↔kod. Architekt sprawdził każdą na serwerze. Wyniki:
+
+1. **`DIVECHAT_COST_ALERT_EMAIL` JEST w serwerowym `.env`** (potwierdzone `grep` na `~/public_html/chat.divezone.pl/.env`). W repo go nie ma — to normalne, sekret żyje tylko na serwerze. Alerty (KROK 4) mają na czym stanąć. `/usr/sbin/sendmail` obecny (setgid mailtrap).
+2. **Ścieżka `.env`: loader MUSI być mode-aware.** `parent.parent/.env` na serwerze wskazuje `/home/divezone/scripts/.env` = nie istnieje. W trybie `server` czytaj **bezwzględnie** `/home/divezone/public_html/chat.divezone.pl/.env` (ADR-128 dec. 145a). CC w pierwszej turze dodał to poprawnie — zachowaj.
+3. **`requirements.txt` już istnieje** i ma komplet zależności. W KROKU 5 to **deploy istniejącego pliku, nie tworzenie nowego.**
+4. **`DB_HOST=localhost`, NIE `127.0.0.1`.** Zweryfikowane: port 3306 otwarty, socket `/var/lib/mysql/mysql.sock` żyje — więc tryb `server` zadziała. **UWAGA dla PyMySQL: `localhost` bywa tłumaczone na socket unixowy, `127.0.0.1` wymusza TCP — to NIE są synonimy.** W trybie `server` użyj wartości z `DB_HOST`/`DB_PORT` z `.env` (czyli `localhost:3306`); jeśli PyMySQL z `host='localhost'` pójdzie w socket i to zadziała — dobrze, socket istnieje. Nie podmieniaj na sztywno `127.0.0.1`, chyba że test połączenia w KROKU 6 pokaże problem z socketem. Backend czatu łączy się z tym MySQL na tych samych parametrach z `.env`, więc są sprawdzone w boju.
+
+---
+
 ## KROK 0 — PULL / READ
 
 1. `git pull --rebase origin main`, `git status`, sprawdź gałąź.
@@ -89,8 +100,15 @@ Jeden punkt wejścia dla crona (np. `run_nightly.py` albo `run_nightly.sh` — T
 - Log ma zawierać: ile wyekstrahowano, ile zakwalifikowano do delty, ile embeddingów, czas, koszt/liczba wywołań API. **Zero sekretów w logu.**
 - **Alert mailem** na adres z `DIVECHAT_COST_ALERT_EMAIL` (ADR-128, decyzja 144a):
   1. przebieg padł (niezerowy exit / wyjątek / błąd API)
-  2. **heartbeat: brak udanego przebiegu przez 48 h** — zapisuj znacznik ostatniego sukcesu (np. plik `last_success` obok logu) i sprawdzaj go na starcie. **Cisza nie jest dowodem sukcesu** — bez tego cichy zgon crona powtórzy się.
+  2. **heartbeat: brak udanego przebiegu przez 48 h** — zapisuj znacznik ostatniego sukcesu (plik `last_success` obok logu, `touch` po udanym przebiegu) i sprawdzaj go na starcie. **Cisza nie jest dowodem sukcesu.**
 - Zabezpieczenie przed nakładaniem przebiegów (lock file) — przebieg nie może wystartować, gdy poprzedni żyje.
+
+**Heartbeat w runnerze NIE wystarcza (decyzja 148b).** Łapie „przebiegi lecą, ale padają". NIE łapie najgorszego przypadku: **cron w ogóle nie wystartował** (runner się nie odpali, więc nikt nie sprawdzi heartbeatu). Ten przypadek już raz zaszedł — pipeline stał 2 miesiące w ciszy. Dlatego dochodzi **osobny cron-strażnik (dead-man)**, niezależny od runnera:
+
+- Mały skrypt `watchdog.sh` (kilka linii): sprawdza wiek pliku `last_success`; jeśli starszy niż próg (26 h — doba + margines), wysyła mail alertowy przez `/usr/sbin/sendmail` na adres z `.env` i kończy. Jeśli świeży — cisza, exit 0.
+- **Adres i sekret czyta z tego samego `.env`** ścieżką bezwzględną (nie hardkoduj maila w skrypcie).
+- Strażnik jest osobną linią w crontabie (KROK 7), o innej godzinie niż główny przebieg. Działa, **nawet gdy główny wpis crona zniknie lub runner się nie odpali** — bo to on obserwuje `last_success`, nie runner samego siebie.
+- **Świadome ograniczenie do zapisania w raporcie:** jeśli padnie CAŁY cron demona (nie pojedynczy wpis, lecz `crond`), strażnik też nie ruszy. Pełne domknięcie wymagałoby monitoringu spoza serwera — poza zakresem tej karty. Strażnik zamyka najczęstszy realny scenariusz (zniknięty/zepsuty wpis, runner rzucający wyjątkiem przed zapisem heartbeatu), nie wszystkie.
 
 ## KROK 5 — STOP. Deploy na serwer
 
@@ -98,8 +116,8 @@ Jeden punkt wejścia dla crona (np. `run_nightly.py` albo `run_nightly.sh` — T
 
 Przygotuj i przedstaw do zatwierdzenia:
 - `mkdir -p /home/divezone/scripts/embeddings`
-- venv: `/usr/bin/python3.12 -m venv /home/divezone/scripts/embeddings/.venv`, potem `pip install -r requirements.txt` (openai, psycopg2-binary, python-dotenv, numpy, pymysql, beautifulsoup4)
-- **Wypisz KONKRETNE pliki do wysłania** (nie katalog, nie `rsync` całości). Minimum: `extract_products.py`, `batch_embed_products.py`, `batch_embed_multivector.py`, `generate_embeddings.py`, runner, `requirements.txt`. Sprawdź importy — jeśli ciągną coś jeszcze, dopisz.
+- venv: `/usr/bin/python3.12 -m venv /home/divezone/scripts/embeddings/.venv`, potem `pip install -r requirements.txt`. **`requirements.txt` już istnieje w repo z kompletem zależności** (openai, psycopg2-binary, python-dotenv, numpy, pymysql, beautifulsoup4) — deployujesz istniejący plik, nie tworzysz nowego.
+- **Wypisz KONKRETNE pliki do wysłania** (nie katalog, nie `rsync` całości). Minimum: `extract_products.py`, `batch_embed_products.py`, `batch_embed_multivector.py`, `generate_embeddings.py`, runner (`run_nightly.py`), `watchdog.sh`, `requirements.txt`. Sprawdź importy — jeśli ciągną coś jeszcze, dopisz.
 - **NIE wysyłaj** `__pycache__`, plików diagnostycznych ani skryptów jednorazowych.
 
 ## KROK 6 — Weryfikacja na serwerze (przed cronem)
@@ -112,11 +130,16 @@ Przygotuj i przedstaw do zatwierdzenia:
 
 **STOP. Crontab to wspólny zasób — inne projekty mają tam swoje wpisy. Nie edytuj bez zgody.**
 
-Proponowany wpis (ADR-128, decyzja 142c + 146c):
+Proponowane wpisy — **DWA** (ADR-128 dec. 142c + 146c; strażnik dec. 148b):
 ```
+# 1) główny przebieg delty, 02:15
 15 2 * * * /usr/bin/timeout 1800 /home/divezone/scripts/embeddings/.venv/bin/python /home/divezone/scripts/embeddings/run_nightly.py --mode changed >> /home/divezone/logs/divechat_embeddings.log 2>&1
+# 2) cron-strażnik (dead-man): sprawdza wiek last_success, alert gdy > 26 h
+30 8 * * * /home/divezone/scripts/embeddings/watchdog.sh >> /home/divezone/logs/divechat_embeddings.log 2>&1
 ```
-Godzina **02:15** wybrana z pomiaru zajętości crona: blok 03:00-05:30 jest gęsty (indeksery 03:20/03:30, `sec_scan COLD` 03:30, klaviyo 03:40, `sentinel --full` 04:30 z timeoutem 3600 → do 05:30). Wolne okno 01:40-03:00, 02:15 daje ~45 min zapasu z obu stron. **Nie przesuwaj bez ponownego pomiaru.**
+Główny wpis o **02:15** — wybór z pomiaru zajętości crona: blok 03:00-05:30 gęsty (indeksery 03:20/03:30, `sec_scan COLD` 03:30, klaviyo 03:40, `sentinel --full` 04:30 z timeoutem 3600 → do 05:30). Wolne okno 01:40-03:00, 02:15 daje ~45 min zapasu z obu stron. **Nie przesuwaj bez ponownego pomiaru.**
+
+Strażnik o **08:30** — z rana, po nocnym przebiegu, w porze gdy Karol widzi maila; niezależny od godziny głównego wpisu. Próg 26 h = doba + margines (przebieg spóźniony o godzinę nie odpala fałszywego alarmu, ale zniknięty przebieg łapie następnego ranka).
 
 Przed edycją: `crontab -l > ~/crontab.bak-embeddings-$(date +%Y%m%d-%H%M%S)` (wzorzec z istniejących backupów w `~/`).
 
