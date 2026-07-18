@@ -104,6 +104,9 @@ smoke, oraz czyszczenie cache (`var/cache/prod` + LSCache) przy module PS. Karol
 nie deployuje ręcznie — autoryzuje słowem „deployuj" (STOP-gate, ADR-089). Nie
 pisz w taskach „deploy robi Karol".
 
+**DEKLARACJA PLIKÓW PO DEPLOYU (Sentinel) — wpisuj do KAŻDEGO taska deployującego PHP.**
+Serwer jest monitorowany przez Sentinel (integralność plików PHP, cron o :07). Każdy niezadeklarowany plik PHP na monitorowanym drzewie = alert `PHP_FILE_CHANGED`/`NEW_PHP_FILE` + SMS na PROD. CC **nie odpala rebaseline sam** (bramka `declared` wymaga ręcznego `tak` operatora w TTY, decyzja 115a — proces bez TTY dostaje EOF). Zamiast tego CC na końcu raportu z deployu wypisuje gotowy blok DO WKLEJENIA przez operatora (osobno per drzewo: token `chat.divezone.pl` dla backendu, `prod` dla modułu w `newtmp2`; pliki z różnych drzew nie mogą iść razem — bezpiecznik cross-tree). Pełna procedura, format bloku i kody wyjścia: `CLAUDE.md` sekcja „DEKLARACJA PLIKÓW PO DEPLOYU". W każdym tasku deployującym dopisz krok: „po deployu wypisz blok deklaracji Sentinela dla operatora". Sentinel to projekt Security (osobna sesja) — nie ruszamy jego kodu, tylko deklarujemy własne wgrane pliki.
+
 **UWAGA — NIE RÓB BLANKET-RSYNC `standalone/`.** Repo ma DRYF wobec produkcji:
 `config/tools.php` (rozjazd R-5, wypchnięcie = fatal 500) i `config/routes.php`
 (niezacommitowana zmiana innej sesji). W taskach wypisuj KONKRETNE pliki do

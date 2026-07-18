@@ -18,6 +18,35 @@ Czat AI ze wyszukiwaniem semantycznym dla sklepu nurkowego divezone.pl (PrestaSh
 
 **DRYF `config/tools.php` (repo ≠ prod) — pułapka deployu (CHAT-T-132, incydent 500 2026-07-14):** repozytoryjny `tools.php` rejestruje WSZYSTKIE narzędzia, w tym `ProductCombinations` (CHAT-T-129 — zacommitowane, ale CELOWO niewdrożone, czeka na kolumnę `nazwa_pl` z projektu Atrybuty). Klasy nie ma na serwerze → rsync repo `tools.php` 1:1 daje fatal „Class not found" i `/api/health` 500. Zasada: przy KAŻDYM deployu dotykającym `tools.php` NAJPIERW `diff` z wersją produkcyjną i deploy wariantu produkcyjnego z własną zmianą (dopisać tylko nowe narzędzie), albo wdrożyć CHAT-T-129 w komplecie (co dryf zlikwiduje). Smoke `/api/health` po rsync jest bramką, która to łapie — nie pomijać.
 
+**⚠️ DEKLARACJA PLIKÓW PO DEPLOYU (Sentinel) — OBOWIĄZKOWA po KAŻDYM deployu PHP na serwer.**
+Serwer divezone jest monitorowany przez Sentinel (integralność plików PHP, cron co godzinę o :07). Każdy plik PHP wgrany na monitorowane drzewo, który nie został zadeklarowany, generuje alert `PHP_FILE_CHANGED` / `NEW_PHP_FILE`, a na PROD dodatkowo SMS. Deklaracja aktualizuje baseline i alert nie powstaje.
+
+**TWOJE ZADANIE PO KAŻDYM DEPLOYU (instancja CC):** NIE odpalasz rebaseline sam. Bramka `declared` dla drzew produkcyjnych wymaga ręcznego potwierdzenia `tak`/NIE w terminalu operatora (decyzja architektoniczna 115a) — proces bez TTY dostaje EOF i deklaracja się anuluje. Zamiast tego:
+1. Zbierz PEŁNE ścieżki bezwzględne WSZYSTKICH plików PHP, które ten deploy wgrał lub zmienił (znasz je — sam je zapisywałeś).
+2. Na końcu raportu z deployu wypisz gotowy blok DO WKLEJENIA przez operatora, w formacie code block, osobno per drzewo.
+3. Zatrzymaj się. Deklarację odpala operator w swojej sesji i potwierdza `tak`.
+
+**MAPOWANIE DRZEW (token = argument `declared`):**
+- Aplikacja chata `/home/divezone/public_html/chat.divezone.pl/...` → token: `chat.divezone.pl`
+- Moduł `divezone_chat` w sklepie `/home/divezone/public_html/newtmp2/modules/...` → token: `prod`
+Jeśli deploy dotknął OBU drzew, wypisz DWA osobne bloki. Pliki z różnych drzew NIE mogą iść w jednej deklaracji (bezpiecznik cross-tree odrzuci, exit 3).
+
+**FORMAT BLOKU DLA OPERATORA (przykład, chat):**
+```
+# Lista tylko-do-odczytu w /dev/shm (/tmp ma noexec)
+printf '%s\n' \
+  /home/divezone/public_html/chat.divezone.pl/src/Chat/SystemPrompt.php \
+  /home/divezone/public_html/chat.divezone.pl/src/Chat/InnyPlik.php \
+  > /dev/shm/decl_chat.txt
+~/security/rebaseline.sh declared chat.divezone.pl --files /dev/shm/decl_chat.txt
+# → zapyta [tak/NIE], wpisz: tak
+```
+Dla modułu w sklepie ten sam wzór z tokenem `prod` i osobnym plikiem `/dev/shm/decl_prod.txt`.
+
+**KODY WYJŚCIA (do interpretacji przez operatora):** exit 0 + „Baseline zaktualizowany" → OK; exit 0 + „Anulowano. Baseline bez zmian." → operator wpisał NIE; exit 2 → zły token drzewa albo brak/pusta lista; exit 3 → plik spoza deklarowanego drzewa (bezpiecznik cross-tree).
+
+**CZEGO NIE ROBISZ:** NIE odpalasz `declared` przez `printf 'tak' | ...` ani żaden automat podający `tak` na stdin (bramka istnieje, żeby potwierdzał człowiek). NIE deklarujesz plików, których nie wgrałeś w tym deployu. NIE dotykasz `~/security/` ani baseline bezpośrednio. Sentinel to projekt Security (osobna sesja) — Ty tylko deklarujesz własne wgrane pliki, nie zmieniasz jego kodu.
+
 **Hasło MySQL sklepu w `parameters.php`: klucz to `database_password`, NIE `database_pass` (CHAT-T-136).** `mysql` CLI potrafi odrzucić hasło wyciągnięte z tego pliku (znaki specjalne) — pewniejsze jest PDO na parametrach PS. Dotyczy operacji na MySQL sklepu z poziomu modułu/skryptu.
 
 **Rejestracja hooka PS na żywym module (CHAT-T-136):** `install()` NIE wykona się ponownie na zainstalowanym module, więc nowy hook trzeba dodać `INSERT`em do `pr_hook_module` (potrzebne: `id_module` z `pr_module`, `id_hook` z `pr_hook`, `id_shop`, `position` = MAX+1). **Po rejestracji trzeba WYCZYŚCIĆ cache PS drugi raz** — PS cache'uje mapę hook→moduł i bez tego hook nie odpala mimo wpisu w bazie. Kolejność: rsync → cache → tabela/SQL → DOPIERO hook (hook odpala natychmiast po rejestracji). Rollback: `DELETE FROM pr_hook_module WHERE id_module=? AND id_hook=?`.
