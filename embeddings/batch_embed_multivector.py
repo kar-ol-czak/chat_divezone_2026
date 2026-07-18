@@ -1,6 +1,9 @@
 """
 Multi-vector embeddingi: 3 kolumny (name, desc, jargon) per produkt (TASK-012b).
 Używa OpenAI Batch API dla wydajności. Model: text-embedding-3-large, dim=1536.
+
+CHAT-T-150 (ADR-128): tryb `run_for_pids(pids)` — przelicza 3 wektory tylko dla wskazanych
+produktów (delta z batch_embed_products). Sync API (delta jest mała). Pusta lista → no-op.
 """
 
 import argparse
@@ -14,7 +17,19 @@ import psycopg2
 from dotenv import load_dotenv
 from openai import OpenAI
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+# CHAT-T-150 (ADR-128 dec. 145a): na serwerze .env leży poza układem repo — czytamy ścieżką
+# bezwzględną z docrootu backendu. DIVECHAT_ENV_FILE nadpisuje; inaczej wybór po EMBEDDINGS_ENV.
+def _resolve_env_file() -> str:
+    explicit = os.getenv("DIVECHAT_ENV_FILE")
+    if explicit:
+        return explicit
+    if os.getenv("EMBEDDINGS_ENV", "local").strip().lower() == "server":
+        return "/home/divezone/public_html/chat.divezone.pl/.env"
+    return str(Path(__file__).resolve().parent.parent / ".env")
+
+
+load_dotenv(_resolve_env_file())
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -32,23 +47,19 @@ def get_db_connection():
     return psycopg2.connect(database_url)
 
 
-def fetch_products(conn) -> list[dict]:
-    """Pobiera produkty z bazy z danymi potrzebnymi do 3 embeddingów."""
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT ps_product_id, product_name, product_description,
-               category_name, brand_name, features::text, search_phrases::text
-        FROM divechat_product_embeddings
-        ORDER BY ps_product_id
-    """)
-    rows = cur.fetchall()
-    cur.close()
+# Wspólny SELECT dla obu ścieżek pobierania (pełne / po pids).
+_SELECT_COLS = """
+    SELECT ps_product_id, product_name, product_description,
+           category_name, brand_name, features::text, search_phrases::text
+    FROM divechat_product_embeddings
+"""
 
+
+def _rows_to_products(rows) -> list[dict]:
     products = []
     for r in rows:
         features = json.loads(r[5]) if r[5] else {}
         search_phrases = json.loads(r[6]) if r[6] else []
-
         products.append({
             "ps_product_id": r[0],
             "product_name": r[1] or "",
@@ -58,8 +69,30 @@ def fetch_products(conn) -> list[dict]:
             "features": features,
             "search_phrases": search_phrases,
         })
-
     return products
+
+
+def fetch_products(conn) -> list[dict]:
+    """Pobiera wszystkie produkty z bazy z danymi potrzebnymi do 3 embeddingów."""
+    cur = conn.cursor()
+    cur.execute(_SELECT_COLS + " ORDER BY ps_product_id")
+    rows = cur.fetchall()
+    cur.close()
+    return _rows_to_products(rows)
+
+
+def fetch_products_by_ids(conn, pids: list[int]) -> list[dict]:
+    """CHAT-T-150: pobiera tylko wskazane produkty (delta). Pusta lista → []."""
+    if not pids:
+        return []
+    cur = conn.cursor()
+    cur.execute(
+        _SELECT_COLS + " WHERE ps_product_id = ANY(%s) ORDER BY ps_product_id",
+        (list(pids),),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    return _rows_to_products(rows)
 
 
 def build_texts(product: dict) -> dict[str, str]:
@@ -89,6 +122,88 @@ def build_texts(product: dict) -> dict[str, str]:
         "desc": text_desc,
         "jargon": text_jargon,
     }
+
+
+def _update_vectors(cur, pid: int, vectors: dict[str, list[float]]):
+    cur.execute(
+        """UPDATE divechat_product_embeddings
+           SET embedding_name = %s::vector,
+               embedding_desc = %s::vector,
+               embedding_jargon = %s::vector,
+               updated_at = NOW()
+           WHERE ps_product_id = %s""",
+        (str(vectors["name"]), str(vectors["desc"]), str(vectors["jargon"]), pid),
+    )
+
+
+def run_for_pids(pids: list[int], dry_run: bool = False) -> dict:
+    """CHAT-T-150 (ADR-128): przelicza 3 wektory (name/desc/jargon) tylko dla `pids`.
+
+    Sync API (delta jest mała). Pusta lista → no-op sukces (nic do zrobienia).
+    Returns: dict statystyk.
+    """
+    t0 = time.time()
+    pids = sorted(set(int(x) for x in (pids or [])))
+    stats = {"requested": len(pids), "updated": 0, "api_calls": 0, "errors": 0, "dry_run": dry_run}
+
+    if not pids:
+        logger.info("[multivector] Brak produktów do przeliczenia — pomijam.")
+        stats["elapsed_s"] = round(time.time() - t0, 1)
+        return stats
+
+    conn = get_db_connection()
+    products = fetch_products_by_ids(conn, pids)
+    logger.info("[multivector] Do przeliczenia: %d produktów", len(products))
+
+    missing = set(pids) - {p["ps_product_id"] for p in products}
+    if missing:
+        logger.warning("[multivector] %d pid bez wiersza w PG (pominięte): %s",
+                       len(missing), sorted(missing)[:20])
+
+    if dry_run:
+        conn.close()
+        stats["elapsed_s"] = round(time.time() - t0, 1)
+        logger.info("[multivector][DRY-RUN] Przeliczyłbym %d produktów × 3 wektory (bez API).",
+                    len(products))
+        return stats
+
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    cur = conn.cursor()
+    updated = 0
+    api_calls = 0
+    errors = 0
+
+    for i, product in enumerate(products, 1):
+        pid = product["ps_product_id"]
+        try:
+            texts = build_texts(product)
+            vectors = {}
+            for vec_type, text in texts.items():
+                resp = client.embeddings.create(model=MODEL, input=text, dimensions=DIMENSIONS)
+                api_calls += 1
+                vectors[vec_type] = resp.data[0].embedding
+            _update_vectors(cur, pid, vectors)
+            updated += 1
+            if i % 10 == 0 or i == len(products):
+                conn.commit()
+                logger.info("[multivector] Postęp: %d/%d", i, len(products))
+        except Exception as e:
+            errors += 1
+            logger.error("[multivector] Błąd produktu %s: %s", pid, e)
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    stats["updated"] = updated
+    stats["api_calls"] = api_calls
+    stats["errors"] = errors
+    stats["elapsed_s"] = round(time.time() - t0, 1)
+    logger.info("[multivector] GOTOWE: %d produktów × 3 wektory (%d wywołań API, %d błędów), %.1fs",
+                updated, api_calls, errors, stats["elapsed_s"])
+    if errors:
+        raise RuntimeError(f"[multivector] {errors} błędów embeddingu")
+    return stats
 
 
 def run_batch(products: list[dict]):
@@ -187,20 +302,7 @@ def run_batch(products: list[dict]):
             logger.warning("Produkt %d: tylko %d/3 wektorów, pomijam", pid, len(vectors))
             continue
 
-        cur.execute(
-            """UPDATE divechat_product_embeddings
-               SET embedding_name = %s::vector,
-                   embedding_desc = %s::vector,
-                   embedding_jargon = %s::vector,
-                   updated_at = NOW()
-               WHERE ps_product_id = %s""",
-            (
-                str(vectors["name"]),
-                str(vectors["desc"]),
-                str(vectors["jargon"]),
-                pid,
-            ),
-        )
+        _update_vectors(cur, pid, vectors)
         updated += 1
 
         if updated % 500 == 0:
@@ -219,41 +321,14 @@ def run_batch(products: list[dict]):
 
 def run_test(count: int):
     """Tryb testowy: sync API, N pierwszych produktów."""
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     conn = get_db_connection()
     products = fetch_products(conn)[:count]
-
-    updated = 0
-    cur = conn.cursor()
-
-    for i, product in enumerate(products, 1):
-        texts = build_texts(product)
-        pid = product["ps_product_id"]
-
-        vectors = {}
-        for vec_type, text in texts.items():
-            resp = client.embeddings.create(model=MODEL, input=text, dimensions=DIMENSIONS)
-            vectors[vec_type] = resp.data[0].embedding
-
-        cur.execute(
-            """UPDATE divechat_product_embeddings
-               SET embedding_name = %s::vector,
-                   embedding_desc = %s::vector,
-                   embedding_jargon = %s::vector,
-                   updated_at = NOW()
-               WHERE ps_product_id = %s""",
-            (str(vectors["name"]), str(vectors["desc"]), str(vectors["jargon"]), pid),
-        )
-        updated += 1
-
-        if i % 10 == 0 or i == len(products):
-            conn.commit()
-            logger.info("Postęp: %d/%d", i, len(products))
-
-    conn.commit()
-    cur.close()
     conn.close()
-    logger.info("GOTOWE (test): %d produktów z 3 wektorami", updated)
+    run_for_pids([p["ps_product_id"] for p in products])
+
+
+def _parse_pids(raw: str) -> list[int]:
+    return [int(x) for x in raw.replace(",", " ").split() if x.strip()]
 
 
 def main():
@@ -261,9 +336,13 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--test", type=int, metavar="N", help="Test N produktów (sync)")
     group.add_argument("--full", action="store_true", help="Wszystkie produkty (Batch API)")
+    group.add_argument("--pids", type=str, metavar="LIST", help="Przelicz tylko te ps_product_id (CSV/spacje)")
+    parser.add_argument("--dry-run", action="store_true", help="(z --pids) tylko raport, zero API")
     args = parser.parse_args()
 
-    if args.test:
+    if args.pids is not None:
+        run_for_pids(_parse_pids(args.pids), dry_run=args.dry_run)
+    elif args.test:
         run_test(args.test)
     else:
         conn = get_db_connection()

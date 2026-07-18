@@ -1,6 +1,9 @@
 """
 Generate embeddings - pipeline do generowania embeddingów OpenAI.
 Model: text-embedding-3-large z dimensions=1536 (Matryoshka, ADR-012).
+
+CHAT-T-150 (ADR-128): mode-aware wczytanie .env (server → ścieżka bezwzględna z docrootu),
+żeby moduł działał także z /home/divezone/scripts/embeddings/ (poza układem repo).
 """
 
 import os
@@ -12,8 +15,18 @@ import psycopg2
 from dotenv import load_dotenv
 from openai import OpenAI, RateLimitError
 
-# Konfiguracja
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+# CHAT-T-150 (ADR-128 dec. 145a): na serwerze .env poza układem repo — ścieżka bezwzględna.
+def _resolve_env_file() -> str:
+    explicit = os.getenv("DIVECHAT_ENV_FILE")
+    if explicit:
+        return explicit
+    if os.getenv("EMBEDDINGS_ENV", "local").strip().lower() == "server":
+        return "/home/divezone/public_html/chat.divezone.pl/.env"
+    return str(Path(__file__).resolve().parent.parent / ".env")
+
+
+load_dotenv(_resolve_env_file())
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -33,7 +46,7 @@ def get_openai_client() -> OpenAI:
 
 
 def get_db_connection():
-    """Zwraca połączenie z PostgreSQL (Aiven pgvector)."""
+    """Zwraca połączenie z PostgreSQL (Railway pgvector)."""
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
         raise ValueError("Brak DATABASE_URL w .env")

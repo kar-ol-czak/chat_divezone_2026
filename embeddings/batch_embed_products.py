@@ -1,7 +1,10 @@
 """
 Batch embeddingi produktów PrestaShop -> PostgreSQL (pgvector).
-Tryby: --test N (sync API), --full (OpenAI Batch API).
+Tryby: --test N (sync API), --full (OpenAI Batch API), --mode changed (delta po hashu).
 Model: text-embedding-3-large, dimensions=1536.
+
+CHAT-T-150 (ADR-128): tryb `--mode changed` — extract z MySQL zawsze pełny (0 kosztu API),
+do embeddingu kwalifikowane tylko produkty o zmienionym document_text (hash) lub nieobecne w PG.
 """
 
 import argparse
@@ -11,7 +14,12 @@ import logging
 import sys
 from pathlib import Path
 
-from extract_products import extract_products, open_ssh_tunnel, close_ssh_tunnel
+from extract_products import (
+    extract_products,
+    open_mysql_access,
+    close_mysql_access,
+    document_text_hash,
+)
 from generate_embeddings import get_openai_client, get_embedding, get_db_connection
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -19,6 +27,14 @@ logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 100  # ile embeddingów w jednym batch request (sync)
 BATCH_API_POLL_INTERVAL = 30  # sekundy między sprawdzeniami statusu Batch API
+
+# CHAT-T-150: text-embedding-3-large — 0.13 USD / 1M tokenów (do szacunku kosztu w logu).
+PRICE_PER_1M_TOKENS = 0.13
+
+
+def _estimate_tokens(text: str) -> int:
+    """Zgrubny szacunek tokenów (~4 znaki/token). Tylko do orientacyjnego kosztu w logu."""
+    return max(1, len(text or "") // 4)
 
 
 def upsert_product(conn, product: dict, embedding: list[float]):
@@ -66,6 +82,20 @@ def upsert_product(conn, product: dict, embedding: list[float]):
     cur.close()
 
 
+def deduplicate_products(products: list[dict]) -> list[dict]:
+    """Usuwa duplikaty produktow po ps_product_id (zachowuje pierwszy)."""
+    seen = set()
+    unique = []
+    for p in products:
+        pid = p["ps_product_id"]
+        if pid not in seen:
+            seen.add(pid)
+            unique.append(p)
+    if len(unique) < len(products):
+        logger.warning("Usunieto %d duplikatow produktow", len(products) - len(unique))
+    return unique
+
+
 def run_test_mode(products: list[dict], count: int):
     """Tryb --test: sync API, przetwarza N pierwszych produktów."""
     products = products[:count]
@@ -93,18 +123,111 @@ def run_test_mode(products: list[dict], count: int):
     return success
 
 
-def deduplicate_products(products: list[dict]) -> list[dict]:
-    """Usuwa duplikaty produktow po ps_product_id (zachowuje pierwszy)."""
-    seen = set()
-    unique = []
+def fetch_pg_hashes(conn) -> dict[int, str]:
+    """CHAT-T-150: pobiera z PG {ps_product_id: hash(document_text)} — hash liczony w locie."""
+    cur = conn.cursor()
+    cur.execute("SELECT ps_product_id, document_text FROM divechat_product_embeddings")
+    result = {row[0]: document_text_hash(row[1] or "") for row in cur.fetchall()}
+    cur.close()
+    return result
+
+
+def run_changed_mode(dry_run: bool = False) -> dict:
+    """CHAT-T-150 (ADR-128): delta po hashu document_text.
+
+    Wymaga wcześniejszego open_mysql_access() (robi to caller: main() lub run_nightly.py).
+    Extract z MySQL zawsze pełny (0 kosztu API). Do embeddingu kwalifikowane produkty
+    o zmienionym document_text (hash) lub nieobecne w PG. Embedding sync (delta jest mała).
+
+    Returns: dict statystyk z 'changed_pids' (lista do przeliczenia multivectora).
+    """
+    t0 = time.time()
+
+    products = deduplicate_products(extract_products())
+    extracted_count = len(products)
+    logger.info("[changed] Wyekstrahowano %d produktów z MySQL", extracted_count)
+
+    conn = get_db_connection()
+    pg_hashes = fetch_pg_hashes(conn)
+    logger.info("[changed] W PG obecnych: %d produktów", len(pg_hashes))
+
+    changed: list[dict] = []
+    new_count = 0
     for p in products:
         pid = p["ps_product_id"]
-        if pid not in seen:
-            seen.add(pid)
-            unique.append(p)
-    if len(unique) < len(products):
-        logger.warning("Usunieto %d duplikatow produktow", len(products) - len(unique))
-    return unique
+        h = document_text_hash(p["document_text"])
+        if pid not in pg_hashes:
+            new_count += 1
+            changed.append(p)
+        elif pg_hashes[pid] != h:
+            changed.append(p)
+
+    qualified = len(changed)
+    changed_pids = [p["ps_product_id"] for p in changed]
+    logger.info(
+        "[changed] Zakwalifikowano do delty: %d (nowe: %d, zmienione: %d)",
+        qualified, new_count, qualified - new_count,
+    )
+
+    stats = {
+        "extracted": extracted_count,
+        "pg_present": len(pg_hashes),
+        "qualified": qualified,
+        "new": new_count,
+        "changed_pids": changed_pids,
+        "embedded": 0,
+        "api_calls": 0,
+        "est_tokens": 0,
+        "est_cost_usd": 0.0,
+        "dry_run": dry_run,
+    }
+
+    if dry_run:
+        conn.close()
+        stats["elapsed_s"] = round(time.time() - t0, 1)
+        logger.info(
+            "[changed][DRY-RUN] BEZ wywołań API. Zakwalifikowano %d/%d. Czas %.1fs",
+            qualified, extracted_count, stats["elapsed_s"],
+        )
+        return stats
+
+    if qualified == 0:
+        conn.close()
+        stats["elapsed_s"] = round(time.time() - t0, 1)
+        logger.info("[changed] Brak zmian — baza aktualna. Czas %.1fs", stats["elapsed_s"])
+        return stats
+
+    client = get_openai_client()
+    embedded = 0
+    errors = 0
+    est_tokens = 0
+    for i, product in enumerate(changed, 1):
+        try:
+            embedding = get_embedding(client, product["document_text"])
+            upsert_product(conn, product, embedding)
+            embedded += 1
+            est_tokens += _estimate_tokens(product["document_text"])
+            if i % 10 == 0 or i == len(changed):
+                logger.info("[changed] Postęp: %d/%d (OK: %d, błędy: %d)", i, len(changed), embedded, errors)
+        except Exception as e:
+            errors += 1
+            logger.error("[changed] Błąd produktu %s: %s", product["ps_product_id"], e)
+
+    conn.close()
+    stats["embedded"] = embedded
+    stats["api_calls"] = embedded  # 1 wywołanie sync = 1 embedding
+    stats["errors"] = errors
+    stats["est_tokens"] = est_tokens
+    stats["est_cost_usd"] = round(est_tokens / 1_000_000 * PRICE_PER_1M_TOKENS, 6)
+    stats["elapsed_s"] = round(time.time() - t0, 1)
+    logger.info(
+        "[changed] GOTOWE: %d embeddingów (%d błędów), ~%d tok, ~%.6f USD, %.1fs",
+        embedded, errors, est_tokens, stats["est_cost_usd"], stats["elapsed_s"],
+    )
+    if errors:
+        # Sygnalizuj częściowy błąd — runner potraktuje to jako niepowodzenie.
+        raise RuntimeError(f"[changed] {errors} błędów embeddingu produktów")
+    return stats
 
 
 def run_full_mode(products: list[dict]):
@@ -205,12 +328,18 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--test", type=int, metavar="N", help="Przetworz N pierwszych produktow (sync API)")
     group.add_argument("--full", action="store_true", help="Wszystkie produkty (OpenAI Batch API)")
+    group.add_argument("--mode", choices=["changed"], help="changed = delta po hashu document_text")
+    parser.add_argument("--dry-run", action="store_true", help="(z --mode changed) tylko raport, zero API")
     args = parser.parse_args()
 
-    # Otworz SSH tunnel do MySQL
-    open_ssh_tunnel()
+    # Otworz dostep do MySQL (tunel tylko w trybie lokalnym)
+    open_mysql_access()
 
     try:
+        if args.mode == "changed":
+            run_changed_mode(dry_run=args.dry_run)
+            return
+
         limit = args.test if args.test else None
         products = extract_products(limit=limit)
 
@@ -227,7 +356,7 @@ def main():
 
         logger.info("Zakonczono: %d produktow z embeddingami w bazie", success)
     finally:
-        close_ssh_tunnel()
+        close_mysql_access()
 
 
 if __name__ == "__main__":

@@ -1,11 +1,16 @@
 """
 Ekstrakcja produktów z PrestaShop MySQL przez SSH tunnel.
 Buduje document_text do embeddingów i zwraca listę produktów.
+
+CHAT-T-150 (ADR-128): dodany tryb serwerowy (EMBEDDINGS_ENV=server) — połączenie
+z lokalnym MySQL bez tunelu SSH — oraz kanoniczny hash document_text do delty.
+Tryb lokalny (brak zmiennej lub EMBEDDINGS_ENV=local) działa dokładnie jak dotąd.
 """
 
 import os
 import re
 import json
+import hashlib
 import subprocess
 import signal
 import time
@@ -17,7 +22,20 @@ import pymysql
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+# CHAT-T-150 (ADR-128 dec. 145a): na serwerze kod leży w /home/divezone/scripts/embeddings/,
+# więc parent.parent/.env NIE istnieje. .env czytamy ścieżką bezwzględną z docrootu backendu.
+# DIVECHAT_ENV_FILE nadpisuje jawnie; inaczej wybór po EMBEDDINGS_ENV.
+def _resolve_env_file() -> str:
+    explicit = os.getenv("DIVECHAT_ENV_FILE")
+    if explicit:
+        return explicit
+    if os.getenv("EMBEDDINGS_ENV", "local").strip().lower() == "server":
+        return "/home/divezone/public_html/chat.divezone.pl/.env"
+    return str(Path(__file__).resolve().parent.parent / ".env")
+
+
+load_dotenv(_resolve_env_file())
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -214,6 +232,11 @@ def get_wyprzedaz_products(cur) -> set[int]:
     return ids
 
 
+def is_server_mode() -> bool:
+    """CHAT-T-150: True gdy EMBEDDINGS_ENV=server (cron na VPS, MySQL lokalny bez tunelu)."""
+    return os.getenv("EMBEDDINGS_ENV", "local").strip().lower() == "server"
+
+
 def open_ssh_tunnel():
     """Otwiera SSH tunnel do MySQL na VPS divezone.pl."""
     # Zamknij ewentualny stary tunel
@@ -243,17 +266,65 @@ def close_ssh_tunnel():
     logger.info("SSH tunnel zamknięty")
 
 
+def open_mysql_access():
+    """CHAT-T-150: przygotowuje dostęp do MySQL zależnie od trybu.
+
+    Tryb serwerowy — MySQL jest lokalny, tunel zbędny (tunelowałby sam do siebie).
+    Tryb lokalny — jak dotąd: otwiera tunel SSH do VPS. To jedyna zmiana ścieżki dostępu;
+    open_ssh_tunnel()/close_ssh_tunnel() pozostają nietknięte i wołane warunkowo.
+    """
+    if is_server_mode():
+        logger.info("Tryb serwerowy: MySQL lokalny, bez tunelu SSH")
+        return
+    open_ssh_tunnel()
+
+
+def close_mysql_access():
+    """CHAT-T-150: domyka dostęp do MySQL (tunel tylko w trybie lokalnym)."""
+    if is_server_mode():
+        return
+    close_ssh_tunnel()
+
+
 def get_mysql_connection():
-    """Zwraca połączenie z MySQL PrestaShop przez tunel."""
+    """Zwraca połączenie z MySQL PrestaShop.
+
+    CHAT-T-150: host/port zależne od trybu. Serwer → DB_HOST/DB_PORT (domyślnie 127.0.0.1:3306,
+    bez tunelu). Lokalnie → 127.0.0.1:LOCAL_MYSQL_PORT przez tunel (bez zmian).
+    User, hasło i baza jak dotąd ze zmiennych środowiskowych.
+    """
+    if is_server_mode():
+        host = os.getenv("DB_HOST", "127.0.0.1")
+        port = int(os.getenv("DB_PORT", "3306"))
+    else:
+        host = "127.0.0.1"
+        port = LOCAL_MYSQL_PORT
     return pymysql.connect(
-        host="127.0.0.1",
-        port=LOCAL_MYSQL_PORT,
+        host=host,
+        port=port,
         user=os.getenv("DB_USER"),
         password=os.getenv("DB_PASSWORD"),
         database=os.getenv("DB_NAME_PROD", "divezone_2025"),
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
     )
+
+
+def normalize_document_text(text: str) -> str:
+    """CHAT-T-150 (ADR-128 nota 1, wzorzec ENC-013): kanonikalizacja treści przed hashem.
+
+    Białe znaki (w tym nowe linie sklejające części dokumentu) zwijane do pojedynczej spacji,
+    brzegi przycięte. Stosowana SYMETRYCZNIE po obu stronach porównania (treść z MySQL i treść
+    zapisana w PG), więc różnice wcięć/CRLF nie generują fałszywej delty ani zbędnego re-embedu.
+    """
+    if not text:
+        return ""
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def document_text_hash(text: str) -> str:
+    """CHAT-T-150: sha256 (hex) ze znormalizowanego document_text. Liczony w locie, bez kolumny."""
+    return hashlib.sha256(normalize_document_text(text).encode("utf-8")).hexdigest()
 
 
 def strip_html(text: str) -> str:
@@ -409,7 +480,7 @@ def extract_products(limit: int = None) -> list[dict]:
 
 
 if __name__ == "__main__":
-    open_ssh_tunnel()
+    open_mysql_access()
     try:
         products = extract_products(limit=5)
         for p in products:
@@ -421,4 +492,4 @@ if __name__ == "__main__":
             print(f"IMG: {p['image_url']}")
             print(f"\nDOCUMENT_TEXT:\n{p['document_text']}")
     finally:
-        close_ssh_tunnel()
+        close_mysql_access()
