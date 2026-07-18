@@ -4173,3 +4173,12 @@ Powód z kodu (`ShippingInfo.php` na PROD): `get_shipping_info` czyta WYŁĄCZNI
 **Dług do sprostowania (poza zakresem, zapisać w tasku jako uwaga).** `ShippingInfo::buildNote()` ma hardcode „Stawki flat do 31 kg" — a DPD ma 29 kg, InPost 10 kg. Limit nie powinien być zaszyty w stałej. NIE naprawiamy w tym tasku (dotyczy narzędzia krajowego), ale odnotowujemy jako niespójność.
 
 **Implementacja:** CHAT-T-151 (instancja backend). Świat: **BACKEND `chat.divezone.pl`**. Nowy plik `src/Tools/InternationalShipping.php` + rejestracja w `config/tools.php` + reguła w `SystemPrompt.php`. **ZERO migracji PG** (dane z MySQL). **UWAGA deploy**: `config/tools.php` ma dryf repo≠prod (R-5, T-129 GetProductCombinations) — deploy tools.php wymaga ostrożności, wypchnięcie wersji repo = fatal 500; wpisać w task jako STOP.
+
+**Nota nr 1 (2026-07-18, architekt) — korekta opisu dryfu `tools.php`. Myliłem się.**
+ADR-129 (i CHAT-T-151) opisywały dryf `config/tools.php` jako JEDNOKIERUNKOWY: „repo rejestruje niewdrożoną klasę → fatal 500". **To było niepełne.** CC (instancja backend) przy KROK 0 wykrył, że dryf jest **DWUKIERUNKOWY**, i weryfikacja architekta to potwierdziła (odczyt obu plików wprost):
+- **Repo** `standalone/config/tools.php:19,43` rejestruje `ProductCombinations` (CHAT-T-129) — klasy NIE MA na prodzie.
+- **Prod** `config/tools.php:14,54` rejestruje `GetProductCombinations` (ATTR-T-052/ADR-025, projekt Atrybuty) — tej rejestracji NIE MA w repo.
+
+Blanket-rsync repo→prod zrobiłby DWIE szkody: (1) dodał `ProductCombinations` = fatal 500 (klasa nieobecna), (2) USUNĄŁ żywą rejestrację `GetProductCombinations` = zabił działające narzędzie wariantów. Artefakt deployu CHAT-T-151 = **wersja PROD tools.php + wyłącznie 2 linie InternationalShipping** (`use` + `register`), NIGDY wersja repo. To zapisane w tasku KROK 5, tu tylko korekta przyczyny.
+
+**Cudzy dług (nie decyzja tej sesji):** rozjazd repo↔prod wokół `Combinations` należy do projektu Atrybuty (ATTR-T-052). Repo czatu ma martwą rejestrację `ProductCombinations`, prod ma żywą `GetProductCombinations`. Do uzgodnienia przez właściciela tamtego projektu — opisane jako zależność, decyzji nie podejmuję. Ślad: karta Trello (patrz niżej) + ta nota.
