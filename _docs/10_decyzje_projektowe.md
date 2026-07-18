@@ -4182,3 +4182,32 @@ ADR-129 (i CHAT-T-151) opisywały dryf `config/tools.php` jako JEDNOKIERUNKOWY: 
 Blanket-rsync repo→prod zrobiłby DWIE szkody: (1) dodał `ProductCombinations` = fatal 500 (klasa nieobecna), (2) USUNĄŁ żywą rejestrację `GetProductCombinations` = zabił działające narzędzie wariantów. Artefakt deployu CHAT-T-151 = **wersja PROD tools.php + wyłącznie 2 linie InternationalShipping** (`use` + `register`), NIGDY wersja repo. To zapisane w tasku KROK 5, tu tylko korekta przyczyny.
 
 **Cudzy dług (nie decyzja tej sesji):** rozjazd repo↔prod wokół `Combinations` należy do projektu Atrybuty (ATTR-T-052). Repo czatu ma martwą rejestrację `ProductCombinations`, prod ma żywą `GetProductCombinations`. Do uzgodnienia przez właściciela tamtego projektu — opisane jako zależność, decyzji nie podejmuję. Ślad: karta Trello (patrz niżej) + ta nota.
+
+---
+
+### ADR-130: Dobór gotowego zestawu automatu — składanie z komponentów zamiast sklejki (przepisanie reguły 8b)
+
+**Data:** 2026-07-18 | **Status:** ZATWIERDZONA, do wdrożenia (CHAT-T-152) | **Powiązane:** CHAT-T-131 (reguła 8b, którą ten ADR PRZEPISUJE), ADR-122 (`category_name` z konkatenacji `pr_category_product`), ADR-089 (STOP-gate). **Karta:** Chat - 14. **Zależność:** Sklep - 43 (źródłowy fix — zestawy bez SKU). **Decyzje Karola:** 161c, 164c, 165a, 166a.
+
+**Problem.** Karta Chat - 14 zakładała: „przełączyć dobór zestawu na filtr kat. 416 + re-embed, po uporządkowaniu `id_category_default` przez Karola". Weryfikacja na PROD MySQL 2026-07-18 obaliła założenia i odkryła głębszy problem.
+
+**KOREKTY ZAŁOŻEŃ KARTY (pomiar):**
+1. Karta: „`category_name` w embeddingach bierze się z `id_category_default`". **NIEPRAWDA** — od ADR-122 `category_name` to KONKATENACJA wszystkich przypisań (`pr_category_product`, top-4 po `level_depth`). „Zestawy rekreacyjne" JEST już w `category_name` wszystkich 13 zestawów (13/13 łapie się na `ILIKE '%Zestawy rekreacyjne%'`). **Re-embed NIEpotrzebny. Zmiana `id_category_default` NIEpotrzebna. HTAccess/linki NIEtknięte.**
+2. **Głębszy problem (Sklep - 43):** 12 z 13 zestawów kat. 416 ma stan magazynowy 0 lub ujemny (2369=-2, 7383=-7...), bo zestaw nie ma własnego SKU w Subiekcie (reference = sklejka SKU komponentów). Klient widzi „na zamówienie" i rezygnuje. Filtr kat. 416 (pierwotny plan karty) prowadziłby wprost na te fałszywe zera.
+
+**Decyzja — bot składa komplet z KOMPONENTÓW (które mają realny stan), nie ze sklejki.**
+Dowód, że komponenty mają stan: manometry osobno (TERMO 300bar 21 szt., 2K 18, tlenowy 10), bazowe automaty+octopus (MTX-RC 6, XTX50 II st. 8). Dowód wprost: 6485 „MTX-RC Zestaw z Octopusem" qty=6, a 7647 „MTX-RC + Manometr" (to samo + manometr) qty=0.
+
+**164c — realizacja przez PROMPT, nie narzędzie (na razie).** Reguła 8b już zawiera mechanikę „bazowy zestaw + osobny manometr, montujemy przy odbiorze" (dziś jako fallback). Przepisujemy ją z fallbacku na GŁÓWNĄ ścieżkę. Zero nowego narzędzia, zero dotykania `config/tools.php` (omijamy dryf Chat - 42), zero migracji. Narzędzie deterministyczne (`get_regulator_set`) TYLKO jeśli realne rozmowy pokażą, że bot źle rozdziela komponenty — wtedy osobna karta z dowodem. Nie budujemy narzędzia „na wszelki wypadek" (Ockham).
+
+**161c — rozpoznanie intencji.** Trigger reguły rozszerzony o synonimy: „kompletny automat", „automat w zestawie", „automat z manometrem", „z octopusem", „wszystko gotowe", „chcę zacząć nurkować, potrzebuję automatu" — tak by żaden nie ominął reguły, NAWET bez słowa „zestaw" ani „rekreacyjny". Dowód potrzeby: dziś trigger to tylko „gotowy/kompletny zestaw"; „kompletny automat" mógłby nie odpalić.
+
+**166a — kryterium BAZOWEGO ZESTAWU (I st.+II st.+octopus), odróżnienie od pojedynczego octopusa.** Heurystyka nazwy sama zawodzi (pojedynczy octopus „APEKS ATX40 Octopus" ma „octopus" w nazwie), heurystyka ceny sama zawodzi (6485 „MTX-RC Zestaw z Octopusem" 4999 zł bez łącznika w nazwie). **Oba warunki ŁĄCZNIE:** (nazwa ma `/`, `+`, „zestaw" lub „set") ORAZ cena brutto ≥ ~2000 zł. Próg wyprowadzony z danych: najdroższy POJEDYNCZY octopus = 1214 zł (XTX40), najtańszy ZESTAW = 2390 zł (ATX40/DS4). Luka 1214→2390 czysta i szeroka. Cena to twardy warunek równorzędny nazwie, nie słaby dodatek (korekta wobec pierwotnej oceny architekta).
+
+**165a — manometr: JEDEN, najtańszy PASUJĄCY, reszta na żądanie.** „Najtańszy dostępny" NIE znaczy „najtańszy po cenie" — surowe sortowanie daje manometr do pony (108 zł), tlenowy (239 zł) albo sidemount z krótkim wężem (15cm). To błąd merytoryczny. „Najtańszy pasujący" = najtańszy z kat. 107 „Manometry", z WYKLUCZENIEM w prompcie: „pony", „tlenowy"/„O2", wąż ≤15cm. Dziś wskaże TERMO 300bar/60cm 249 zł (21 szt.) — poprawnie. Bot proponuje JEDEN; przy pytaniu „są inne?" pokazuje resztę z kat. 107 (bez wykluczonych). Zgodne z „nie zasypuj wariantami".
+
+**Zachowane z 8b (bez zmian):** „gotowy zestaw" = I st.+II st.+octopus+MANOMETR; NIGDY nie przedstawiaj zestawu bez manometru jako „gotowego" bez zaznaczenia, że manometr dokupujemy i montujemy przy odbiorze; przy braku dostępnego — bazowy zestaw + osobny manometr z ceną łączną. To realna praktyka sklepu (montaż przy odbiorze).
+
+**Ograniczenie (świadome, do zapisania w tasku).** Filtry opierają się na heurystyce nazwy + kategorii + ceny, bo sklep nie ma atrybutu „to jest kompletny zestaw" ani „to jest manometr rekreacyjny". Kategorie zaśmiecone (kat. 107 „Manometry" zawiera pony i tlenowy). To granica determinizmu — jeśli rozmowy pokażą błędy, przechodzimy na narzędzie (164c → osobna karta). Źródłowo problem znika, gdy Sklep - 43 nada zestawom prawdziwe SKU.
+
+**Implementacja:** CHAT-T-152 (instancja backend). Świat: BACKEND `chat.divezone.pl`, WYŁĄCZNIE `src/Chat/SystemPrompt.php`. **ZERO narzędzi, ZERO `config/tools.php`, ZERO migracji, ZERO re-embedu.** Deploy jednego pliku.
