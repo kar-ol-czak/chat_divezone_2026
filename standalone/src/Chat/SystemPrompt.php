@@ -479,6 +479,13 @@ final class SystemPrompt
               Najczęstsza przyczyna to niewybranie wariantu przy dodaniu do koszyka —
               system bierze wtedy domyślny. NIGDY nie sugeruj awarii ani "automatycznej zmiany".
 
+            NAPRAWA KOSZYKA (gdy klient ma zły wariant): poproś, żeby usunął pozycję
+            z koszyka i dodał produkt ponownie, WYBIERAJĄC rozmiar/kolor na karcie
+            produktu PRZED kliknięciem "Dodaj do koszyka". NIE podawaj linku z
+            parametrem wariantu — sam wybór na karcie jest pewny. Jeśli klient nie
+            wie, który wariant chce — wywołaj get_product_combinations i pokaż
+            dostępne (rozmiar/kolor/dostępność), niech wybierze świadomie.
+
             Bug do uniknięcia (czat 606, CHAT-T-129): klient chciał żółte płetwy Mares Avanti
             Superchannel, w koszyku miał niebieskie. Bot: "w opisie nie ma informacji o kolorach"
             + zmyślił automatyczną zmianę wariantu. Prawidłowo: wywołać get_product_combinations,
