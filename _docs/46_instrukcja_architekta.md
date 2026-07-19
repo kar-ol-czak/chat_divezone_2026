@@ -40,11 +40,12 @@ z `.env`, który jest ignorowany). Uruchamiaj **z tego katalogu**: `python3 <skr
 | `_conn.py` | wspólne połączenie. Parser `.env` odporny na 1 zepsuty klucz (ADR-088). **Zero sekretów na sztywno** |
 | `list_open_problems.py` | otwarte problemy + notatki recenzenta. `--full` = przebiegi, `--dump PLIK` = do pliku |
 | `show_conversation.py <conv_id>` | pełny przebieg rozmowy. `--tools` = z `tool_result` |
-| `sql.py` | **SQL na Railway** — z pliku, stdin, `-c`, albo `--file`. Omija pułapkę apostrofów (§4) |
+| `sql.py` | **SQL na Railway PG** — z pliku, stdin, `-c`, albo `--file`. Omija pułapkę apostrofów (§4) |
+| `mysql.py` | **SQL read-only na MySQL PrestaShop** — `-c`, `--file`, stdin, `--json`. Idzie przez SSH+`ea-php84`+`MysqlConnection` (host=localhost, zdalnie niedostępny). Omija pułapkę hasła/`~/.my.cnf` (§4) |
 | `check_deploy.py <ścieżka>` | **kontrola wdrożenia**: md5 local↔prod + `php -l` (ea-php84) + smoke `/api/health` |
 
-`sql.py` i `check_deploy.py` powstały 2026-07-17 — to były dwie rzeczy pisane
-tego dnia od zera po kilka razy.
+`sql.py` i `check_deploy.py` powstały 2026-07-17, `mysql.py` — 2026-07-19
+(Chat-37). Każdy to rzecz, którą pisano od zera po kilka razy, zanim trafiła tu.
 
 **Zasada:** nowe narzędzie dokładaj do tego katalogu **i dopisz je do tej tabeli**.
 Narzędzie poza katalogiem = narzędzie, które zginie po sesji.
@@ -71,6 +72,16 @@ przez smarthost. To znany objaw, nie nowa awaria.
 
 ## 4. Pułapki narzędziowe (kosztowały czas, nie powtarzaj)
 
+- **MySQL PrestaShop: łączy się przez `DB_HOST/DB_PORT/DB_NAME_PROD/DB_USER/DB_PASSWORD`**,
+  NIE `PS_DB_*` (te martwe, tylko prefiks w `MobileAuthenticator.php:145`). Źródło:
+  `src/Database/MysqlConnection.php:33-39`. Nie zgaduj z nazwy — użyj `mysql.py`.
+- **MySQL CLI po SSH jest zaminowane 2×:** (a) `~/.my.cnf` na serwerze wymusza user
+  `divezone_sklep_tmp2`, nadpisując `-u`; (b) hasło ma `^`, ginie w cudzysłowiu bash.
+  Nie walcz z tym — `mysql.py` idzie przez `MysqlConnection` (realna ścieżka, ADR-088).
+- **Zagnieżdżony heredoc przez SSH gubi się cicho:** `ssh 'bash -s' <<'REMOTE'` z
+  wewnętrznym `cat > /tmp/x.php <<'PHP'` daje exit 0 i PUSTY stdout (plik nie powstaje).
+  Do PHP na serwerze: `printf '%s' "$PHP" | base64` → `echo $B64 | base64 -d | ea-php84`
+  (kod musi zaczynać się od `<?php`). Tak robi `mysql.py`.
 - **Apostrofy giną w łańcuchu SSH→zsh→bash→psql.** Użyj `sql.py`. Ręcznie: zapisz SQL
   do pliku na serwerze (`cat > /tmp/q.sql << 'EOF'`), literały przez `chr()||`.
 - **`psql -c` wielokrotne** rozwija `$$` w shellu. Użyj heredoc `psql -f -` albo `sql.py`.
