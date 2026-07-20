@@ -11,12 +11,12 @@ use DiveChat\Shop\MysqlProductEnrichmentService;
 use DiveChat\Shop\ShopCalendar;
 use DiveChat\Tools\CuratedRecommendations;
 use DiveChat\Tools\ExpertKnowledge;
+use DiveChat\Tools\GetProductCombinations;
 use DiveChat\Tools\GetShopLinks;
 use DiveChat\Tools\GetShopSchedule;
 use DiveChat\Tools\InternationalShipping;
 use DiveChat\Tools\OrderStatus;
 use DiveChat\Tools\PopularProducts;
-use DiveChat\Tools\ProductCombinations;
 use DiveChat\Tools\ProductDetails;
 use DiveChat\Tools\ProductSearch;
 use DiveChat\Tools\ShippingInfo;
@@ -38,9 +38,6 @@ return static function (EmbeddingService $embeddingService): ToolRegistry {
     // CHAT-T-062 (E5): ProductDetails wola enrichment dla pojedynczego product_id —
     // ta sama logika ceny brutto z VAT + specific_price co ProductSearch (jedno zrodlo).
     $registry->register(new ProductDetails($enrichmentService));
-    // CHAT-T-129 (ADR-112): warianty (kolor × rozmiar) z MySQL PrestaShop — osobne
-    // narzędzie, bo get_product_details ich nie zwraca (fabrykacja bota, czat 606).
-    $registry->register(new ProductCombinations(MysqlConnection::getInstance()));
     $registry->register(new ExpertKnowledge($embeddingService, $pg));
     $registry->register(new OrderStatus());
     $registry->register(new ShippingInfo($pg));
@@ -56,6 +53,9 @@ return static function (EmbeddingService $embeddingService): ToolRegistry {
     // CHAT-T-100 (ADR-099): deterministyczny dobór rozmiaru skafandra mokrego (NIE embeddingi).
     // CHAT-T-103: źródło prawdy rozmiarów na MySQL PrestaShop (divezone_attr_*), nie Railway/PG.
     $registry->register(new SizeRecommender(MysqlConnection::getInstance()));
+    // ATTR-T-052 (ADR-025): warianty kolor/rozmiar + nazwy wypowiadalne (divezone_attr_color_lang).
+    // SystemPrompt.php:463-478 opisuje kontrakt (nieznany_kolor, domyslny_wariant); to go spełnia. READ-ONLY.
+    $registry->register(new GetProductCombinations(MysqlConnection::getInstance()));
 
     return $registry;
 };
