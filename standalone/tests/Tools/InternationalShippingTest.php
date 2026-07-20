@@ -168,7 +168,7 @@ try {
 
 if ($mysql === null) {
     echo "\n[SKIP] Testy DB-backed pominiete — MySQL PrestaShop nieosiagalny (uruchom na serwerze).\n";
-    $skipped = 12;
+    $skipped = 17;
 } else {
     $dbTool = new InternationalShipping($mysql);
 
@@ -195,6 +195,18 @@ if ($mysql === null) {
     $gl = $dbTool->execute(['country' => 'Grenlandia']);
     assertTest('Grenlandia -> not_supported', ($gl['status'] ?? null) === 'not_supported',
         json_encode($gl, JSON_UNESCAPED_UNICODE));
+
+    // CHAT-T-156 Fix A: kraj ROZPOZNANY, ale active=0 (wyłączony z wysyłki) mimo strefy
+    // ze stawkami DPD. Szwajcaria: active=0, id_zone=25 (Węgry) ma cennik DPD — bez filtra
+    // narzędzie zwracało ok+cennik (conv 761). Musi być not_supported, kraj rozpoznany.
+    $ch = $dbTool->execute(['country' => 'Szwajcaria']);
+    assertTest('Szwajcaria (active=0) -> not_supported', ($ch['status'] ?? null) === 'not_supported',
+        json_encode($ch, JSON_UNESCAPED_UNICODE));
+    assertTest('Szwajcaria -> rozpoznana (country=Szwajcaria, nie unknown)',
+        ($ch['country'] ?? null) === 'Szwajcaria', json_encode($ch, JSON_UNESCAPED_UNICODE));
+    assertTest('Szwajcaria -> BEZ cennika (brak ranges)', !isset($ch['ranges']));
+    $chIso = $dbTool->execute(['country' => 'CH']);
+    assertTest('CH (ISO, active=0) -> not_supported', ($chIso['status'] ?? null) === 'not_supported');
 
     // Kraj nieznany -> unknown_country.
     $nope = $dbTool->execute(['country' => 'Blorpland']);

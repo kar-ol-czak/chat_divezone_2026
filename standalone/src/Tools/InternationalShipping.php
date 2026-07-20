@@ -116,6 +116,22 @@ final class InternationalShipping implements ToolInterface
                 ];
             }
 
+            // Kraj ROZPOZNANY, ale wyłączony z wysyłki (pr_country.active=0). Przykład:
+            // Szwajcaria (CH) ma active=0, lecz id_zone=25 (strefa „Węgry") ze stawkami DPD —
+            // bez tego filtra narzędzie zwracało cennik i status:ok, a bot podważał obsługę
+            // („my system shows...", conv 761). Sprawdzamy PRZED pobraniem stawek. Kraj ma być
+            // rozpoznany (nie unknown_country), a status ma mówić prawdę. Note jest dla bota —
+            // nie zdradza klientowi mechanizmu (CHAT-T-156, decyzja 192).
+            if ((int) $country['active'] === 0) {
+                return [
+                    'status' => 'not_supported',
+                    'country' => $country['country_name'],
+                    'zone_name' => $country['zone_name'],
+                    'carrier' => 'Kurier DPD',
+                    'note' => 'Kraj obecnie wyłączony z wysyłki — sklep nie wysyła do tego kraju.',
+                ];
+            }
+
             $zoneId = (int) $country['id_zone'];
             $rangeRows = $this->fetchDpdRanges($zoneId);
             $ranges = self::normalizeRanges($rangeRows, $this->fetchEurRate());
@@ -181,8 +197,10 @@ final class InternationalShipping implements ToolInterface
     /**
      * Kraj → id_zone. Dopasowanie: kod ISO (dokładny) > nazwa PL dokładna > nazwa PL LIKE.
      * pr_country_lang id_lang=1 (polski). null = nierozpoznany.
+     * Pobiera też `c.active` — kraj wyłączony z wysyłki (active=0) ma być rozpoznany,
+     * ale zwrócony jako not_supported (CHAT-T-156).
      *
-     * @return array{id_country:int, iso_code:string, id_zone:int, country_name:string, zone_name:?string}|null
+     * @return array{id_country:int, iso_code:string, id_zone:int, active:int, country_name:string, zone_name:?string}|null
      */
     private function resolveCountry(string $input): ?array
     {
@@ -190,6 +208,7 @@ final class InternationalShipping implements ToolInterface
             "SELECT c.id_country,
                     c.iso_code,
                     c.id_zone,
+                    c.active,
                     TRIM(cl.name) AS country_name,
                     TRIM(z.name)  AS zone_name
              FROM pr_country c
@@ -213,6 +232,7 @@ final class InternationalShipping implements ToolInterface
             'id_country'   => (int) $row['id_country'],
             'iso_code'     => (string) $row['iso_code'],
             'id_zone'      => (int) $row['id_zone'],
+            'active'       => (int) $row['active'],
             'country_name' => self::cleanName((string) $row['country_name']),
             'zone_name'    => $row['zone_name'] !== null ? self::cleanName((string) $row['zone_name']) : null,
         ];
