@@ -4218,3 +4218,35 @@ Test PROD CHAT-T-152 (S3) ujawnił lukę: bot wskazał „Manometr TECLINE 300 b
 Kryterium 165a (wykluczenia pony/tlenowy/O2/wąż 15cm) NIE obejmowało „modułu". Pełny przegląd kat. 107 dostępnych po cenie (2026-07-18) pokazał, że przed pierwszym poprawnym manometrem (TERMO 300bar/60cm 249 zł) stoją CZTERY do odrzucenia: wrzeciono/króciec (20), pony (108), wąż 15cm (235), moduł (236). Do tego OMS „SPG 52/63 mm" (340) — sam SPG bez węża, ta sama klasa.
 
 **Korekta kryterium — zamiast rosnącej listy wykluczeń, kryterium POZYTYWNE:** manometr kompletny do zestawu rekreacyjnego = ma w nazwie/opisie DŁUGI WĄŻ (60cm/80cm) i nie jest oznaczony jako „moduł", „sama głowica", „SPG" (bez węża), „wrzeciono", „króciec", „pony", „tlenowy"/„O2", „wąż 15cm" (techniczny/sidemount). Realizacja: CHAT-T-153, dopisek do reguły 165a w SystemPrompt. Deploy jednego pliku (ta sama ścieżka co T-152).
+
+---
+
+### ADR-131: Własność `config/tools.php` — jeden właściciel (repo czatu), klasy-goście przez wersjonowany plik + md5
+
+**Kontekst:** `config/tools.php` na produkcji `chat.divezone.pl` był współredagowany
+przez dwa projekty (czat + Atrybuty). Efekt: trzy rozjechane wersje pliku (md5
+repo-czatu ≠ repo-Atrybuty ≠ prod), nikt nie miał pełnej wersji prod w repo,
+blanket-rsync groził fatal 500 (kasował cudze rejestracje). Karta Chat - 42.
+Zweryfikowane obustronnie md5/SSH (czat + Atrybuty niezależnie).
+
+**Decyzja:**
+1. **Jeden właściciel `config/tools.php` = repo czatu.** To plik konfiguracyjny
+   aplikacji czatu; wszystkie narzędzia poza jednym należą do czatu.
+2. Klasa `GetProductCombinations` (własność logiki: projekt Atrybuty, ATTR-T-052,
+   czyta `divezone_attr_color_lang`) mieszka w repo czatu jako KOPIA. Martwa
+   `ProductCombinations` (CHAT-T-129, nigdy niewdrożona) usunięta z repo czatu.
+3. **Kanoniczne źródło klasy-gościa = wersjonowany plik u właściciela logiki.**
+   Gdy Atrybuty zmieniają `GetProductCombinations`: commit u siebie → przekazują
+   czatowi gotowy plik + md5 → czat wgrywa swoim deployem → deklaracja w Sentinelu.
+   NIE „diff" (diff bez kanonicznego źródła znów się rozjeżdża — doprecyzowanie
+   Atrybutów).
+4. Atrybuty NIE deployują `config/tools.php` na drzewo czatu (od 2026-07-20).
+
+**Konsekwencje:** po synchronizacji (CHAT-T-155) repo-czatu `tools.php` == prod
+(md5), blanket-rsync znów bezpieczny. Reguła własności rozszerzalna na inne
+pliki-goście (gdyby powstały). Zależność runtime `GetProductCombinations` to tylko
+DANE (tabela Atrybutów), nie kod — dlatego kopia w repo czatu jest samowystarczalna.
+
+**Powiązania:** uśmierca ADR-112 (CHAT-T-129 `ProductCombinations` — wariant
+odrzucony na rzecz wersji Atrybutów). Współpracuje z ADR-025 projektu Atrybuty
+(ATTR-T-052, źródło logiki). Zgoda Atrybutów: odpowiedź na Chat-42 z 2026-07-20.
