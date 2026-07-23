@@ -7,21 +7,22 @@ namespace DiveChat\Tools;
 use DiveChat\Database\MysqlConnection;
 
 /**
- * Deterministyczny dobór rozmiaru skafandra mokrego (Scubapro / Bare).
+ * Deterministyczny dobór rozmiaru skafandra mokrego (wszystkie marki z tabel divezone_attr_*).
  * CHAT-T-100 / ADR-099 (+ ADDENDUM 099b). Port logiki z embeddings/size_matcher.py.
  * CHAT-T-103: źródło prawdy rozmiarów przeniesione na MySQL PrestaShop
  * (divezone_attr_*, ATTR-T-001) — wcześniej Railway/PG divechat_size_*. Logika doboru bez zmian.
  *
  * NIE embeddingi — relacyjny lookup w divezone_attr_size_* (SQL BETWEEN / wartości punktowe).
- *  - chart przedziałowy (dorośli, min≠max): klatka piersiowa wiodąca, reszta weryfikuje;
+ *  - chart przedziałowy (dorośli, min≠max): przecięcie wymiarów — wszystkie podane wymiary
+ *    równocenne, wynik to rozmiary mieszczące każdy z nich; im więcej podanych, tym węziej;
  *  - chart punktowy (dzieci Rebel, gender='DZIECI', height min==max): dobór po wzroście.
  *
  * Suche skafandry POZA zakresem (reguła SystemPrompt: konsultacja, narzędzie NIE wołane).
  */
 final class SizeRecommender implements ToolInterface
 {
-    /** Wymiary weryfikujące (poza wiodącą klatką). Klient nie podaje `leg`. */
-    private const VERIFY_DIMS = ['waist', 'hip', 'height', 'weight'];
+    /** Wymiary dopasowujące — wszystkie równocenne (przecięcie zakresów). Klient nie podaje `leg`. */
+    private const MATCH_DIMS = ['chest', 'waist', 'hip', 'height', 'weight'];
 
     public function __construct(
         private readonly MysqlConnection $db,
@@ -34,12 +35,13 @@ final class SizeRecommender implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Dobiera rozmiar skafandra MOKREGO (marki Scubapro / Bare) deterministycznie '
-             . 'na podstawie wymiarów ciała. WYMAGA płci — ZAWSZE zapytaj klienta "dla kobiety '
-             . 'czy mężczyzny?", nie zgaduj. Dla dorosłych wiodący jest obwód klatki piersiowej '
-             . '(chest) — poproś o niego. Dla dzieci (pianki Rebel) wiodący jest wzrost (height). '
+        return 'Dobiera rozmiar skafandra MOKREGO deterministycznie na podstawie wymiarów ciała. '
+             . 'WYMAGA płci — ZAWSZE zapytaj klienta "dla kobiety czy mężczyzny?", nie zgaduj. '
+             . 'Pytaj o wymiary, które klient zna (obwód klatki, talii, bioder, wzrost, waga); '
+             . 'każdy podany wymiar zawęża wynik — im więcej podanych, tym węziej. '
+             . 'Dla dzieci (pianki Rebel) wiodący jest wzrost (height). '
              . 'NIE używaj dla skafandrów SUCHYCH (dobór wymaga pełnej miary + konsultacji z dostawcą). '
-             . 'Gdy klatka/wzrost wypada między rozmiary lub poza skalę — zwraca dwa najbliższe '
+             . 'Gdy wymiary wypadają między rozmiary lub poza skalę — zwraca najbliższe '
              . '+ flagę konsultacji; ZERO ekstrapolacji.';
     }
 
@@ -55,8 +57,7 @@ final class SizeRecommender implements ToolInterface
                 ],
                 'brand' => [
                     'type' => 'string',
-                    'enum' => ['Scubapro', 'Bare'],
-                    'description' => 'Marka — alternatywnie do product_id, gdy znana tylko marka.',
+                    'description' => 'Marka — alternatywnie do product_id, gdy produkt nieznany.',
                 ],
                 'gender' => [
                     'type' => 'string',
@@ -66,7 +67,7 @@ final class SizeRecommender implements ToolInterface
                 ],
                 'chest' => [
                     'type' => 'number',
-                    'description' => 'Obwód klatki piersiowej [cm] — WIODĄCY dla dorosłych (wymagany dla M/K).',
+                    'description' => 'Obwód klatki piersiowej [cm] — wymiar ciała (równocenny z pozostałymi).',
                 ],
                 'waist' => [
                     'type' => 'number',
@@ -78,7 +79,7 @@ final class SizeRecommender implements ToolInterface
                 ],
                 'height' => [
                     'type' => 'number',
-                    'description' => 'Wzrost [cm] — weryfikujący u dorosłych, WIODĄCY dla dzieci (wymagany dla DZIECI).',
+                    'description' => 'Wzrost [cm] — wymiar ciała (równocenny u dorosłych); wiodący dla dzieci (wymagany dla DZIECI).',
                 ],
                 'weight' => [
                     'type' => 'number',
@@ -95,13 +96,14 @@ final class SizeRecommender implements ToolInterface
         $gender = isset($params['gender']) ? strtoupper(trim((string) $params['gender'])) : null;
         $brand = isset($params['brand']) ? trim((string) $params['brand']) : null;
         $productId = isset($params['product_id']) ? (int) $params['product_id'] : null;
-        $chest = isset($params['chest']) ? (float) $params['chest'] : null;
-        $verify = [
-            'waist' => isset($params['waist']) ? (float) $params['waist'] : null,
-            'hip' => isset($params['hip']) ? (float) $params['hip'] : null,
-            'height' => isset($params['height']) ? (float) $params['height'] : null,
-            'weight' => isset($params['weight']) ? (float) $params['weight'] : null,
-        ];
+
+        // Wszystkie podane wymiary są równocenne (przecięcie). Niepodane pomijamy — nie liczą się jako niezgodność.
+        $dims = [];
+        foreach (self::MATCH_DIMS as $d) {
+            if (isset($params[$d]) && is_numeric($params[$d])) {
+                $dims[$d] = (float) $params[$d];
+            }
+        }
 
         if ($gender === null || $gender === '') {
             return ['error' => 'Brak płci. Zapytaj klienta: dla kobiety czy mężczyzny? (twarda reguła — nie zgaduj).'];
@@ -114,9 +116,12 @@ final class SizeRecommender implements ToolInterface
         if ($chart === null) {
             return [
                 'error' => 'Nie znaleziono tabeli rozmiarów dla podanych danych. '
-                    . 'Podaj product_id zmapowanego skafandra mokrego LUB brand (Scubapro/Bare) + gender. '
-                    . 'Dostępne charty: Scubapro (M/K/DZIECI), Bare (M/K).',
+                    . 'Podaj product_id zmapowanego skafandra mokrego LUB brand + gender.',
             ];
+        }
+        if (isset($chart['error'])) {
+            // Fallback po marce trafił w kilka tabel — prośba o doprecyzowanie (nigdy pierwszy z brzegu).
+            return $chart;
         }
 
         $rows = $this->loadChartRows($chart['id']);
@@ -129,18 +134,18 @@ final class SizeRecommender implements ToolInterface
         $pointwise = $chart['gender'] === 'DZIECI' || $this->isPointwise($sizes, 'height');
 
         if ($pointwise) {
-            $height = $verify['height'];
+            $height = $dims['height'] ?? null;
             if ($height === null) {
                 return ['error' => 'Chart dziecięcy/punktowy — podaj wzrost dziecka (height, cm). '
                     . 'To wymiar wiodący dla pianek dziecięcych.'];
             }
             $result = $this->matchPointwise($sizes, $height, 'height');
         } else {
-            if ($chest === null) {
-                return ['error' => 'Brak obwodu klatki piersiowej (chest) — wymiar wiodący dla dorosłych. '
-                    . 'Poproś klienta o obwód klatki.'];
+            if ($dims === []) {
+                return ['error' => 'Podaj co najmniej jeden wymiar ciała (np. obwód klatki, talii, '
+                    . 'bioder, wzrost lub wagę) — każdy podany wymiar zawęża dobór.'];
             }
-            $result = $this->matchSize($sizes, $chest, $verify);
+            $result = $this->matchSize($sizes, $dims);
         }
 
         // Pełne nazwy rozmiarów (Scubapro "L - 52"; Bare = label) + metadane charta.
@@ -160,9 +165,11 @@ final class SizeRecommender implements ToolInterface
 
     /**
      * Wybór charta: 1) product_id przez mapowanie (bi-gender → po płci klienta);
-     * 2) fallback brand + gender. Zwraca ['id','brand','gender'] albo null.
+     * 2) fallback brand + gender (LIKE, chart_type='progowy', category_hint='skafander';
+     *    krok 1 = dokładna płeć, krok 2 = UNISEX; >1 wiersz → błąd, nigdy pierwszy z brzegu).
+     * Zwraca ['id','brand','gender'], ['error'=>...] (kilka tabel po marce) albo null.
      *
-     * @return array{id: int|string, brand: string, gender: string}|null
+     * @return array{id: int|string, brand: string, gender: string}|array{error: string}|null
      */
     private function resolveChart(?int $productId, ?string $brand, string $gender): ?array
     {
@@ -192,10 +199,30 @@ final class SizeRecommender implements ToolInterface
         }
 
         if ($brand !== null && $brand !== '') {
-            return $this->db->fetchOne(
-                'SELECT id_chart AS id, brand, gender FROM divezone_attr_size_charts WHERE brand = ? AND gender = ?',
-                [$brand, $gender],
-            );
+            // Filtry chart_type='progowy' + category_hint='skafander' OBOWIĄZKOWE — bez nich marka
+            // trafia w buty/kaptury/rękawice. Krok 1: dokładna płeć; krok 2 (tylko przy 0): UNISEX.
+            foreach ([$gender, 'UNISEX'] as $g) {
+                $rows = $this->db->fetchAll(
+                    "SELECT id_chart AS id, brand, gender
+                     FROM divezone_attr_size_charts
+                     WHERE brand LIKE CONCAT('%', ?, '%')
+                       AND chart_type = 'progowy'
+                       AND category_hint = 'skafander'
+                       AND gender = ?",
+                    [$brand, $g],
+                );
+                if (count($rows) === 1) {
+                    return $rows[0];
+                }
+                if (count($rows) > 1) {
+                    // Zabezpieczenie (ADR-099): cicho wybrany zły chart gorszy niż odmowa.
+                    return ['error' => 'Po marce "' . $brand . '" pasuje kilka tabel rozmiarów skafandra. '
+                        . 'Doprecyzuj — podaj product_id konkretnego skafandra.'];
+                }
+                // 0 wierszy w kroku 1 → spróbuj UNISEX; 0 w kroku 2 → null niżej.
+            }
+
+            return null;
         }
 
         return null;
@@ -261,99 +288,103 @@ final class SizeRecommender implements ToolInterface
     }
 
     /**
-     * Algorytm przedziałowy (dorośli) — wierny port match_size() z size_matcher.py.
-     * Klatka piersiowa wiodąca, reszta weryfikuje. ZERO ekstrapolacji poza skalę.
+     * Algorytm przecięcia wymiarów (dorośli). Wszystkie podane wymiary są równocenne:
+     * wynik to rozmiary, w których KAŻDY podany wymiar mieści się w swoim zakresie.
+     * Im więcej podanych wymiarów, tym węższy wynik. Wymiar niepodany nie liczy się jako
+     * niezgodność (nie ma go w $dims). ZERO ekstrapolacji poza skalę.
      *
-     * @param array<string, float|null> $verify
+     * @param list<array{label: string, full: string, sort: int, dims: array<string, array{0: float, 1: float}>}> $sizes
+     * @param array<string, float> $dims  podane wymiary (bez null), co najmniej jeden
      */
-    private function matchSize(array $sizes, float $chest, array $verify): array
+    private function matchSize(array $sizes, array $dims): array
     {
-        $given = array_filter(
-            $verify,
-            static fn(?float $v): bool => $v !== null,
-        );
+        // Przecięcie: rozmiary, w których KAŻDY podany wymiar mieści się w [min,max].
+        $hits = array_values(array_filter($sizes, function (array $s) use ($dims): bool {
+            foreach ($dims as $dim => $val) {
+                if (!isset($s['dims'][$dim]) || !$this->inRange($val, $s['dims'][$dim])) {
+                    return false;
+                }
+            }
+            return true;
+        }));
 
-        // (ile wymiarów weryfikujących pasuje, ile sprawdzono).
-        $verifyScore = function (array $s) use ($given): array {
+        // 3. Dokładnie jeden rozmiar → sugestia.
+        if (count($hits) === 1) {
+            return [
+                'decision' => 'match',
+                'sizes' => [$hits[0]['label']],
+                'consult' => false,
+                'reason' => 'wszystkie podane wymiary trafiają w jeden rozmiar',
+            ];
+        }
+
+        // 4. Kilka rozmiarów → wszystkie równorzędne, bez wskazywania jednego.
+        if (count($hits) >= 2) {
+            return [
+                'decision' => 'multiple',
+                'sizes' => array_map(static fn(array $s): string => $s['label'], $hits),
+                'consult' => false,
+                'reason' => 'kilka rozmiarów pasuje równorzędnie — podaj kolejny wymiar, aby zawęzić wynik',
+            ];
+        }
+
+        // Przecięcie puste — policz, ile podanych wymiarów pasuje w każdym rozmiarze.
+        $best = 0;
+        $scored = [];
+        foreach ($sizes as $s) {
             $ok = 0;
-            $checked = 0;
-            foreach ($given as $dim => $val) {
-                if (isset($s['dims'][$dim])) {
-                    $checked++;
-                    if ($this->inRange($val, $s['dims'][$dim])) {
-                        $ok++;
+            foreach ($dims as $dim => $val) {
+                if (isset($s['dims'][$dim]) && $this->inRange($val, $s['dims'][$dim])) {
+                    $ok++;
+                }
+            }
+            $scored[] = ['ok' => $ok, 's' => $s];
+            if ($ok > $best) {
+                $best = $ok;
+            }
+        }
+
+        // 5. Zero w przecięciu, ale co najmniej jeden wymiar coś trafia → częściowe dopasowanie.
+        if ($best >= 1) {
+            $partial = array_values(array_filter($scored, static fn(array $x): bool => $x['ok'] === $best));
+            $outDims = [];
+            foreach ($partial as $x) {
+                foreach ($dims as $dim => $val) {
+                    if (!isset($x['s']['dims'][$dim]) || !$this->inRange($val, $x['s']['dims'][$dim])) {
+                        $outDims[$dim] = true;
                     }
                 }
             }
-            return [$ok, $checked];
-        };
-
-        // 1. Rozmiary, w których chest klienta ∈ [min,max].
-        $chestHits = array_values(array_filter(
-            $sizes,
-            fn(array $s): bool => isset($s['dims']['chest']) && $this->inRange($chest, $s['dims']['chest']),
-        ));
-
-        if (count($chestHits) === 1) {
-            $s = $chestHits[0];
-            [$ok, $checked] = $verifyScore($s);
-            if ($checked === 0 || $ok * 2 >= $checked) {
-                return [
-                    'decision' => 'match',
-                    'sizes' => [$s['label']],
-                    'consult' => false,
-                    'reason' => 'chest trafia w jeden rozmiar, wymiary weryfikujące zgodne',
-                ];
-            }
+            $out = array_keys($outDims);
             return [
-                'decision' => 'ambiguous',
-                'sizes' => [$s['label']],
+                'decision' => 'partial',
+                'sizes' => array_map(static fn(array $x): string => $x['s']['label'], $partial),
                 'consult' => true,
-                'reason' => 'chest trafia w rozmiar, ale wymiary weryfikujące się nie zgadzają',
+                'out_of_range_dims' => $out,
+                'reason' => 'żaden rozmiar nie spełnia wszystkich podanych wymiarów; '
+                    . 'zwrócono częściowo pasujące — poza zakresem: ' . implode(', ', $out),
             ];
         }
 
-        if (count($chestHits) >= 2) {
-            // 3. chest trafia w ≥2 rozmiary → rozróżnij wzrostem/wagą (najwięcej zgodnych wygrywa).
-            $scored = [];
-            $bestOk = 0;
-            foreach ($chestHits as $s) {
-                [$ok, $checked] = $verifyScore($s);
-                $scored[] = ['ok' => $ok, 's' => $s];
-                if ($ok > $bestOk) {
-                    $bestOk = $ok;
+        // 6. Zero trafień w ogóle → dwa najbliższe po SUMIE odległości od zakresów.
+        $sumDist = function (array $s) use ($dims): float {
+            $sum = 0.0;
+            foreach ($dims as $dim => $val) {
+                if (isset($s['dims'][$dim])) {
+                    $sum += $this->distToRange($val, $s['dims'][$dim]);
                 }
             }
-            $winners = array_values(array_filter($scored, static fn(array $x): bool => $x['ok'] === $bestOk));
-            if (count($winners) === 1 && $bestOk > 0) {
-                return [
-                    'decision' => 'match',
-                    'sizes' => [$winners[0]['s']['label']],
-                    'consult' => false,
-                    'reason' => 'chest w kilku rozmiarach, rozróżnienie po wzroście/wadze',
-                ];
-            }
-            $labels = array_map(static fn(array $s): string => $s['label'], $chestHits);
-            return [
-                'decision' => 'ambiguous',
-                'sizes' => $labels,
-                'consult' => true,
-                'reason' => 'chest pasuje do kilku rozmiarów, brak jednoznacznego rozróżnienia',
-            ];
-        }
-
-        // 4. chest NIE trafia w żaden → dwa najbliższe po odległości chest + konsultacja.
+            return $sum;
+        };
         $byDist = $sizes;
-        usort($byDist, fn(array $a, array $b): int =>
-            $this->distToRange($chest, $a['dims']['chest'] ?? [0.0, 0.0])
-            <=> $this->distToRange($chest, $b['dims']['chest'] ?? [0.0, 0.0]));
+        usort($byDist, fn(array $a, array $b): int => $sumDist($a) <=> $sumDist($b));
         $nearest = array_map(static fn(array $s): string => $s['label'], array_slice($byDist, 0, 2));
 
         return [
             'decision' => 'out_of_scale',
             'sizes' => $nearest,
             'consult' => true,
-            'reason' => 'klatka piersiowa między rozmiarami lub poza skalą — bez ekstrapolacji',
+            'reason' => 'podane wymiary wypadają między rozmiary lub poza skalę — bez ekstrapolacji',
         ];
     }
 
