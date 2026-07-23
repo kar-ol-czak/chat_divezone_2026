@@ -24,6 +24,7 @@ ich treści — kopia rozjeżdża się cicho (to jest zasada projektu, nie styli
 | infrastruktura, ścieżki, cache | **`CLAUDE.md`**, „Mapa infrastruktury" | jedno źródło prawdy, nie dubluj |
 | pisanie tasku dla CC | `_instances/{nazwa}/tasks/` | konwencja: `CHAT-T-NNN_INSTANCJA_opis.md` |
 | „wczytaj prompt startowy", start sesji | **`_docs/47`** | treść instrukcji projektu (rola, adresy, dyscyplina). Karol wkleja tylko odsyłacz. Aktualizuje **architekt** |
+| dobór rozmiaru skafandra, „bot nie dobiera rozmiaru" | `standalone/src/Tools/SizeRecommender.php` + `_docs/44` PUŁAPKI | dane w **MySQL** `divezone_attr_size_charts` / `_chart_rows` / `_product_chart` (NIE Railway, NIE `divechat_size_*` — te są martwe od CHAT-T-103). Algorytm = **przecięcie wymiarów**, wszystkie równocenne (CHAT-T-161, ADR-032 aneks 1 w projekcie atrybutów). Chart identyfikuje `product_id`, fallback `brand`+`gender`+`chart_type`+`category_hint` |
 
 **Reguła pierwszeństwa:** gdy `_docs/02`, `_docs/04` lub `CLAUDE.md` mówią co innego
 niż **`_docs/44`** — obowiązuje `44`, bo opisuje realny kod, tamte bywają projektowe.
