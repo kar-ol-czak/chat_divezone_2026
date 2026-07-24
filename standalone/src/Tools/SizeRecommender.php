@@ -7,22 +7,27 @@ namespace DiveChat\Tools;
 use DiveChat\Database\MysqlConnection;
 
 /**
- * Deterministyczny dobór rozmiaru skafandra mokrego (wszystkie marki z tabel divezone_attr_*).
+ * Deterministyczny dobór rozmiaru z tabel divezone_attr_* (wszystkie marki).
  * CHAT-T-100 / ADR-099 (+ ADDENDUM 099b). Port logiki z embeddings/size_matcher.py.
  * CHAT-T-103: źródło prawdy rozmiarów przeniesione na MySQL PrestaShop
  * (divezone_attr_*, ATTR-T-001) — wcześniej Railway/PG divechat_size_*. Logika doboru bez zmian.
+ * CHAT-T-165 / ADR-133: zakres rozszerzony poza skafandry na rękawice, kaptury, buty i pierścienie.
  *
  * NIE embeddingi — relacyjny lookup w divezone_attr_size_* (SQL BETWEEN / wartości punktowe).
- *  - chart przedziałowy (dorośli, min≠max): przecięcie wymiarów — wszystkie podane wymiary
+ *  - chart `progowy` (dorośli, min≠max): przecięcie wymiarów — wszystkie podane wymiary
  *    równocenne, wynik to rozmiary mieszczące każdy z nich; im więcej podanych, tym węziej;
- *  - chart punktowy (dzieci Rebel, gender='DZIECI', height min==max): dobór po wzroście.
+ *    wymiary czytane DYNAMICZNIE z charta (§3.1) — skafander chest/height/hip/waist/weight,
+ *    rękawica hand_circ/palm_length, kaptur head_circ/neck/forehead, but foot_length;
+ *  - chart punktowy (dzieci Rebel, gender='DZIECI', height min==max): dobór po wzroście;
+ *  - chart `tresciowy` (buty suche, buty Scubapro, pierścienie VDS): brak wierszy wymiarowych —
+ *    zwraca surową tabelę HTML (decision=content_table), model ją cytuje bez interpolacji (ADR-133).
  *
- * Suche skafandry POZA zakresem (reguła SystemPrompt: konsultacja, narzędzie NIE wołane).
+ * Suche skafandry (drysuit) POZA zakresem (reguła SystemPrompt: konsultacja, narzędzie NIE wołane).
  */
 final class SizeRecommender implements ToolInterface
 {
-    /** Wymiary dopasowujące — wszystkie równocenne (przecięcie zakresów). Klient nie podaje `leg`. */
-    private const MATCH_DIMS = ['chest', 'waist', 'hip', 'height', 'weight'];
+    /** Wymiary wyłączone z doboru mimo obecności w charcie (klient ich nie podaje). `leg` — ADR-032 aneks 1. */
+    private const EXCLUDED_DIMS = ['leg'];
 
     public function __construct(
         private readonly MysqlConnection $db,
@@ -35,12 +40,20 @@ final class SizeRecommender implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Dobiera rozmiar skafandra MOKREGO deterministycznie na podstawie wymiarów ciała. '
+        return 'Dobiera rozmiar deterministycznie na podstawie wymiarów ciała — obsługuje skafandry MOKRE, '
+             . 'rękawice, kaptury, buty i pierścienie suchego skafandra. '
              . 'WYMAGA płci — ZAWSZE zapytaj klienta "dla kobiety czy mężczyzny?", nie zgaduj. '
-             . 'Pytaj o wymiary, które klient zna (obwód klatki, talii, bioder, wzrost, waga); '
-             . 'każdy podany wymiar zawęża wynik — im więcej podanych, tym węziej. '
+             . 'Pytaj o wymiary właściwe dla kategorii: skafander — obwód klatki/talii/bioder, wzrost, waga; '
+             . 'rękawica — obwód dłoni (hand_circ), długość dłoni (palm_length); '
+             . 'kaptur — obwód głowy (head_circ), obwód szyi (neck), obwód czoła (forehead); '
+             . 'but — długość stopy (foot_length). Każdy podany wymiar zawęża wynik. '
              . 'Dla dzieci (pianki Rebel) wiodący jest wzrost (height). '
-             . 'NIE używaj dla skafandrów SUCHYCH (dobór wymaga pełnej miary + konsultacji z dostawcą). '
+             . 'Dla butów suchych, butów Scubapro i pierścieni narzędzie zwraca gotową tabelę przeliczeń '
+             . '(decision=content_table, pole content_html) — NIE wymaga wtedy wymiarów; przedstaw ją, '
+             . 'cytując wyłącznie wiersze z tabeli, bez interpolacji. '
+             . 'Wybór tabeli: podaj product_id; przy podaniu samej marki (brand) MUSISZ dodać category '
+             . '(marka ma tabele w wielu kategoriach) — nie zgaduj. '
+             . 'NIE używaj dla skafandrów SUCHYCH (drysuit — dobór wymaga pełnej miary + konsultacji z dostawcą). '
              . 'Gdy wymiary wypadają między rozmiary lub poza skalę — zwraca najbliższe '
              . '+ flagę konsultacji; ZERO ekstrapolacji.';
     }
@@ -57,7 +70,14 @@ final class SizeRecommender implements ToolInterface
                 ],
                 'brand' => [
                     'type' => 'string',
-                    'description' => 'Marka — alternatywnie do product_id, gdy produkt nieznany.',
+                    'description' => 'Marka — alternatywnie do product_id, gdy produkt nieznany. '
+                        . 'Przy podaniu marki bez product_id MUSISZ dodać category (marka ma tabele w wielu kategoriach).',
+                ],
+                'category' => [
+                    'type' => 'string',
+                    'enum' => ['skafander', 'rekawica', 'kaptur', 'but', 'but_suchy', 'pierscienie'],
+                    'description' => 'Kategoria produktu — WYMAGANA przy fallbacku po marce (brand bez product_id). '
+                        . 'Gdy podano product_id, kategoria jest wyprowadzana z produktu (tego pola nie podawaj).',
                 ],
                 'gender' => [
                     'type' => 'string',
@@ -85,8 +105,32 @@ final class SizeRecommender implements ToolInterface
                     'type' => 'number',
                     'description' => 'Waga [kg] — weryfikujący/rozróżniający.',
                 ],
+                'foot_length' => [
+                    'type' => 'number',
+                    'description' => 'Długość stopy [cm] — wymiar dla butów.',
+                ],
+                'hand_circ' => [
+                    'type' => 'number',
+                    'description' => 'Obwód dłoni [cm] — wymiar dla rękawic.',
+                ],
+                'palm_length' => [
+                    'type' => 'number',
+                    'description' => 'Długość dłoni [cm] — wymiar dla rękawic.',
+                ],
+                'head_circ' => [
+                    'type' => 'number',
+                    'description' => 'Obwód głowy [cm] — wymiar dla kapturów.',
+                ],
+                'neck' => [
+                    'type' => 'number',
+                    'description' => 'Obwód szyi [cm] — wymiar dla kapturów.',
+                ],
+                'forehead' => [
+                    'type' => 'number',
+                    'description' => 'Obwód czoła [cm] — wymiar dla kapturów.',
+                ],
             ],
-            // chest/height walidowane w execute() zależnie od typu charta (dorosły vs dziecięcy).
+            // chest/height/inne walidowane w execute() zależnie od typu charta (dorosły vs dziecięcy vs tresciowy).
             'required' => ['gender'],
         ];
     }
@@ -95,15 +139,8 @@ final class SizeRecommender implements ToolInterface
     {
         $gender = isset($params['gender']) ? strtoupper(trim((string) $params['gender'])) : null;
         $brand = isset($params['brand']) ? trim((string) $params['brand']) : null;
+        $category = isset($params['category']) ? strtolower(trim((string) $params['category'])) : null;
         $productId = isset($params['product_id']) ? (int) $params['product_id'] : null;
-
-        // Wszystkie podane wymiary są równocenne (przecięcie). Niepodane pomijamy — nie liczą się jako niezgodność.
-        $dims = [];
-        foreach (self::MATCH_DIMS as $d) {
-            if (isset($params[$d]) && is_numeric($params[$d])) {
-                $dims[$d] = (float) $params[$d];
-            }
-        }
 
         if ($gender === null || $gender === '') {
             return ['error' => 'Brak płci. Zapytaj klienta: dla kobiety czy mężczyzny? (twarda reguła — nie zgaduj).'];
@@ -112,16 +149,35 @@ final class SizeRecommender implements ToolInterface
             return ['error' => "Nieobsługiwana płeć: {$gender}. Dozwolone: M, K, DZIECI."];
         }
 
-        $chart = $this->resolveChart($productId, $brand, $gender);
+        $chart = $this->resolveChart($productId, $brand, $category, $gender);
         if ($chart === null) {
             return [
                 'error' => 'Nie znaleziono tabeli rozmiarów dla podanych danych. '
-                    . 'Podaj product_id zmapowanego skafandra mokrego LUB brand + gender.',
+                    . 'Podaj product_id zmapowanego produktu LUB brand + category '
+                    . '(skafander/rękawica/kaptur/but/but suchy/pierścienie) + gender.',
             ];
         }
         if (isset($chart['error'])) {
-            // Fallback po marce trafił w kilka tabel — prośba o doprecyzowanie (nigdy pierwszy z brzegu).
+            // Fallback po marce: brak kategorii albo kilka tabel — prośba o doprecyzowanie (nigdy pierwszy z brzegu).
             return $chart;
+        }
+
+        // CHAT-T-165 / ADR-133: charty `tresciowy` (buty suche, buty Scubapro, pierścienie VDS) NIE mają
+        // wierszy wymiarowych — treść leży w divezone_attr_size_chart_content. Zwracamy surowy content_html
+        // (model cytuje bez interpolacji), BEZ wymagania wymiarów od klienta.
+        if (($chart['chart_type'] ?? 'progowy') === 'tresciowy') {
+            $content = $this->loadChartContent($chart['id']);
+            if ($content === null || trim((string) ($content['content_html'] ?? '')) === '') {
+                return ['error' => 'Tabela rozmiarów jest pusta dla wybranego charta.'];
+            }
+            return [
+                'decision' => 'content_table',
+                'content_html' => (string) $content['content_html'],
+                'note' => ($content['note'] ?? null) !== null && $content['note'] !== '' ? (string) $content['note'] : null,
+                'brand' => $chart['brand'],
+                'category' => $chart['category_hint'] ?? null,
+                'gender' => $chart['gender'],
+            ];
         }
 
         $rows = $this->loadChartRows($chart['id']);
@@ -129,6 +185,17 @@ final class SizeRecommender implements ToolInterface
             return ['error' => 'Tabela rozmiarów jest pusta dla wybranego charta.'];
         }
         $sizes = $this->buildSizes($rows);
+
+        // §3.1: wymiary dopasowujące czytane DYNAMICZNIE z charta (nie ze stałej listy) — nowy wymiar
+        // w danych działa bez zmiany kodu. `leg` wyłączony z doboru (ADR-032 aneks 1, EXCLUDED_DIMS).
+        $allowedDims = $this->matchableDimensions($sizes);
+        // Wszystkie podane wymiary są równocenne (przecięcie). Niepodane pomijamy — nie liczą się jako niezgodność.
+        $dims = [];
+        foreach ($allowedDims as $d) {
+            if (isset($params[$d]) && is_numeric($params[$d])) {
+                $dims[$d] = (float) $params[$d];
+            }
+        }
 
         // Chart dziecięcy / punktowy → dobór po wzroście (NIE klatce).
         $pointwise = $chart['gender'] === 'DZIECI' || $this->isPointwise($sizes, 'height');
@@ -142,8 +209,8 @@ final class SizeRecommender implements ToolInterface
             $result = $this->matchPointwise($sizes, $height, 'height');
         } else {
             if ($dims === []) {
-                return ['error' => 'Podaj co najmniej jeden wymiar ciała (np. obwód klatki, talii, '
-                    . 'bioder, wzrost lub wagę) — każdy podany wymiar zawęża dobór.'];
+                return ['error' => 'Podaj co najmniej jeden wymiar do doboru rozmiaru '
+                    . '(' . implode(', ', $allowedDims) . ') — każdy podany wymiar zawęża wynik.'];
             }
             $result = $this->matchSize($sizes, $dims);
         }
@@ -165,17 +232,19 @@ final class SizeRecommender implements ToolInterface
 
     /**
      * Wybór charta: 1) product_id przez mapowanie (bi-gender → po płci klienta);
-     * 2) fallback brand + gender (LIKE, chart_type='progowy', category_hint='skafander';
+     * 2) fallback brand + category + gender (LIKE, chart_type='progowy', category_hint=parametr;
      *    krok 1 = dokładna płeć, krok 2 = UNISEX; >1 wiersz → błąd, nigdy pierwszy z brzegu).
-     * Zwraca ['id','brand','gender'], ['error'=>...] (kilka tabel po marce) albo null.
+     * §3.3 (CHAT-T-165): przy fallbacku po marce kategoria WYMAGANA — marka ma tabele w wielu
+     * kategoriach (Scubapro: skafander/but/but suchy/kaptur/rękawica), nie zgadujemy.
+     * Zwraca ['id','brand','gender','chart_type','category_hint'], ['error'=>...] albo null.
      *
-     * @return array{id: int|string, brand: string, gender: string}|array{error: string}|null
+     * @return array{id: int|string, brand: string, gender: string, chart_type: string, category_hint: ?string}|array{error: string}|null
      */
-    private function resolveChart(?int $productId, ?string $brand, string $gender): ?array
+    private function resolveChart(?int $productId, ?string $brand, ?string $category, string $gender): ?array
     {
         if ($productId !== null) {
             $charts = $this->db->fetchAll(
-                'SELECT c.id_chart AS id, c.brand, c.gender
+                'SELECT c.id_chart AS id, c.brand, c.gender, c.chart_type, c.category_hint
                  FROM divezone_attr_product_chart pc
                  JOIN divezone_attr_size_charts c ON pc.id_chart = c.id_chart
                  WHERE pc.id_product = ?
@@ -193,31 +262,37 @@ final class SizeRecommender implements ToolInterface
                         return $c;
                     }
                 }
-                // Płeć klienta nie pasuje do mapowań — spróbuj brand+gender niżej.
+                // Płeć klienta nie pasuje do mapowań — spróbuj brand+category+gender niżej.
             }
-            // Brak mapowania dla product_id — fallback do brand+gender.
+            // Brak mapowania dla product_id — fallback do brand+category+gender.
         }
 
         if ($brand !== null && $brand !== '') {
-            // Filtry chart_type='progowy' + category_hint='skafander' OBOWIĄZKOWE — bez nich marka
-            // trafia w buty/kaptury/rękawice. Krok 1: dokładna płeć; krok 2 (tylko przy 0): UNISEX.
+            // §3.3: kategoria OBOWIĄZKOWA — bez niej marka trafia w kilka kategorii naraz. Nie zgadujemy.
+            if ($category === null || $category === '') {
+                return ['error' => 'Marka "' . $brand . '" ma tabele rozmiarów w kilku kategoriach '
+                    . '(skafander, rękawica, kaptur, but, but suchy, pierścienie). '
+                    . 'Zapytaj klienta, o którą kategorię chodzi, albo podaj product_id — nie zgaduję.'];
+            }
+            // Filtry chart_type='progowy' + category_hint (parametr) + gender OBOWIĄZKOWE (CHAT-T-161 §2.4).
+            // Krok 1: dokładna płeć; krok 2 (tylko przy 0): UNISEX.
             foreach ([$gender, 'UNISEX'] as $g) {
                 $rows = $this->db->fetchAll(
-                    "SELECT id_chart AS id, brand, gender
+                    "SELECT id_chart AS id, brand, gender, chart_type, category_hint
                      FROM divezone_attr_size_charts
                      WHERE brand LIKE CONCAT('%', ?, '%')
                        AND chart_type = 'progowy'
-                       AND category_hint = 'skafander'
+                       AND category_hint = ?
                        AND gender = ?",
-                    [$brand, $g],
+                    [$brand, $category, $g],
                 );
                 if (count($rows) === 1) {
                     return $rows[0];
                 }
                 if (count($rows) > 1) {
                     // Zabezpieczenie (ADR-099): cicho wybrany zły chart gorszy niż odmowa.
-                    return ['error' => 'Po marce "' . $brand . '" pasuje kilka tabel rozmiarów skafandra. '
-                        . 'Doprecyzuj — podaj product_id konkretnego skafandra.'];
+                    return ['error' => 'Po marce "' . $brand . '" i kategorii "' . $category . '" pasuje kilka tabel rozmiarów. '
+                        . 'Doprecyzuj — podaj product_id konkretnego produktu.'];
                 }
                 // 0 wierszy w kroku 1 → spróbuj UNISEX; 0 w kroku 2 → null niżej.
             }
@@ -238,6 +313,45 @@ final class SizeRecommender implements ToolInterface
              ORDER BY r.sort_order',
             [$chartId],
         );
+    }
+
+    /**
+     * Treść charta `tresciowy` (surowa tabela HTML + nota) z divezone_attr_size_chart_content.
+     * ADR-133: NIE parsujemy HTML — model cytuje tabelę bez interpolacji. null gdy brak wiersza.
+     *
+     * @return array{content_html: string, note: ?string}|null
+     */
+    private function loadChartContent(int|string $chartId): ?array
+    {
+        $rows = $this->db->fetchAll(
+            'SELECT content_html, note FROM divezone_attr_size_chart_content WHERE id_chart = ? LIMIT 1',
+            [$chartId],
+        );
+
+        return $rows[0] ?? null;
+    }
+
+    /**
+     * Wymiary dopasowujące dla charta — czytane DYNAMICZNIE z jego wierszy (§3.1, ADR-133):
+     * unia `dimension` po wszystkich rozmiarach, minus wymiary wyłączone (EXCLUDED_DIMS, m.in. `leg`).
+     * Źródło prawdy w danych — nowy wymiar (foot_length, hand_circ, ...) działa bez zmiany kodu.
+     *
+     * @param list<array{label: string, full: string, sort: int, dims: array<string, array{0: float, 1: float}>}> $sizes
+     * @return list<string>
+     */
+    private function matchableDimensions(array $sizes): array
+    {
+        $dims = [];
+        foreach ($sizes as $s) {
+            foreach (array_keys($s['dims']) as $dim) {
+                $dims[$dim] = true;
+            }
+        }
+        foreach (self::EXCLUDED_DIMS as $excluded) {
+            unset($dims[$excluded]);
+        }
+
+        return array_keys($dims);
     }
 
     /**
