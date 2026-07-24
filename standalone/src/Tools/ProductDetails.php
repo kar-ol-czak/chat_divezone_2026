@@ -134,6 +134,46 @@ final class ProductDetails implements ToolInterface
 
         $productUrl = "https://divezone.pl/{$product['link_rewrite']}.html";
 
+        // CHAT-T-162: flaga dostępności tabeli rozmiarów (divezone_attr_*). Model musi
+        // wiedzieć ZANIM poprosi klienta o wymiary, czy chart w ogóle istnieje (recenzja
+        // 394, czat 791 — pytał o wymiary, po czym odmawiał). Awaria zapytania NIE może
+        // wywalić ceny/dostępności → try/catch, fallback available=false + error_log.
+        $sizeChart = ['available' => false];
+        try {
+            $charts = $db->fetchAll(
+                'SELECT c.id_chart, c.brand, c.gender, c.chart_type, c.category_hint
+                 FROM divezone_attr_product_chart pc
+                 JOIN divezone_attr_size_charts c ON c.id_chart = pc.id_chart
+                 WHERE pc.id_product = ?',
+                [$productId],
+            );
+            if ($charts !== []) {
+                $genderVariants = [];
+                $chartIds = [];
+                foreach ($charts as $c) {
+                    $g = (string) $c['gender'];
+                    if ($g !== '' && !in_array($g, $genderVariants, true)) {
+                        $genderVariants[] = $g; // bi-gender: obie płcie, NIE zgadujemy
+                    }
+                    $chartIds[] = (int) $c['id_chart'];
+                }
+                // DISTINCT wymiary z wierszy chartów; placeholdery pozycyjne per id_chart.
+                $placeholders = implode(',', array_fill(0, count($chartIds), '?'));
+                $dimRows = $db->fetchAll(
+                    "SELECT DISTINCT dimension FROM divezone_attr_size_chart_rows WHERE id_chart IN ($placeholders)",
+                    $chartIds,
+                );
+                $sizeChart = [
+                    'available' => true,
+                    'gender_variants' => $genderVariants,
+                    'dimensions' => array_map(static fn(array $r): string => (string) $r['dimension'], $dimRows),
+                ];
+            }
+        } catch (\Throwable $e) {
+            error_log('CHAT-T-162 size_chart lookup failed for product ' . $productId . ': ' . $e->getMessage());
+            $sizeChart = ['available' => false];
+        }
+
         $result = [
             'id' => $productId,
             'name' => $product['name'],
@@ -156,6 +196,7 @@ final class ProductDetails implements ToolInterface
                 'name' => $f['feature_name'],
                 'value' => $f['feature_value'],
             ], $features),
+            'size_chart' => $sizeChart, // CHAT-T-162: available + gender_variants + dimensions
         ];
 
         // Cena przed rabatem — model moze powiedziec "przeceniony z X na Y".
