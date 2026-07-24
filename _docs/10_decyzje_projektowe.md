@@ -4293,3 +4293,48 @@ narzędzie zwraca je w polu `brands_without_chart` do konsultacji telefonicznej.
 **Powiązania:** rozszerza ADR-032 aneks 1 (projekt Atrybutów, algorytm przecięcia)
 na wiele marek. Współpracuje z ADR-099 (zero ekstrapolacji poza tabelę).
 Konsumuje dane z ATTR-T-001. Realizacja: CHAT-T-163.
+
+---
+
+### ADR-133: Tabele rozmiarów typu `tresciowy` — surowy HTML do modelu, bez parsera
+
+**Data:** 2026-07-24 | **Autor:** architekt | **Status:** przyjęte
+**Kontekst:** CHAT-T-165 (Chat - 54), decyzja Karola 26a
+
+**Problem.** Rozmiarówki butów suchych, butów Scubapro i pierścieni VDS mają
+`chart_type='tresciowy'` i NIE mają wierszy w `divezone_attr_size_chart_rows`.
+Treść leży w osobnej tabeli `divezone_attr_size_chart_content`, kolumna `content_html`.
+Bot zwracał dla nich "Tabela rozmiarów jest pusta" (zweryfikowane na PROD, pid 2290).
+
+**Dowód niejednorodności (pomiar PROD 2026-07-24, 8 chartów).** Układy kolumn:
+Scubapro but = Rozmiar/USA/UK/EU/cm (5 kolumn, 788 znaków); Scubapro i Santi Water
+Trekker but_suchy = Rozmiar/EU (2); Santi Rockboots = Rozmiar (EU)/UK/US (3);
+Bare i Tecline = Rozmiar (EU) (1); XR = Rozmiar/EU/wkladka_cm (3);
+VDS pierscienie = rozmiar/średnica wewnętrzna w mm (2).
+**Pięć różnych układów, od 1 do 5 kolumn.**
+
+**Decyzja.** Narzędzie zwraca surowy `content_html` w polu odpowiedzi
+(`decision: content_table`). NIE parsujemy HTML do wspólnego formatu.
+Model czyta tabelę i przedstawia ją klientowi.
+
+**Uzasadnienie.**
+1. Parser wymagałby reguł per marka i per układ kolumn, czyli stałej listy
+   w kodzie — dokładnie tego, co konwencja projektu odrzuca, bo rozjeżdża się cicho
+   przy każdym nowym charcie dodanym przez projekt Atrybutów.
+2. Tabele są krótkie (214-788 znaków) — model czyta je bez trudu, koszt kontekstu
+   pomijalny.
+3. Dane idą prosto ze źródła, bez warstwy pośredniej, więc nie ma miejsca
+   na fabrykację przy transformacji.
+
+**Zabezpieczenie (ADR-099, zero ekstrapolacji).** SystemPrompt musi jawnie zakazać
+interpolacji: model cytuje WYŁĄCZNIE wiersze obecne w tabeli, nie przelicza rozmiarów
+spoza niej, nie dodaje brakujących. Rozmiar spoza zakresu tabeli producenta = odesłanie
+do kontaktu, nie zgadywanie.
+
+**Zakres.** 14 aktywnych produktów: 6 butów suchych, 6 butów Scubapro, 2 pierścienie VDS.
+Charty `progowy` (rękawice 28, kaptury 23, buty 6) obsługiwane normalnym przecięciem
+wymiarów, z wymiarami czytanymi DYNAMICZNIE z bazy, nie ze stałej listy w kodzie.
+
+**Powiązania:** rozszerza ADR-032 aneks 1 (algorytm przecięcia) poza skafandry.
+Współpracuje z ADR-099 (zero ekstrapolacji) i ADR-132 (przeliczanie między markami).
+Realizacja: CHAT-T-165.
