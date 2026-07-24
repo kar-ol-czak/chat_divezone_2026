@@ -11,6 +11,7 @@ use DiveChat\Shop\MysqlProductEnrichmentService;
 use DiveChat\Shop\ShopCalendar;
 use DiveChat\Tools\CuratedRecommendations;
 use DiveChat\Tools\ExpertKnowledge;
+use DiveChat\Tools\FindWetsuitsByMeasurements;
 use DiveChat\Tools\GetProductCombinations;
 use DiveChat\Tools\GetShopLinks;
 use DiveChat\Tools\GetShopSchedule;
@@ -56,6 +57,9 @@ return static function (EmbeddingService $embeddingService): ToolRegistry {
     // ATTR-T-052 (ADR-025): warianty kolor/rozmiar + nazwy wypowiadalne (divezone_attr_color_lang).
     // SystemPrompt.php:463-478 opisuje kontrakt (nieznany_kolor, domyslny_wariant); to go spełnia. READ-ONLY.
     $registry->register(new GetProductCombinations(MysqlConnection::getInstance()));
+    // CHAT-T-163 (ADR-132): wyszukiwanie pianek po wymiarach klienta z przeliczeniem rozmiaru
+    // OSOBNO w charcie każdej marki (przecięcie w SQL, nie mapowanie etykiet). Enrichment jak ProductSearch.
+    $registry->register(new FindWetsuitsByMeasurements(MysqlConnection::getInstance(), $enrichmentService));
 
     return $registry;
 };
