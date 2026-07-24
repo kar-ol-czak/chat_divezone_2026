@@ -412,6 +412,16 @@ final class SizeRecommender implements ToolInterface
      */
     private function matchSize(array $sizes, array $dims): array
     {
+        // Guard defense-in-depth (CHAT-T-166): przy pustym $dims pętla array_filter NIGDY nie zwraca
+        // false → callback przepuściłby WSZYSTKIE rozmiary charta (na charcie jednorozmiarowym maskuje
+        // się jako poprawny `match`). execute() ma własny guard PRZED tym wywołaniem — ta redundancja
+        // chroni przyszłych wołających matchSize() (nie duplikat do usunięcia).
+        if ($dims === []) {
+            $available = $this->matchableDimensions($sizes);
+            return ['error' => 'Podaj co najmniej jeden wymiar do doboru rozmiaru '
+                . '(' . implode(', ', $available) . ') — każdy podany wymiar zawęża wynik.'];
+        }
+
         // Przecięcie: rozmiary, w których KAŻDY podany wymiar mieści się w [min,max].
         $hits = array_values(array_filter($sizes, function (array $s) use ($dims): bool {
             foreach ($dims as $dim => $val) {

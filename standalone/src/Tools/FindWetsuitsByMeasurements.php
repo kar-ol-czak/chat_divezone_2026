@@ -19,8 +19,10 @@ use DiveChat\Shop\MysqlProductEnrichmentService;
  *
  * Dostępność: `availability` z MysqlProductEnrichmentService (CHAT-T-062); `quantity`
  * na wariantach jest niewiarygodne (0/500 zaślepki) i CELOWO ignorowane (decyzja 18a).
- * Suche skafandry i marki bez chartu poza zakresem — te ostatnie zwracane w
- * `brands_without_chart` do konsultacji telefonicznej, NIE ukrywane.
+ * Suche skafandry poza zakresem. Marki mające w kategorii POJEDYNCZE modele bez przypisanej
+ * tabeli rozmiarów zwracane w `brands_with_unmapped_models` (do konsultacji telefonicznej, NIE
+ * ukrywane) — marka może tam być, a JEDNOCZEŚNIE mieć chart dla innych modeli i wystąpić w
+ * `alternatives` z policzonym rozmiarem (CHAT-T-166: dawna nazwa `brands_without_chart` myliła).
  */
 final class FindWetsuitsByMeasurements implements ToolInterface
 {
@@ -54,7 +56,9 @@ final class FindWetsuitsByMeasurements implements ToolInterface
              . 'gdy podajesz rozmiar innej marki, ZAWSZE zaznacz, że to inne oznaczenie. '
              . 'WYMAGA płci. Filtry grubości/długości opcjonalne. Gdy klient wyszedł od konkretnego modelu, '
              . 'podaj reference_product_id — dostaniesz ten sam model na zamówienie PRZED alternatywami. '
-             . 'Marki bez tabeli rozmiarów zwracane w brands_without_chart (rozmiar do potwierdzenia telefonicznie).';
+             . 'Pole brands_with_unmapped_models = marki, które mają w tej kategorii MODELE bez przypisanej tabeli '
+             . 'rozmiarów (rozmiar do potwierdzenia telefonicznie) — NIE oznacza, że marka nie ma tabeli w ogóle: '
+             . 'ta sama marka może wystąpić w alternatives z policzonym rozmiarem. Nie mów klientowi, że nie mamy tabeli dla tej marki.';
     }
 
     public function getParametersSchema(): array
@@ -254,7 +258,7 @@ final class FindWetsuitsByMeasurements implements ToolInterface
             'same_model' => $sameModel,
             'alternatives' => $alternatives,
             'measurements_used' => $dims,
-            'brands_without_chart' => $this->brandsWithoutChart(),
+            'brands_with_unmapped_models' => $this->brandsWithUnmappedModels(),
         ];
     }
 
@@ -433,10 +437,12 @@ final class FindWetsuitsByMeasurements implements ToolInterface
     }
 
     /**
-     * Marki mające w kategoriach skafandrowych modele BEZ chartu (39 produktów) — do
-     * konsultacji telefonicznej, NIE ukrywamy ich istnienia. @return list<string>
+     * Marki mające w kategoriach skafandrowych POJEDYNCZE modele BEZ przypisanej tabeli rozmiarów
+     * (produkt bez wiersza w divezone_attr_product_chart) — do konsultacji telefonicznej, NIE ukrywamy
+     * ich istnienia. UWAGA (CHAT-T-166): to NIE „marki bez tabeli" — marka bywa tu i w `alternatives`
+     * z policzonym rozmiarem (ma chart dla innych modeli). @return list<string>
      */
-    private function brandsWithoutChart(): array
+    private function brandsWithUnmappedModels(): array
     {
         $sql = sprintf(
             "SELECT DISTINCT m.name
