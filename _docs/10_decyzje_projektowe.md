@@ -4387,3 +4387,60 @@ naprawą zapytania rozwiązywałoby nieistniejący problem. Do rozważenia ponow
 wdrożeniu CHAT-T-167 nadal będą pudła.
 
 **Realizacja:** CHAT-T-167.
+
+
+---
+
+### ADR-135: `get_product_combinations` czyta grupy atrybutów dynamicznie — koniec stałej listy 23/27
+
+**Kontekst.** Rozmowa produkcyjna `id=829` (2026-07-24, po wdrożeniu ADR-134). Bot wywołał
+`get_product_combinations` dla szkieł korekcyjnych TUSA (6994, 6577, 6573) i trzykrotnie
+dostał `{"liczba_wariantow":0,"warianty":[]}`, mimo że produkty mają w MySQL odpowiednio
+8, 23 i 22 kombinacje, a sklep renderuje pełny selektor mocy. Bot nie potwierdził
+dostępności +3,5 i odesłał klienta na infolinię — zachował się poprawnie wobec danych,
+które dostał. Dane były fałszywe.
+
+**Przyczyna, potwierdzona pomiarem.** `GetProductCombinations.php` ma zaszyte dwie stałe
+(`GROUP_COLOR = 23`, `GROUP_SIZE = 27`) i używa ich jako filtra w INNER JOIN
+(`AND a.id_attribute_group IN (23, 27)`). Kombinacja, której atrybuty leżą poza tymi
+grupami, jest odrzucana przez JOIN. Szkła korekcyjne używają grup 34 (SZKŁO PRAWE)
+i 35 (SZKŁO LEWE), więc widoczność wynosi 0 z 61 istniejących kombinacji.
+md5 repo == md5 prod (`161112790b71b23495a3a5dc4ce5fb8e`) — to nie rozjazd wdrożenia,
+kod jest błędny w obu miejscach.
+
+**Skala.** Sklep używa co najmniej 23 grup atrybutów na aktywnych produktach, narzędzie
+obsługuje 2. **180 aktywnych produktów** ma warianty całkowicie niewidoczne (zero atrybutów
+w grupach 23/27), w tym 51 produktów odzieżowych z grup ROZMIAR MĘSKI (29) i ROZMIAR
+DAMSKI (30), których dotyczy istniejąca reguła "DOSTĘPNOŚĆ PER WARIANT" w SystemPrompt.
+Pomiar 2026-07-24, `pr_product.active=1`.
+
+**Decyzja.**
+1. Zdjąć filtr grup z INNER JOIN. Narzędzie czyta wszystkie atrybuty kombinacji.
+2. Kontrakt wyjściowy pozostaje wstecznie zgodny: `kolor`, `kod_koloru`, `nieznany_kolor`,
+   `rozmiar`, `dostepnosc`, `domyslny_wariant`, `reference` bez zmian (ADR-025, SystemPrompt
+   na nich polega). Stałe 23/27 zostają wyłącznie jako mapowanie na te pola, nie jako filtr.
+3. Nowe pole `atrybuty`: tablica par `{grupa, wartosc}` z nazwą grupy z
+   `pr_attribute_group_lang` (id_lang=1). **Tablica, nie skalar** — 5976 kombinacji
+   ma więcej niż jedną grupę atrybutów.
+4. SystemPrompt uczy bota czytać `atrybuty`, gdy `kolor` i `rozmiar` są puste. Nagłówek
+   sekcji zmienia się z "WARIANTY (KOLOR/ROZMIAR)" na "WARIANTY" — dotychczasowa nazwa
+   utrwalała błędne założenie.
+
+**Zasada ogólna.** To trzeci w tym projekcie przypadek cichego rozjazdu stałej listy w kodzie
+ze stanem sklepu. Preferencja projektowa (dynamiczne źródła prawdy nad stałymi listami)
+obowiązuje także wobec identyfikatorów grup atrybutów PrestaShop, nie tylko wobec danych
+produktowych.
+
+**Powiązania.** Naprawia narzędzie wprowadzone przez ADR-025 / CHAT-T-129. Odblokowuje
+regułę 3 z ADR-134 (parametr liczbowy = obowiązkowe `get_product_combinations`), która
+po wdrożeniu CHAT-T-167 działała, ale dostawała puste dane. Klasa pochodzi z projektu
+Atrybuty (ADR-131) — zmiana kontraktu zgłoszona tamtej sesji kartą informacyjną, decyzji
+za tamten projekt nie podejmujemy.
+
+**Otwarte, poza zakresem tego ADR.** W rozmowie 829 produkt 6993 (BF211 lewe) wypadł
+z wyników `search_products` przy `limit=5`, mimo że jego `ts_rank` (0,9366) był wyższy
+niż 6577 (0,9331) i 6573 (0,9252), które weszły. Osobna karta: limit wyników przy
+bliźniaczych produktach oraz brak reguły odsiewającej linię o przeciwnym znaku korekcji
+(bot omawiał szkła minusowe przy jawnym pytaniu o +3,5).
+
+**Realizacja:** CHAT-T-168.
