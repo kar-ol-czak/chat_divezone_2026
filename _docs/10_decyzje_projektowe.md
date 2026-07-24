@@ -4338,3 +4338,52 @@ wymiarów, z wymiarami czytanymi DYNAMICZNIE z bazy, nie ze stałej listy w kodz
 **Powiązania:** rozszerza ADR-032 aneks 1 (algorytm przecięcia) poza skafandry.
 Współpracuje z ADR-099 (zero ekstrapolacji) i ADR-132 (przeliczanie między markami).
 Realizacja: CHAT-T-165.
+
+
+---
+
+### ADR-134: Kotwica modelu w zapytaniach o akcesoria — nazwa modelu obowiązkowa w `exact_keywords`
+
+**Kontekst.** Rozmowa produkcyjna `id=817` (session `c81195d5-ef77-4786-830f-3809a7d3b630`,
+2026-07-24). Klient pytał o szkła korekcyjne +3,5 do maski TUSA Intega. Bot odpowiedział,
+że dedykowanych szkieł do Integi nie ma, i odesłał klienta na infolinię. W katalogu są
+cztery pasujące produkty: 6573/6577 (MC211, minusowe), 6993/6994 (BF211 "połówki",
+plusowe, +3,5 dostępne w obu).
+
+**Pomiar, nie hipoteza.** `search_diagnostics` rozmowy 817, drugie wywołanie:
+`query_text="szkła korekcyjne TUSA maska nurkowa"`, `exact_keywords=["TUSA","korekcyjne"]`
+— nazwa modelu wypadła z zapytania. Rozmowa `id=770` (2026-07-20), ten sam temat,
+`query_text="szkła korekcyjne TUSA Intega"` → zwróciła 6994 (rrf 0.088, track=name),
+6573 (rrf 0.087, track=jargon), 6577 (rrf 0.086, track=desc). Ta sama wyszukiwarka,
+ten sam indeks, ten sam tydzień. Różnica wyłącznie w treści zapytania.
+
+**Wykluczone przyczyny (sprawdzone).** Produkty 6573/6577 mają `embedding`,
+`embedding_name` i `fts_vector` niepuste, `is_active=true`, `updated_at=2026-07-15`.
+Indeks i pipeline embeddingów są sprawne. To nie jest problem danych ani wyszukiwarki.
+
+**Decyzja.**
+1. Gdy w rozmowie padła nazwa modelu, a klient pyta o akcesorium do niego — nazwa modelu
+   jest obowiązkowa w `exact_keywords` każdego kolejnego `search_products`. Producenci
+   nazywają akcesoria od modelu docelowego (MC211 → Intega, MC-24 → Ceos), więc zgubienie
+   nazwy modelu zwraca akcesoria do INNYCH modeli tej samej marki.
+2. Zakaz orzekania "nie ma" / "nie pasuje" bez wcześniejszego `search_products` z nazwą
+   modelu w `exact_keywords`. Lista kompatybilności w opisie jednego produktu opisuje
+   TYLKO ten produkt — brak modelu X na liście produktu Y dowodzi jedynie, że Y do X
+   nie pasuje, a nie że do X nic nie ma.
+3. Gdy klient podaje konkretną wartość parametru wariantowego (moc, rozmiar, długość) —
+   obowiązkowe `get_product_combinations` przed odpowiedzią o dostępności. Przy komplecie
+   (lewe + prawe) sprawdzić kombinacje OBU produktów: skale mocy bywają różne
+   (6573 nie ma +3,5, 6577 ma).
+
+**Powiązania.** Poprzedza (nie zastępuje) regułę o cechach technicznych z SystemPrompt.php
+(~479, "opis produktu tego nie potwierdza") — tamta reguła zadziałała poprawnie, ale wobec
+niewłaściwego produktu. Uzupełnia ADR-099 (zero ekstrapolacji). Wzmacnia regułę 10
+z ADR wprowadzonego przez CHAT-T-157 (kolejność narzędzi).
+
+**Odrzucone.** Zasilanie `search_phrases`/`synonyms_pl` nazwami modeli docelowych oraz
+budowa osobnej relacji kompatybilności (`get_compatible_accessories`). Pomiar z rozmowy 770
+pokazuje, że przy poprawnym zapytaniu obecna wyszukiwarka trafia — budowanie relacji przed
+naprawą zapytania rozwiązywałoby nieistniejący problem. Do rozważenia ponownie, jeśli po
+wdrożeniu CHAT-T-167 nadal będą pudła.
+
+**Realizacja:** CHAT-T-167.
