@@ -4250,3 +4250,46 @@ DANE (tabela Atrybutów), nie kod — dlatego kopia w repo czatu jest samowystar
 **Powiązania:** uśmierca ADR-112 (CHAT-T-129 `ProductCombinations` — wariant
 odrzucony na rzecz wersji Atrybutów). Współpracuje z ADR-025 projektu Atrybuty
 (ATTR-T-052, źródło logiki). Zgoda Atrybutów: odpowiedź na Chat-42 z 2026-07-20.
+
+---
+
+### ADR-132: Porównywanie rozmiarów między markami — przeliczanie wymiarów, nie mapowanie etykiet
+
+**Data:** 2026-07-24 | **Autor:** architekt | **Status:** przyjęte
+**Kontekst:** CHAT-T-163, zgłoszenie Karola z 2026-07-24
+
+**Problem.** Bot ma proponować pianki alternatywnych producentów, gdy rozmiar
+klienta jest niedostępny. Wymaga to porównania rozmiarów między markami, a te
+nie są porównywalne nazwowo.
+
+**Dowód (pomiar PROD 2026-07-24).** Ta sama klientka (`chest=95`, `height=175`,
+`gender=K`) ma rozmiar: Aqualung `L`/`ML`/`XL`, Bare `8T`, Mares `5`,
+Scubapro `L`/`LT`, Tecline Proterm `ML`. Bare i Mares stosują numerację, nie litery.
+Etykieta `L` u dwóch producentów nie oznacza tego samego ciała.
+
+**Decyzja.** NIE budujemy tabeli przeliczeniowej etykiet (typu `Scubapro L = Bare 8T`).
+Wymiary klienta przepuszczamy przez chart każdej marki OSOBNO, tą samą logiką
+przecięcia co `SizeRecommender` (ADR-032 aneks 1). Rozmiar w marce docelowej jest
+liczony, nie tłumaczony.
+
+**Uzasadnienie.**
+1. Tabela przeliczeniowa to stała lista, która rozjeżdża się cicho przy każdej
+   zmianie chartu producenta. Przeliczanie z chartu jest dynamicznym źródłem prawdy.
+2. Mapowanie etykieta→etykieta gubi informację: klientka o `chest=95` trafia
+   u Aqualung w SZEŚĆ rozmiarów, u Bare w JEDEN. Relacja nie jest funkcją.
+3. Ta sama logika w obu ścieżkach = jeden algorytm do utrzymania i weryfikowalna
+   spójność (kryterium 10 w CHAT-T-163: oba narzędzia muszą dać ten sam rozmiar).
+
+**Konsekwencja dla prezentacji (decyzja Karola 17b).** Skoro rozmiar jest liczony
+z tabeli marki docelowej, jest tak samo wiarygodny jak pierwotny — ale bot MUSI
+jawnie zaznaczyć, że to oznaczenie innego producenta, inaczej klient uzna
+różnicę `L` → `8T` za błąd.
+
+**Zakres.** Dotyczy skafandrów mokrych (`chart_type='progowy'`,
+`category_hint='skafander'`), 5 marek z chartem. 39 ze 114 aktywnych produktów
+w kategoriach 337/367 nie ma chartu — dla nich rozmiaru NIE liczymy i nie zgadujemy,
+narzędzie zwraca je w polu `brands_without_chart` do konsultacji telefonicznej.
+
+**Powiązania:** rozszerza ADR-032 aneks 1 (projekt Atrybutów, algorytm przecięcia)
+na wiele marek. Współpracuje z ADR-099 (zero ekstrapolacji poza tabelę).
+Konsumuje dane z ATTR-T-001. Realizacja: CHAT-T-163.
