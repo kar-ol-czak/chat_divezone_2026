@@ -4444,3 +4444,45 @@ bliźniaczych produktach oraz brak reguły odsiewającej linię o przeciwnym zna
 (bot omawiał szkła minusowe przy jawnym pytaniu o +3,5).
 
 **Realizacja:** CHAT-T-168.
+
+
+---
+
+### ADR-136: Zakaz orzekania o wariancie wbrew tool_result — wierność danym z `get_product_combinations`
+
+**Kontekst.** Replay rozmowy `id=833` (2026-07-25, po wdrożeniu ADR-135). Klient pytał
+o szkła korekcyjne +3,5 do maski TUSA Intega. Bot wywołał `get_product_combinations`
+dla 6994, 6577, 6573, dostał poprawne dane (ADR-135 działa) i napisał odpowiedź
+SPRZECZNĄ z tymi danymi: przypisał +3,5 produktowi 6573 (MC211 prawe), który tego
+wariantu nie ma, i odmówił +3,5 produktowi 6994 (BF211 prawe), który go ma
+(`id_product_attribute 61566`). Odwrócił rzeczywistość i zmylił klienta co do tego,
+który produkt kupić.
+
+**Rozgraniczenie od ADR-135.** ADR-135 naprawił narzędzie (zwracało puste warianty).
+To działa: w 833 tool_result zawierał komplet i poprawne moce. Błąd 833 jest na innej
+warstwie — model zignorował wynik, który trzymał w ręku. To błąd prezentacji, nie danych.
+
+**Współprzyczyna, poza zakresem.** W 833 `search_products` nie zwróciło 6993 (BF211 lewe),
+więc bot widział z BF211 tylko prawe i sięgnął po MC211. Pomiar na żywo (wdrożony
+ProductSearch, limit=5, 3 próby deterministycznie): `6577, 6994, 6573, 6993, 7444` —
+oba BF211 obecne. Ranking przesunął się między rozmową (05:27 UTC) a pomiarem po nocnym
+odświeżeniu. Problem jest kruchy (4 bliźniacze produkty lewe/prawe, kolejność RRF waha
+się z dnia na dzień), dziś nie szkodzi. Obserwowany, bez naprawy — stabilizacja bez
+ponownego wystąpienia byłaby zgadywaniem.
+
+**Decyzja.**
+1. Orzekanie o dostępności wariantu (moc/rozmiar/kolor) opiera się WYŁĄCZNIE na tablicy
+   `warianty` z ostatniego `get_product_combinations` dla danego `product_id`. Przed
+   napisaniem "ma X" lub "nie ma X" model znajduje wariant o tej wartości w `atrybuty`.
+2. Zakazane: przypisanie wariantu jednego produktu drugiemu, orzeczenie "nie ma" gdy
+   wariant jest w tool_result, orzeczenie "ma" gdy go nie ma.
+3. Komplet z pary lewe+prawe: oba z tej samej serii (obie MC211 albo obie BF211).
+   Brak jednej połówki serii dla żądanej mocy → powiedzieć wprost, nie podmieniać serii
+   bez wyraźnego zaznaczenia.
+
+**Powiązania.** Domyka regułę z ADR-134 (parametr liczbowy = obowiązkowe
+`get_product_combinations`): ADR-134 wymusił wywołanie, ADR-136 wymusza użycie wyniku.
+Opiera się na strukturze `atrybuty[]` z ADR-135. Otwarty problem stabilności rankingu par
+lewe/prawe pozostaje wspólny z ADR-135, obserwowany.
+
+**Realizacja:** CHAT-T-170.
