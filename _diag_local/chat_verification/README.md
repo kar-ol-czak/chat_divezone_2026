@@ -30,6 +30,16 @@ sondy, ktore wczesniej powstawaly ad-hoc i ginely po sesji.
     python3 sql.py --file zapytanie.sql
     python3 sql.py -c "SELECT ..." --csv     # do dalszej obrobki
     python3 sql.py -c "UPDATE ..." --write   # zapis WYMAGA jawnej flagi
+- `replay.py` — odtworzenie rozmowy na PROD przez POST /api/chat (HMAC jak widget).
+  Weryfikacje robi architekt/CC, nie Karol klikajacy w widget. Sekret DIVECHAT_SECRET
+  pobierany przez SSH + Config::load() (ADR-088), zyje tylko w pamieci procesu.
+  Domyslnie prefiks "[REPLAY] " oznacza rozmowe w panelu recenzji (--no-marker wylacza).
+  Jedno wywolanie modelu na uruchomienie (kosztuje tokeny prod).
+    python3 replay.py -m "tresc pytania"                    # nowa rozmowa
+    python3 replay.py -m "..." --session <uuid>             # kontynuacja
+    python3 replay.py -m "..." --show-tools                 # + pelny przebieg (show_conversation.py --tools)
+    python3 replay.py --from-conversation 829 --show-tools  # powtorz 1. pytanie user z rozmowy 829
+  Wyjscie: session_id, conv_id, narzedzia (tools_used), zapytania (search_diagnostics), odpowiedz.
 - `check_deploy.py <sciezka_w_repo>` — kontrola wdrozenia jednym poleceniem:
   md5 local<->prod + php -l (ea-php84) + smoke /api/health. Sam mapuje repo->serwer
   (standalone/ -> chat.divezone.pl BEZ prefiksu; modules/ -> newtmp2 = PRODUKCJA).
