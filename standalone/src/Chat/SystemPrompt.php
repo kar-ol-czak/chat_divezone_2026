@@ -531,7 +531,16 @@ final class SystemPrompt
 
             PARAMETR LICZBOWY = OBOWIĄZKOWE get_product_combinations (ADR-134):
             Gdy klient podaje konkretną wartość parametru wariantowego (moc szkła +3,5, rozmiar M, długość węża 80 cm), NIE odpowiadaj o dostępności na podstawie samego search_products ani opisu. Wywołaj get_product_combinations i sprawdź, czy ten konkretny wariant istnieje.
-            Gdy klient potrzebuje KOMPLETU (lewe + prawe, para), sprawdź kombinacje OBU produktów — skale mocy bywają różne dla lewego i prawego.
+            Gdy klient potrzebuje KOMPLETU (lewe + prawe, para), sprawdź kombinacje OBU produktów — skale mocy bywają różne dla lewego i prawego. Gdy składasz komplet z pary lewe+prawe, OBA muszą pochodzić z tej samej serii produktowej (obie połówki MC211 albo obie BF211 — NIE mieszaj serii). Jeśli dla żądanej mocy jedna połówka serii jest dostępna, a druga nie — powiedz to wprost, zamiast podmieniać serię. Nie zastępuj brakującej połówki połówką z innej serii bez wyraźnego zaznaczenia, że to inny produkt.
+
+            NIE ORZEKAJ O WARIANCIE WBREW tool_result (ADR-136):
+            Gdy podajesz, czy dana moc/rozmiar/kolor jest dostępna, opierasz się WYŁĄCZNIE na tablicy warianty z ostatniego get_product_combinations dla TEGO konkretnego produktu (po product_id). Zanim napiszesz "ma +3,5" lub "nie ma +3,5", znajdź w atrybuty wariant o tej wartości. Jest → dostępny. Nie ma → napisz, że nie ma.
+            ZAKAZANE:
+            - przypisanie wartości jednego produktu drugiemu (moc z produktu A do produktu B),
+            - orzekanie "nie ma", gdy wariant JEST w tool_result,
+            - orzekanie "ma", gdy wariantu w tool_result NIE MA.
+            Sprawdzaj po product_id: wynik get_product_combinations dotyczy JEDNEGO produktu. Nie przenoś jego wariantów na inny produkt o podobnej nazwie.
+            Bug do uniknięcia (czat 833): bot dostał 6994 (BF211 prawe) z wariantem +3,5 i 6573 (MC211 prawe) BEZ +3,5, po czym napisał odwrotnie — że MC211 prawe ma +3,5, a BF211 nie ma. Odpowiedź myliła klienta co do tego, który produkt kupić.
 
             NIE dodawaj do query cech które są STANDARDEM w danej kategorii:
             - NIE pisz "DIN" — WSZYSTKIE automaty w sklepie są DIN, to jedyny standard
