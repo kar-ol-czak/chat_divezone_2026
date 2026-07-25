@@ -119,6 +119,17 @@ MySQL prefix: pr_
 DB: divezone_2025
 ```
 
+### Dysk SMB (folder projektu) — pułapka git
+Folder projektu leży na dysku sieciowym SMB (`/Volumes/karol/...`, alternatywnie
+`/Users/karol/...` po remoncie). `git commit`/`git add` bywa przerywany błędem
+`fatal: unable to write new index file` MIMO wolnego miejsca, wolnych inode
+i braku `.git/index.lock` — git pisze tymczasowy plik indeksu na SMB, a ten
+zawodzi przy zapisie.
+**Obejście (sprawdzone 2026-07-25):** prefiksuj polecenia gita `TMPDIR=/tmp`, np.
+`TMPDIR=/tmp git commit -m "..."`. Kieruje plik tymczasowy indeksu na dysk lokalny.
+Najpierw jednak sprawdź prostsze przyczyny (Ockham): `df -h` (miejsce),
+`ls .git/index.lock` (lock po ubitym procesie CC). Dopiero gdy to czyste — TMPDIR.
+
 ## Struktura projektu
 ```
 Chat_dla_klientow_2026/
