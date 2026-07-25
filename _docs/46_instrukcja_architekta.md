@@ -44,8 +44,9 @@ z `.env`, który jest ignorowany). Uruchamiaj **z tego katalogu**: `python3 <skr
 | `sql.py` | **SQL na Railway PG** — z pliku, stdin, `-c`, albo `--file`. Omija pułapkę apostrofów (§4) |
 | `mysql.py` | **SQL read-only na MySQL PrestaShop** — `-c`, `--file`, stdin, `--json`. Idzie przez SSH+`ea-php84`+`MysqlConnection` (host=localhost, zdalnie niedostępny). Omija pułapkę hasła/`~/.my.cnf` (§4) |
 | `check_deploy.py <ścieżka>` | **kontrola wdrożenia**: md5 local↔prod + `php -l` (ea-php84) + smoke `/api/health` |
+| `replay.py` | **odtworzenie rozmowy na PROD** przez `POST /api/chat` (HMAC jak widget). `-m "tresc"` albo `--from-conversation N` (powtarza 1. pytanie usera). `--show-tools` = pełny przebieg. Sekret `DIVECHAT_SECRET` przez `Config::load()` (§3), nie parsuj `.env`. Dokleja prefiks `[REPLAY]`, wyłącznik `--no-marker`. To JEDYNY sposób, by architekt sam zweryfikował fix bez klikania w widget |
 
-`sql.py` i `check_deploy.py` powstały 2026-07-17, `mysql.py` — 2026-07-19
+`sql.py` i `check_deploy.py` powstały 2026-07-17, `mysql.py` — 2026-07-19, `replay.py` — 2026-07-25 (CHAT-T-169)
 (Chat-37). Każdy to rzecz, którą pisano od zera po kilka razy, zanim trafiła tu.
 
 **Zasada:** nowe narzędzie dokładaj do tego katalogu **i dopisz je do tej tabeli**.
