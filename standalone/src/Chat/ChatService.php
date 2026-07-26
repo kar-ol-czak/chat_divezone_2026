@@ -22,7 +22,19 @@ use DiveChat\Usage\DbHealthAlert;
 final class ChatService
 {
     private const MAX_TOOL_ITERATIONS = 5;
-    private const MAX_HISTORY_MESSAGES = 10;
+
+    // CHAT-T-159 (decyzja 196a): okno historii podniesione 10 → 20, żeby wcześniejsze
+    // wiadomości bota (np. podsumowanie zestawu z ceną) nie wypadały w długiej rozmowie
+    // sprzedażowej — bot przestawał rozpoznawać własne autorstwo (conv 755).
+    private const MAX_HISTORY_MESSAGES = 20;
+
+    // CHAT-T-159 (decyzja 196a): tool_result poza tyloma NAJNOWSZYMI wpisami okna są
+    // skracane do stuba. tool_resulty (pełne opisy produktów, kilkanaście KB) dominują
+    // koszt wejścia — stub starszych trzyma koszt w ryzach przy 2× większym oknie,
+    // a struktura pary tool_use ↔ tool_result pozostaje nienaruszona (skracamy TREŚĆ,
+    // nie usuwamy wpisu). Ostatnie wpisy zostają w całości — są potrzebne do ciągłości
+    // bieżącej tury (model może jeszcze operować na świeżym wyniku narzędzia).
+    private const KEEP_FULL_TOOL_RESULTS = 6;
 
     public function __construct(
         private readonly AIProviderFactory $providerFactory,
@@ -494,23 +506,61 @@ final class ChatService
     }
 
     /**
-     * Przycina historię do ostatnich MAX_HISTORY_MESSAGES wiadomości.
+     * Przycina historię do ostatnich MAX_HISTORY_MESSAGES wiadomości (decyzja 196a).
      * Upewnia się, że historia nie zaczyna się od tool_result ani assistant z tool_calls.
+     *
+     * CHAT-T-159: dodatkowo skraca TREŚĆ starszych tool_result (poza KEEP_FULL_TOOL_RESULTS
+     * najnowszymi wpisami okna) do krótkiego stuba. NIE usuwa wpisów — para tool_use ↔
+     * tool_result zostaje spójna dla API. Wiadomości user/assistant (tekst) i tool_calls
+     * asystenta pozostają w całości.
+     *
+     * Operuje na KOPII przekazanej z handle() — pełna historia w bazie zostaje nietknięta,
+     * stub istnieje tylko w kontekście wysyłanym do LLM tej tury.
      */
     private function trimHistory(array $history): array
     {
         if (count($history) <= self::MAX_HISTORY_MESSAGES) {
-            return $history;
+            $trimmed = $history;
+        } else {
+            $trimmed = array_slice($history, -self::MAX_HISTORY_MESSAGES);
         }
 
-        $trimmed = array_slice($history, -self::MAX_HISTORY_MESSAGES);
-
-        // Upewnij się że zaczynamy od wiadomości user (nie tool_result/assistant)
+        // Upewnij się że zaczynamy od wiadomości user (nie tool_result/assistant).
+        // Odcięcie osieroconego tool_result/assistant-z-tool_calls jest też warunkiem
+        // poprawności pary dla API (tool_result bez poprzedzającego tool_use = błąd).
         while (!empty($trimmed) && $trimmed[0]['role'] !== 'user') {
             array_shift($trimmed);
         }
 
-        return array_values($trimmed);
+        $trimmed = array_values($trimmed);
+
+        // Skróć treść tool_result starszych niż KEEP_FULL_TOOL_RESULTS ostatnich wpisów.
+        $count = count($trimmed);
+        $keepFromIdx = $count - self::KEEP_FULL_TOOL_RESULTS;
+        foreach ($trimmed as $idx => $msg) {
+            if ($idx >= $keepFromIdx) {
+                break; // najnowsze wpisy — treść w całości
+            }
+            if (($msg['role'] ?? '') === 'tool_result' || ($msg['role'] ?? '') === 'tool') {
+                $trimmed[$idx]['content'] = self::buildTrimmedToolStub($msg['name'] ?? null);
+            }
+        }
+
+        return $trimmed;
+    }
+
+    /**
+     * Buduje krótki stub zastępujący treść starszego tool_result (CHAT-T-159, 196a).
+     * Zachowuje nazwę narzędzia dla czytelności; struktura pary pozostaje poprawna,
+     * bo podmieniamy tylko pole content (string) — wpis nie znika.
+     */
+    private static function buildTrimmedToolStub(?string $toolName): string
+    {
+        return (string) json_encode([
+            'trimmed' => true,
+            'tool' => $toolName ?? 'unknown',
+            'note' => 'wynik przycięty — starsza część rozmowy',
+        ], JSON_UNESCAPED_UNICODE);
     }
 
     /**
