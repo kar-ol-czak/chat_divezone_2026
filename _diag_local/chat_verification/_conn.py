@@ -12,10 +12,15 @@ import psycopg2
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 ENV_PATH = os.path.join(PROJECT_ROOT, ".env")
+# Sekrety osobiste/infrastrukturalne wspolne dla wszystkich projektow divezone
+# (np. TRELLO_TOKEN). Czytane ZANIM .env projektu; .env projektu ma priorytet.
+GLOBAL_ENV_PATH = os.path.expanduser("~/.config/divezone/secrets.env")
 
 
-def load_env(path=ENV_PATH):
-    env = {}
+def _parse_env_file(path, env):
+    """Wczytuje plik .env do slownika env (in-place). Brak pliku = pomin."""
+    if not os.path.exists(path):
+        return
     with open(path) as fh:
         for line in fh:
             line = line.strip()
@@ -23,6 +28,15 @@ def load_env(path=ENV_PATH):
                 continue
             k, v = line.split("=", 1)
             env[k] = v.strip().strip("'").strip('"')
+
+
+def load_env(path=ENV_PATH):
+    """Laczy sekrety: najpierw globalne (~/.config/divezone/secrets.env),
+    potem projektowe (path). Projekt nadpisuje globalne przy kolizji klucza.
+    Wsteczna zgodnosc: load_env() i load_env(path) dzialaja jak dotad."""
+    env = {}
+    _parse_env_file(GLOBAL_ENV_PATH, env)
+    _parse_env_file(path, env)
     return env
 
 

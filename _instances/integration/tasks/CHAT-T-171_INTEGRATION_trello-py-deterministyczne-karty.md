@@ -41,24 +41,25 @@ Wszystkie operacje mają endpoint (`developer.atlassian.com/cloud/trello/rest`):
 - **checklisty:** `POST /1/cards/{id}/checklists`, `PUT|DEL /1/checklists/...`.
 - każde zapytanie: `key` + `token` w query stringu.
 
-## 3. Sekrety — MUSZĄ być w .env, DZIŚ ICH TAM NIE MA
+## 3. Sekrety — plik GLOBALNY, nie .env projektu (decyzja Karola 30a)
 
-`grep TRELLO .env` = pusto (2026-07-25). Klucze były tylko w
-`claude_desktop_config.json`, usunięte razem z wpisem `trello`. Są w backupie
-`~/Library/Application Support/Claude/claude_desktop_config.json.bak_20260724`.
-
-**KROK dla Karola (nie dla CC):** dopisać do `.env` projektu:
+Token Trello jest sekretem OSOBISTYM (ten sam dla wszystkich projektów Karola),
+nie projektowym. Trzymanie go w `.env` czatu wymuszałoby duplikację przy każdym
+nowym folderze. Dlatego mieszka w pliku globalnym:
 ```
-TRELLO_API_KEY='...'
-TRELLO_TOKEN='...'
-TRELLO_BOARD_ID_PROJEKTY2026='6a55e07bc2193b7dfc53297e'
+~/.config/divezone/secrets.env   (uprawnienia 600, poza repo, NIE commitowac)
 ```
-CC NIE wpisuje sekretów. Task zakłada, że Karol to zrobi przed KROKIEM 5.
+Plik i szablon UTWORZONE 2026-07-26 (architekt). `TRELLO_BOARD_ID_PROJEKTY2026`
+już wpisany (to nie sekret). `TRELLO_API_KEY`/`TRELLO_TOKEN` wkleja Karol przed
+KROKIEM 5 (wartości w backupie
+`claude_desktop_config.json.bak_20260724`). CC NIE wpisuje sekretów.
 
-Odczyt: `from _conn import load_env` (już istnieje, odporny na 1 zepsuty klucz,
-ADR-088). NIE pisz własnego parsera .env. Sekret tylko w pamięci procesu,
-nigdy do stdout/logów/repo. **Klucze w query stringu idą do api.trello.com —
-to jedyny odbiorca, nie loguj URL-i z pełnym query.**
+Odczyt: `from _conn import load_env` — JUŻ ZMODYFIKOWANY (architekt, 2026-07-26):
+czyta najpierw `~/.config/divezone/secrets.env`, potem `.env` projektu
+z nadpisaniem. Wsteczna zgodność zachowana (sql.py przetestowany). NIE pisz
+własnego parsera. Sekret tylko w pamięci procesu, nigdy do stdout/logów/repo.
+**Klucze idą w query stringu do api.trello.com — to jedyny odbiorca, nie loguj
+URL-i z pełnym query.**
 
 ## 4. Interfejs CLI (wzorzec sql.py: argparse, --write jawne dla mutacji)
 
