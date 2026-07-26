@@ -4486,3 +4486,25 @@ Opiera się na strukturze `atrybuty[]` z ADR-135. Otwarty problem stabilności r
 lewe/prawe pozostaje wspólny z ADR-135, obserwowany.
 
 **Realizacja:** CHAT-T-170.
+
+---
+
+### ADR-137: Bot nie podaje wartości zamówienia klientowi
+
+**Kontekst.** Recenzja conv 767: klient pytał o rozmiar maski wg swojego zamówienia, po
+weryfikacji mailem bot uzyskał dostęp do zamówienia i niepytany podał jego wartość (555 zł)
+oraz status. Narzędzie `OrderStatus.php` zwraca `total_paid` jako pole `total` (linia 59
+SELECT, linia 98 wynik), więc bot je zna i ujawnia.
+
+**Decyzja (Karol 43b).** Bot NIE podaje wartości/kwoty zamówienia, nawet zweryfikowanemu
+klientowi. Status realizacji i numer śledzenia — tak. Na pytanie o kwotę kieruje do dwóch
+źródeł: zalogowanie na konto (historia zamówień) albo e-mail potwierdzający zamówienie.
+
+**Realizacja.** Usunięcie pola `total` z wyniku `OrderStatus.php` (naprawa u źródła,
+pewniejsza niż reguła promptu) + reguła w SystemPrompt jako druga warstwa.
+
+**Powiązania.** Odrębne od decyzji 43a (conv 660, bestsellery — zostają jako rekomendacja
+bez liczb, CHAT-T-173). Powiązany pomysł na przyszłość (Chat-68): ponowna wysyłka maila
+z zamówieniem wyłącznie na adres użyty przy składaniu, nigdy na adres podany w rozmowie.
+
+**Realizacja:** CHAT-T-172.
