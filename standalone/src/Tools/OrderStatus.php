@@ -56,7 +56,7 @@ final class OrderStatus implements ToolInterface
 
         // Znajdź zamówienie i zweryfikuj email klienta
         $order = $db->fetchOne(
-            'SELECT o.id_order, o.reference, o.date_add, o.total_paid,
+            'SELECT o.id_order, o.reference, o.date_add,
                     o.id_customer, o.current_state,
                     osl.name AS status_name,
                     c.email
@@ -95,7 +95,8 @@ final class OrderStatus implements ToolInterface
             'reference' => $order['reference'],
             'date' => $order['date_add'],
             'status' => $order['status_name'],
-            'total' => (float) $order['total_paid'],
+            // Wartość zamówienia CELOWO nie w wyniku (ADR-137, Karol 43b): bot podaje status
+            // i śledzenie, ale NIE kwotę — klient sprawdza wartość po zalogowaniu lub w mailu.
             'history' => array_map(fn(array $h) => [
                 'status' => $h['status_name'],
                 'date' => $h['date_add'],
