@@ -41,25 +41,27 @@ Wszystkie operacje mają endpoint (`developer.atlassian.com/cloud/trello/rest`):
 - **checklisty:** `POST /1/cards/{id}/checklists`, `PUT|DEL /1/checklists/...`.
 - każde zapytanie: `key` + `token` w query stringu.
 
-## 3. Sekrety — plik GLOBALNY, nie .env projektu (decyzja Karola 30a)
+## 3. Sekrety — plik GLOBALNY na dysku sieciowym (decyzje Karola 30a, 31b, 32a)
 
-Token Trello jest sekretem OSOBISTYM (ten sam dla wszystkich projektów Karola),
-nie projektowym. Trzymanie go w `.env` czatu wymuszałoby duplikację przy każdym
-nowym folderze. Dlatego mieszka w pliku globalnym:
+Token Trello jest sekretem OSOBISTYM (ten sam dla wszystkich projektów I obu
+maszyn Karola), nie projektowym. Mieszka w pliku na dysku SIECIOWYM, widocznym
+z obu maszyn (komputer główny `karol` + wirtualna `vm1-karol`):
 ```
-~/.config/divezone/secrets.env   (uprawnienia 600, poza repo, NIE commitowac)
+.divezone_secrets/secrets.env   w katalogu 3_DIVEZONE (poza Aplikacje = poza repo)
+  widziany jako /Volumes/karol/Documents/3_DIVEZONE/... (vm) lub
+                /Users/karol/Documents/3_DIVEZONE/...   (glowny)
 ```
 Plik i szablon UTWORZONE 2026-07-26 (architekt). `TRELLO_BOARD_ID_PROJEKTY2026`
-już wpisany (to nie sekret). `TRELLO_API_KEY`/`TRELLO_TOKEN` wkleja Karol przed
-KROKIEM 5 (wartości w backupie
-`claude_desktop_config.json.bak_20260724`). CC NIE wpisuje sekretów.
+już wpisany (nie sekret). `TRELLO_API_KEY`/`TRELLO_TOKEN` wkleja Karol przed
+KROKIEM 5 (wartości w backupie `claude_desktop_config.json.bak_20260724`).
+CC NIE wpisuje sekretów.
 
 Odczyt: `from _conn import load_env` — JUŻ ZMODYFIKOWANY (architekt, 2026-07-26):
-czyta najpierw `~/.config/divezone/secrets.env`, potem `.env` projektu
-z nadpisaniem. Wsteczna zgodność zachowana (sql.py przetestowany). NIE pisz
-własnego parsera. Sekret tylko w pamięci procesu, nigdy do stdout/logów/repo.
-**Klucze idą w query stringu do api.trello.com — to jedyny odbiorca, nie loguj
-URL-i z pełnym query.**
+`GLOBAL_ENV_CANDIDATES` = lista ścieżek (obie maszyny + zapas), bierze pierwszy
+istniejący plik, potem nadpisuje `.env` projektu. Wsteczna zgodność zachowana
+(sql.py przetestowany). NIE pisz własnego parsera. Sekret tylko w pamięci procesu,
+nigdy do stdout/logów/repo. **Klucze idą w query stringu do api.trello.com —
+to jedyny odbiorca, nie loguj URL-i z pełnym query.**
 
 ## 4. Interfejs CLI (wzorzec sql.py: argparse, --write jawne dla mutacji)
 
