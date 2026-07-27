@@ -4538,3 +4538,13 @@ struktura wiadomości) — fallback do system+tools (stały prefiks), historia o
 wyboru KEEP — caching obniża koszt bazowy, KEEP steruje ile historii jest w oknie.
 
 **Realizacja:** CHAT-T-175.
+
+**Nota (2026-07-26, korekta kierunku po pomiarze).** Baseline z produkcji (318 rozmów,
+30 dni) obalił przesłankę: cache-miss to tylko 6,7% wejścia, cache_read 58,1%, a
+cache_write (zapis 1,25×) aż 35,1%. Cache historii nie zmniejszyłby kosztu — pomnożyłby
+zapisy. Realny palnik to nadmiarowe ZAPISY cache system promptu, z dwóch przyczyn:
+(A) zmienna treść (`{$todayLabel}` linia 61 i in.) w prefiksie unieważnia cache codziennie;
+(B) TTL 5 min kontra rozproszony ruch. T-175 WSTRZYMANY (kod w repo, niewdrożony). Nowy
+kierunek: CHAT-T-176 — przenieść zmienną treść z prefiksu + rozważyć TTL 1h. Architekt
+mylił się, nazywając cache historii największą oszczędnością; pomiar (warunek Karola 55) to
+wychwycił przed wdrożeniem.
