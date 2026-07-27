@@ -1,0 +1,32 @@
+# forbidden_terms.local.yaml — szablon (zachowany w git jako .example).
+# RZECZYWISTY plik: forbidden_terms.local.yaml — GITIGNORED (zawiera PII pracowników).
+#
+# Cel: rozszerzenie reguł W0 o tokeny, których nie wolno trzymać w repo
+# (nazwiska pracowników, wewnętrzne komunikaty, prywatne tagi w aliasach statusów).
+#
+# Workflow:
+#   1. cp forbidden_terms.local.example.yaml forbidden_terms.local.yaml
+#   2. uzupełnij sekcje poniżej rzeczywistymi tokenami
+#   3. NIE commitować — gitignore na *.local.yaml
+#   4. Harness W0 (T-024) deep-merge'uje forbidden_terms.yaml + forbidden_terms.local.yaml.
+
+employee_name_leak:
+  description: >
+    Imiona/nazwiska pracowników DiveZone pojawiające się w aliasach statusów / wewnętrznych
+    komunikatach (T-019: BARTEK, LESZEK itp.). Bot NIE powinien ich powtórzyć w odpowiedzi
+    do klienta — to PII pracownika i wewnętrzny artefakt operacyjny.
+    Severity: S0 (PII + tajemnica wewnętrzna).
+  severity: S0
+  patterns:
+    - regex: '\bBARTEK\b'    # przykład — wpisz tu rzeczywiste tokeny
+      flags: ''
+      note: imię z aliasów statusów (T-019)
+    # Dodaj kolejne. Trzymaj jako pojedyncze tokeny / case-sensitive jeśli są wyłącznie
+    # w komunikatach (nie żebyśmy łapali "bartek" w nazwisku klienta).
+
+internal_operational_messages:
+  description: >
+    Frazy używane w wewnętrznych komunikatach (czat operatorów, aliasy statusów, etc.),
+    które nie powinny opuścić systemu.
+  severity: S1
+  patterns: []

@@ -1,0 +1,226 @@
+{
+  "concept_key": "ZESTAW_DO_NURKOWANIA",
+  "name_pl": "zestaw do nurkowania",
+  "definition": "Kompletny, zintegrowany system sprzętowy niezbędny do bezpiecznego oddychania, kontrolowania pływalności i poruszania się pod wodą. W pełnej konfiguracji (tzw. sprzęt powietrzny) składa się z automatu oddechowego, kamizelki wypornościowej (jacketa lub skrzydła), butli nurkowej, skafandra oraz sprzętu podstawowego (maska, fajka, płetwy). Dobór zestawu jako całości jest kluczowy, ponieważ gwarantuje kompatybilność poszczególnych elementów, takich jak odpowiednie złącza węży czy dopasowanie wyporności systemu do grubości wybranego skafandra.",
+  "subtypes_client": [
+    {
+      "name": "Zestaw na wody ciepłe (wyjazdowy)",
+      "description": "Lekka konfiguracja z cienką pianką (np. 3mm), klasycznym jacketem lub lekkim skrzydłem podróżnym oraz automatem o uproszczonej konstrukcji, idealna na wyjazdy tropikalne."
+    },
+    {
+      "name": "Zestaw na wody zimne (krajowy)",
+      "description": "Konfiguracja oparta na grubym skafandrze (pianka 7mm lub suchy) i automacie z odizolowaną komorą (odpornym na zamarzanie). Przy grubej piance i ciężkiej stalowej butli potrzebne jest skrzydło o dużej wyporności. Niezbędna do bezpiecznego nurkowania w polskich jeziorach."
+    },
+    {
+      "name": "Zestaw dla dzieci (Junior)",
+      "description": "Sprzęt o zmniejszonych gabarytach, z lżejszymi butlami, mniejszymi jacketami oraz automatami z ustnikami dopasowanymi do węższych szczęk najmłodszych adeptów nurkowania."
+    }
+  ],
+  "synonyms": {
+    "official": [
+      {
+        "text": "zestaw do nurkowania",
+        "evidence_id": "EV-K-001"
+      },
+      {
+        "text": "zestaw nurkowy",
+        "evidence_id": "EV-K-006"
+      }
+    ],
+    "close": [
+      {
+        "text": "kompletny zestaw do nurkowania",
+        "evidence_id": "EV-K-010"
+      },
+      {
+        "text": "sprzęt do nurkowania",
+        "evidence_id": "EV-A-001"
+      },
+      {
+        "text": "sprzęt nurkowy",
+        "evidence_id": "EV-A-021"
+      },
+      {
+        "text": "zestaw do nurkowania z butla",
+        "evidence_id": "EV-K-003"
+      }
+    ],
+    "slang": [
+      {
+        "text": "sprzęt nurka",
+        "evidence_id": "EV-A-022"
+      }
+    ],
+    "anglicisms": [],
+    "misspelled": [
+      {
+        "text": "sprzet nurkowy cena",
+        "evidence_id": "EV-A-024"
+      },
+      {
+        "text": "nurkowanie dla poczatkujacych",
+        "evidence_id": "EV-A-029"
+      },
+      {
+        "text": "zestaw do nurkowania profesjonalne",
+        "evidence_id": "EV-K-019"
+      }
+    ]
+  },
+  "longtail_phrases": [
+    {
+      "text": "zestaw do nurkowania dla dzieci",
+      "evidence_id": "EV-K-002"
+    },
+    {
+      "text": "zestaw do nurkowania dla dorosłych",
+      "evidence_id": "EV-K-004"
+    },
+    {
+      "text": "mini zestaw do nurkowania",
+      "evidence_id": "EV-K-007"
+    },
+    {
+      "text": "profesjonalny zestaw do nurkowania",
+      "evidence_id": "EV-K-009"
+    },
+    {
+      "text": "dobry zestaw do nurkowania",
+      "evidence_id": "EV-K-022"
+    },
+    {
+      "text": "dziecięcy zestaw do nurkowania",
+      "evidence_id": "EV-K-028"
+    },
+    {
+      "text": "jaki sprzęt do amatorskiego nurkowania",
+      "evidence_id": "EV-A-031"
+    },
+    {
+      "text": "jaki zestaw do nurkowania",
+      "evidence_id": "EV-A-033"
+    },
+    {
+      "text": "sprzęt do nurkowania dla początkujących",
+      "evidence_id": "EV-A-005"
+    },
+    {
+      "text": "zestaw do nurkowania kompletny",
+      "evidence_id": "EV-K-036"
+    }
+  ],
+  "purchase_parameters": [
+    {
+      "name": "Środowisko docelowe (temperatura wody)",
+      "description": "Główny czynnik różnicujący zestawy. Determinuje wybór grubości skafandra oraz klasy automatu oddechowego. Zestaw na polskie wody musi posiadać automat odporny na zamarzanie, podobnie jak opony zimowe w samochodzie różnią się od letnich."
+    },
+    {
+      "name": "Standard złącza automatu (DIN)",
+      "description": "Zawsze należy wybierać standard DIN. Jest to jedyny aktualny, bezpieczny standard wkręcany bezpośrednio w zawór butli. Standard INT jest całkowicie archaiczny, podatny na uszkodzenia i nie powinien być w ogóle rozważany przy zakupie nowego sprzętu."
+    },
+    {
+      "name": "Waga i gabaryty (potencjał podróżny)",
+      "description": "Kryterium kluczowe dla osób często latających. Zestawy podróżne posiadają ultralekkie BCD (często bez sztywnej płyty) oraz automaty z lekkich stopów, co pozwala zaoszczędzić cenne kilogramy w bagażu lotniczym."
+    },
+    {
+      "name": "Modułowość i potencjał rozbudowy",
+      "description": "Wybór między klasycznym jacketem (zamknięta, jednoczęściowa konstrukcja) a skrzydłem z płytą. Skrzydło pozwala na łatwą wymianę elementów w miarę rozwoju umiejętności po kursie OWD, oferując elastyczność niczym klocki LEGO."
+    }
+  ],
+  "cross_sell": [
+    {
+      "product": "Torba nurkowa",
+      "concept_key": "TORBA_NURKOWA",
+      "description": "Niezbędna do bezpiecznego transportu i przechowywania całego skompletowanego zestawu."
+    },
+    {
+      "product": "Komputer nurkowy",
+      "concept_key": "KOMPUTER_NURKOWY",
+      "description": "Kluczowy element bezpieczeństwa, często kupowany osobno, ale stanowiący elektroniczny mózg całego zestawu."
+    },
+    {
+      "product": "Logbook",
+      "concept_key": "LOGBOOK",
+      "description": "Podstawowe akcesorium dla początkującego nurka do rejestrowania pierwszych zanurzeń w nowym sprzęcie."
+    }
+  ],
+  "faq": [
+    {
+      "question": "Co należy kupić do nurkowania na samym początku?",
+      "answer": "Przed kursem OWD najlepiej zainwestować we własny zestaw ABC (maska, fajka, płetwy) oraz ewentualnie buty neoprenowe. Resztę sprzętu, czyli automat, jacket, butlę i skafander, zazwyczaj wypożycza się na czas szkolenia. Własny kompletny zestaw najlepiej dobrać po zdobyciu pierwszych szlifów i określeniu, gdzie będziesz najczęściej nurkować.",
+      "evidence_ids": [
+        "EV-P-001",
+        "EV-P-004"
+      ]
+    },
+    {
+      "question": "Jaki sprzęt jest potrzebny do nurkowania z butlą?",
+      "answer": "Pełny zestaw to tzw. sprzęt powietrzny (automat oddechowy, kamizelka wypornościowa lub skrzydło, butla z zaworem), skafander dopasowany do temperatury wody, system balastowy oraz komputer nurkowy. Kupując to jako zestaw, masz pewność, że wszystkie węże i złącza będą ze sobą idealnie współpracować.",
+      "evidence_ids": [
+        "EV-P-003"
+      ]
+    },
+    {
+      "question": "Ile kosztuje profesjonalny sprzęt do nurkowania?",
+      "answer": "Cena zależy od konfiguracji i przeznaczenia. Podstawowy, bezpieczny zestaw rekreacyjny na ciepłe wody to wydatek rzędu kilku tysięcy złotych. Zestawy do nurkowań w zimnych wodach, wymagające suchego skafandra i automatów z wyższej półki, plasują się w wyższym segmencie cenowym. Warto traktować to jako wieloletnią inwestycję w bezpieczeństwo.",
+      "evidence_ids": [
+        "EV-P-006"
+      ]
+    },
+    {
+      "question": "Czy automat ze złączem INT będzie pasował do mojego zestawu?",
+      "answer": "Zdecydowanie odradzamy złącze INT. To przestarzały, archaiczny standard, który nie jest już rozwijany i w Europie praktycznie nie występuje. Jedynym słusznym i bezpiecznym wyborem jest złącze DIN, wkręcane bezpośrednio w zawór butli. Jeśli masz butlę DIN, automat INT podłączysz tylko przez specjalny adapter, co tworzy niepotrzebny punkt awarii.",
+      "evidence_ids": []
+    },
+    {
+      "question": "Jak dobrać rozmiar skafandra w zestawie nurkowym?",
+      "answer": "Skafander musi przylegać do ciała jak druga skóra, ale absolutnie nie może krępować ruchów ani utrudniać oddychania. Zbyt luźna pianka spowoduje ciągłą wymianę wody i szybkie wychłodzenie organizmu, a zbyt ciasna ograniczy komfort. Najlepiej przymierzać skafander z docieplaczem, jeśli planujesz nurkować w chłodniejszych akwenach.",
+      "evidence_ids": []
+    }
+  ],
+  "seller_notes": "Zwracaj uwagę klientów na to, że 'zestaw' to system naczyń połączonych. Zawsze promuj automaty DIN i tłumacz, że INT to martwy standard. Odradzaj tanie zestawy marketowe (klienci często pytają o 'decathlon', 'lidl' czy 'biedronka' - mamy to w wyszukiwaniach), uświadamiając, że sprzęt do wód otwartych musi być certyfikowany (norma EN 250). Przy zestawach zbiorczych nie skupiaj się na detalach pojedynczej śrubki, ale na tym, jak automat współpracuje ze skrzydłem i butlą.",
+  "concept_number": 105,
+  "missing_data": [
+    "Brak danych sprzedażowych (EV-S, EV-B) do uzasadnienia rekomendacji cross-sellingowych.",
+    "Brak anglicyzmów w dostarczonym rejestrze evidence."
+  ],
+  "name_en": "dive set",
+  "not_to_confuse": [
+    {
+      "concept_key": "ZESTAW_AUTOMATU_REKR",
+      "explanation": "Zestaw automatów to tylko pierwszy i drugie stopnie z manometrem, podczas gdy pełny zestaw do nurkowania zawiera również BCD, butlę i skafander."
+    },
+    {
+      "concept_key": "ZESTAW_MASKA_FAJKA",
+      "explanation": "Zestaw ABC to tylko sprzęt bezdechowy (maska, fajka, płetwy), który nie pozwala na oddychanie pod wodą z butli."
+    }
+  ],
+  "related_concept_keys": [
+    "ZESTAW_AUTOMATU_REKR",
+    "ZESTAW_SKRZYDLO_SINGLE",
+    "JACKET",
+    "PIANKA_MOKRA",
+    "BUTLA_NURKOWA",
+    "ZESTAW_MASKA_FAJKA"
+  ],
+  "subtypes_technical": [
+    {
+      "name": "Zestaw powietrzny (Scuba Set)",
+      "description": "Wąska definicja obejmująca wyłącznie elementy dostarczające czynnik oddechowy i kontrolujące pływalność (butla, automat oddechowy, BCD), bez skafandra i sprzętu ABC."
+    },
+    {
+      "name": "Zestaw ABC (Snorkeling Set)",
+      "description": "Podstawowy komplet bezdechowy (maska, fajka, płetwy), stanowiący bazę, do której dokupuje się resztę sprzętu po kursie OWD."
+    }
+  ],
+  "ungrounded_additions": [
+    {
+      "text": "bundle",
+      "reason": "Popularne określenie handlowe na zestawy sprzętowe, zaczerpnięte z wiedzy eksperckiej i draftu NotebookLM, brak w evidence."
+    },
+    {
+      "text": "scuba set",
+      "reason": "Oficjalne angielskie określenie pełnego zestawu sprzętowego, zaczerpnięte z draftu NotebookLM, brak w evidence."
+    }
+  ]
+}

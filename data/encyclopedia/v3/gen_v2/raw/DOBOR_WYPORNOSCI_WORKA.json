@@ -1,0 +1,127 @@
+{
+  "concept_key": "DOBOR_WYPORNOSCI_WORKA",
+  "name_pl": "dobór wyporności worka",
+  "name_en": "BCD lift sizing",
+  "definition": "Metoda obliczania wymaganej wyporności worka skrzydła lub jacketu (BCD). Wartość ta wynika z dwóch niezależnych składowych. Pierwsza to ciężar zabieranego gazu, deterministyczny i policzalny z prostego wzoru. Druga to utrata wyporu kombinezonu przez kompresję na głębokości, bliska zeru dla suchego skafandra powłokowego i znaczna dla grubej pianki mokrej. Najczęstszą pomyłką jest wiązanie suchego skafandra z większą wymaganą wypornością worka. Suchy to przypadek o małej wymaganej wyporności, bo rządzi sam gaz. Większy worek wymusza gruba pianka, bo gubi wypór z głębokością.",
+  "subtypes_client": [
+    {
+      "name": "Single z suchym skafandrem",
+      "description": "Pojedyncza butla 12-15 l plus suchy skafander powłokowy. Wymagana wyporność worka około 13-16 l (13 l to dolna granica produkcyjna). Rządzi sam ciężar gazu, bo kompresja suchego skafandra bliska zeru."
+    },
+    {
+      "name": "Twin z suchym skafandrem",
+      "description": "Twin 2x12 l plus ewentualnie butla stage plus suchy skafander. Worek około 18 l (40 lbs) wystarcza w typowej konfiguracji. Większy worek bywa potrzebny do utrzymania zdjętego sprzętu na powierzchni lub przy rozszczelnieniu skafandra na głębokości."
+    },
+    {
+      "name": "Single z grubą pianką mokrą",
+      "description": "Pojedyncza butla 12-15 l plus pełna pianka 7 mm (i grubsze zestawy). Wymagana wyporność rośnie istotnie przez kompresję pianki na głębokości i wybór wymaga konsultacji z pracownikiem. Sama pełna pianka 7 mm na 40 m traci około 6 kg wyporu."
+    }
+  ],
+  "synonyms": {
+    "official": [],
+    "close": [],
+    "slang": [],
+    "anglicisms": [],
+    "misspelled": []
+  },
+  "longtail_phrases": [],
+  "purchase_parameters": [
+    {
+      "name": "Ciężar zabieranego gazu",
+      "description": "Składowa deterministyczna. Wzór: ciężar [kg] = pojemność [l] razy ciśnienie [bar] dzielone przez 1000, razy 1,3. Przykłady: single 15 l / 200 bar daje 3,9 kg. Twin 2x12 l / 200 bar daje 6,24 kg. Ten ciężar worek musi udźwignąć na początku nurkowania."
+    },
+    {
+      "name": "Utrata wyporu kombinezonu na głębokości",
+      "description": "Składowa zmienna. Suchy skafander powłokowy: bliska zeru, bo nurek steruje gazem w skafandrze. Gruba pianka mokra: znaczna, rośnie z głębokością i grubością. Pełna pianka 7 mm traci około 30 procent wyporu w pierwszych 10 m i około połowy na 40 m."
+    },
+    {
+      "name": "Reguła partnera (najgorszy scenariusz)",
+      "description": "Przy planowaniu sytuacji awaryjnej worek musi wyciągnąć z głębokości również partnera w tej samej konfiguracji. Do wyporu liczonego dla siebie dolicz tyle samo dla partnera. To pojawia się głównie w nurkowaniu technicznym, w rekreacji rzadziej liczone wprost."
+    }
+  ],
+  "cross_sell": [
+    {
+      "product": "Skrzydło do pojedynczej butli",
+      "concept_key": "ZESTAW_SKRZYDLO_SINGLE",
+      "description": "Konfiguracja docelowa dla nurkowania z pojedynczą butlą. Worek dobrany metodą tego hasła.",
+      "evidence_id": "EV-P-001"
+    },
+    {
+      "product": "Skrzydło do twinsetu",
+      "concept_key": "ZESTAW_SKRZYDLO_TWIN",
+      "description": "Konfiguracja docelowa dla nurkowania z twinsetem. W typowej kombinacji z suchym skafandrem worek około 18 l wystarcza.",
+      "evidence_id": "EV-P-001"
+    },
+    {
+      "product": "Jacket BCD",
+      "concept_key": "JACKET",
+      "description": "Alternatywa dla skrzydła w nurkowaniu rekreacyjnym. Metoda doboru wyporności identyczna.",
+      "evidence_id": "EV-P-001"
+    }
+  ],
+  "faq": [
+    {
+      "question": "Jak policzyć wyporność worka?",
+      "answer": "Wyporność worka to suma dwóch składowych. Pierwsza to ciężar zabieranego gazu, liczony ze wzoru pojemność [l] razy ciśnienie [bar] / 1000 razy 1,3. Druga to utrata wyporu kombinezonu na głębokości (suchy skafander: bliska zeru, gruba pianka mokra: znaczna). Przy nietypowej konfiguracji odeślij się do konsultacji z pracownikiem.",
+      "evidence_ids": []
+    },
+    {
+      "question": "Czy suchy skafander wymaga większego worka?",
+      "answer": "Nie. To częsta pomyłka. Suchy skafander powłokowy nie traci istotnie wyporu na głębokości (nurek steruje gazem w skafandrze), więc rządzi sam ciężar gazu. Suchy to przypadek o małej wymaganej wyporności worka. Większy worek wymusza gruba pianka mokra, bo gubi wypór przez kompresję. Suchy zwykle wymaga więcej balastu (osobna wielkość), ale to nie zwiększa wyporności worka.",
+      "evidence_ids": []
+    },
+    {
+      "question": "Jaki worek do twina 2x12 l z suchym skafandrem?",
+      "answer": "W typowej konfiguracji twin 2x12 l plus ewentualna butla stage plus suchy skafander, worek około 18 l (40 lbs) wystarcza. Większy bywa potrzebny do utrzymania zdjętego sprzętu na powierzchni lub przy rozszczelnieniu skafandra na głębokości. Przy planowaniu nurkowań technicznych dolicz wypór dla partnera w tej samej konfiguracji.",
+      "evidence_ids": []
+    },
+    {
+      "question": "Dlaczego dla grubej pianki wybór worka wymaga konsultacji?",
+      "answer": "Bo wartość rośnie z głębokością i grubością pianki, czasem dwukrotnie przy zestawie typu pełna pianka 7 mm plus docieplacz lub kaptur. Bez znajomości konkretnej konfiguracji, planowanej głębokości i rozmiaru nurka nie da się podać uczciwej liczby. Skontaktuj się z nami pod dive@divezone.pl lub 56 307 03 03.",
+      "evidence_ids": []
+    },
+    {
+      "question": "Czy travel skrzydło 10-13 l wystarczy do nurkowania w Polsce?",
+      "answer": "Dla nurkowania z pojedynczą butlą 12-15 l w suchym skafandrze worek 10-13 l jest na dolnej granicy. Wystarcza w spokojnym scenariuszu, ale brakuje zapasu na sytuacje awaryjne. Do polskich warunków z grubą pianką mokrą travel skrzydło jest niewystarczające, bo pianka traci wypór na głębokości. Bezpieczniejszy wybór to standardowy worek 13-16 l.",
+      "evidence_ids": []
+    }
+  ],
+  "seller_notes": "Doradzając wyporność worka pamiętaj o dwóch niezależnych składowych: ciężarze gazu (zawsze policzalny ze wzoru) i utracie wyporu kombinezonu (suchy bliska zeru, gruba pianka mokra znaczna). Najczęstszy błąd klienta to mylenie suchego z większym workiem. Suchy wymaga więcej balastu, ale nie zwiększa wyporności worka. Dla typowych konfiguracji podaj liczby z tego hasła. Przy grubej piance lub nietypowej konfiguracji odsyłaj do dive@divezone.pl lub 56 307 03 03. Nie podawaj konkretnej liczby z głowy, jeśli nie znasz pełnej konfiguracji klienta.",
+  "concept_number": 106,
+  "missing_data": [
+    "Brak precyzyjnych danych o utracie wyporu pianki w zestawach mieszanych (pianka plus docieplacz plus kaptur), wartości mogą być prawie dwukrotnie wyższe.",
+    "Brak liczb dla doboru worka w nurkowaniu technicznym z dwiema butlami stage i partnerem w tej samej konfiguracji."
+  ],
+  "not_to_confuse": [
+    {
+      "concept_key": "BALAST",
+      "explanation": "Balast i wyporność worka to dwie różne wielkości. Suchy skafander zwykle wymaga więcej balastu (kompensacja dodatniej pływalności ocieplacza i skafandra), ale to nie przekłada się na większą wyporność worka. Wyporność dyktuje ciężar gazu i kompresja kombinezonu."
+    }
+  ],
+  "related_concept_keys": [
+    "SKRZYDLO",
+    "JACKET",
+    "ZESTAW_SKRZYDLO_SINGLE",
+    "ZESTAW_SKRZYDLO_TWIN",
+    "SUCHY_SKAFANDER",
+    "PIANKA_MOKRA",
+    "PIANKA_ZIMNE_WODY",
+    "BALAST",
+    "BUTLA_NURKOWA"
+  ],
+  "subtypes_technical": [
+    {
+      "name": "Składowa A: ciężar gazu",
+      "description": "Wzór deterministyczny: pojemność [l] razy ciśnienie [bar] / 1000 razy 1,3 kg. Wartość znana z góry, niezależna od głębokości. Single 12 l / 200 bar to 3,1 kg. Single 15 l / 200 bar to 3,9 kg. Twin 2x12 l / 200 bar to 6,24 kg."
+    },
+    {
+      "name": "Składowa B: kompresja pianki neoprenowej",
+      "description": "Według Bardy, Mollendorf, Pendergast 2005 (via Wikipedia 'Wetsuit'). Pełna pianka traci około 30 procent wyporu w pierwszych 10 m, kolejne 30 procent do 60 m, stabilizuje się przy 65 procent straty na 100 m. Dla pełnej pianki 7 mm: 10 m to około 3,5-3,7 kg straty, 40 m to 5,5-6,0 kg, 60 m to 7,0-7,5 kg. W zestawach pianka plus docieplacz lub kaptur strata może być prawie dwukrotnie większa."
+    },
+    {
+      "name": "Składowa B: suchy skafander powłokowy",
+      "description": "Utrata wyporu na głębokości bliska zeru w normalnym nurkowaniu, bo nurek steruje gazem w skafandrze przez inflator i zawór upustowy. Istotna składowa pojawia się tylko przy całkowitym rozszczelnieniu, traktowane jako awaria, nie standardowy scenariusz doboru."
+    }
+  ],
+  "ungrounded_additions": []
+}

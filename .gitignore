@@ -1,0 +1,142 @@
+# Secrets
+.env
+.env.local
+.env.production
+.env-*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# PHP
+vendor/
+composer.phar
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+.claude/
+
+# Cache
+cache/
+*.log
+
+# Standalone PHP error log (lokalny debug, NIGDY w git)
+standalone/public/error_log
+
+# MCP config (zawiera hasła)
+.mcp.json
+
+# Basic auth credentials (admin dashboard, generowane na serwerze)
+.htpasswd
+**/.htpasswd
+
+# ============================================
+# PROJEKT - lokalne handoffy, sesje, deploy logi
+# Te pliki czesto zawieraja credentiale i debug info
+# ============================================
+_docs/HANDOFF_*
+_docs/PROMPT_*
+_docs/TASK-*
+_docs/sesja*
+_docs/*sesja*
+_docs/security_reports*/
+_docs/wiedza_nurkowa/
+_instances/*/handoff/
+_instances/*/tasks/TASK-*-completed.md
+_prompts/
+
+# Deploy logi i raporty
+*deploy_log*
+*deploy_report*
+*_audit*.md
+
+# Dane
+data/
+
+# Generated artifacts
+generate_encyclopedia/output/
+generate_encyclopedia/*.json
+embeddings/output/
+
+# CC pisze tu logi
+.claude_logs/
+
+# System
+*.bak
+*.tmp
+*~
+
+# ============================================
+# T-019: dane wrażliwe i śmieci (repo prywatne, ale te NIGDY do gita)
+# ============================================
+# FreeFileSync cache
+.sync.ffs_db
+
+# Aliasy statusów — zawierają wewnętrzne nazwy pracowników (BARTEK) i komunikaty operacyjne
+_docs/aliasy*
+
+# Dane sprzedażowe (decyzja 91b — wrażliwe biznesowo, lokalnie)
+_docs/dane_sprzedazowe_*
+
+# Dane zewnętrzne wyszukiwań (GSC, Luigi's Box) — dane biznesowe + binarne zip
+_docs/dane_zewnetrzne_wyszukiwania/
+
+# ============================================
+# T-021: red-team harness (Faza 0)
+# Sam katalog _redteam/ wersjonujemy; wyjątki to PII / discovery z PII / nieanonimizowane snapshoty.
+# ============================================
+# Lokalne reguły z PII pracowników (nazwiska z aliasów, T-019)
+_redteam/**/*.local.yaml
+_redteam/**/*.local.json
+# Transcripty z runów (Discovery T>0 może zahaczyć o PII)
+_redteam/transcripts/
+# Realne zamówienia testowe Karola (positive case dla OrderStatus, jeśli kiedyś)
+_redteam/fixtures/real_test_orders*.json
+# Snapshoty z PII (gdyby kiedyś trzeba było — domyślnie skrypt PII nie pobiera)
+_redteam/fixtures/*.pii.json
+# T-024: pełne raporty JSON zawierają transcripty z dialogu (potencjalne PII);
+# summary MD bez transcriptów = commitable
+_redteam/reports/*.json
+# Local toolchain dla orchestratora (NOT commitable)
+_redteam/.venv/
+_redteam/.promptfoo/
+_redteam/package-lock.json
+
+# Wygenerowany dashboard HTML (zawiera transcripty z runow = jak reports/*.json)
+_redteam/redteam_dashboard.html
+_redteam/reports/dashboard.html
+_redteam/**/dashboard.html
+
+# T-025: golden set zawiera transcripty + recznie wpisane werdykty Karola (potencjalnie cytaty botów)
+# Tylko zagregowane metryki kappa w reports/meta_eval_*.md = commitable
+_redteam/golden/
+
+# Podsumowania AI runow (pochodne transcriptow)
+_redteam/reports/*_summaries.json
+
+# T-025: wypelnione oceny eksperckie (transcripty + werdykty Karola) — poza katalogiem golden/
+_redteam/golden_REVIEW_filled*.md
+# Material zrodlowy: realne pytania/odpowiedzi ze sklepu (robocze, wewnetrzne)
+_redteam/pytania_ze_sklepu_*.txt
+
+# T-030: raporty sprzedazy (regenerowalne, moga sie rozrastac) — skrypt commitowalny, output nie
+/reports/
+
+# Build artifacts modułów (34a): spakowany moduł PS to artefakt builda, nie źródło
+modules/*.zip
+
+# Robocze materiały projektowe (drafts): screenshoty, .pptx/.docx, prototypy design-canvas,
+# wygenerowane slajdy — scratch, nie commitujemy (binaria + materiał roboczy)
+/_drafts/
+
+# Backupy plików PROD przed deployem (ADR-089) — lokalne, nie do gita
+_deploy_bak/
