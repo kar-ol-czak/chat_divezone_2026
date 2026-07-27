@@ -1,0 +1,495 @@
+"""
+Ekstrakcja produktów z PrestaShop MySQL przez SSH tunnel.
+Buduje document_text do embeddingów i zwraca listę produktów.
+
+CHAT-T-150 (ADR-128): dodany tryb serwerowy (EMBEDDINGS_ENV=server) — połączenie
+z lokalnym MySQL bez tunelu SSH — oraz kanoniczny hash document_text do delty.
+Tryb lokalny (brak zmiennej lub EMBEDDINGS_ENV=local) działa dokładnie jak dotąd.
+"""
+
+import os
+import re
+import json
+import hashlib
+import subprocess
+import signal
+import time
+import logging
+from pathlib import Path
+from html.parser import HTMLParser
+
+import pymysql
+from dotenv import load_dotenv
+from bs4 import BeautifulSoup
+
+
+# CHAT-T-150 (ADR-128 dec. 145a): na serwerze kod leży w /home/divezone/scripts/embeddings/,
+# więc parent.parent/.env NIE istnieje. .env czytamy ścieżką bezwzględną z docrootu backendu.
+# DIVECHAT_ENV_FILE nadpisuje jawnie; inaczej wybór po EMBEDDINGS_ENV.
+def _resolve_env_file() -> str:
+    explicit = os.getenv("DIVECHAT_ENV_FILE")
+    if explicit:
+        return explicit
+    if os.getenv("EMBEDDINGS_ENV", "local").strip().lower() == "server":
+        return "/home/divezone/public_html/chat.divezone.pl/.env"
+    return str(Path(__file__).resolve().parent.parent / ".env")
+
+
+load_dotenv(_resolve_env_file())
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
+
+LOCAL_MYSQL_PORT = 33060
+MAX_DESCRIPTION_LENGTH = 500
+
+# Kategorie wykluczone z indeksu embeddingów (i ich potomkowie w nested set)
+EXCLUDED_CATEGORY_IDS = [
+    484, 458, 485, 486, 468, 368, 413, 451, 406, 409,
+    445, 447, 110, 396, 366, 448, 397, 482, 168, 461,
+    59, 457, 436, 462, 490,
+    # ADR-122 (76a): 463 "Polecane" — marketingowa kategoria d2 pod Główną, semantycznie
+    # pusta. Zweryfikowane: zero produktów ma id_category_default=463, nikt nie wypada z indeksu.
+    463,
+    # CHAT-T-142 (korekta ADR-122): 467 "WYPRZEDAŻE" (d2) + 4 dzieci (477/478/479/480) —
+    # ADR zakładał, że 467 już jest wykluczone; NIE było. WYPRZEDAŻE to szum kategoryjny jak
+    # Polecane. Wyklucza je z TEKSTU category_name (przez nested set). Produkty, których jedyną
+    # kategorią jest wyprzedaż, NIE wypadają z indeksu — wchodzą przez WYPRZEDAZ_ROOT_ID
+    # w is_allowed (decyzja Karola: bot ma znajdować sprzedażowe produkty outletowe).
+    467,
+]
+
+# CHAT-T-142: korzeń poddrzewa WYPRZEDAŻE. Produkt z aktywną kategorią w tym poddrzewie
+# wchodzi do indeksu nawet z pustym category_name (odróżnienie od śmieci bez żadnej kategorii).
+WYPRZEDAZ_ROOT_ID = 467
+
+# Subkategorie, które chcemy indeksować pomimo wykluczenia ich parenta (override).
+# Produkt przypisany do dowolnej z tych kategorii jest indeksowany, a category_name
+# w embeddings zostaje nadpisany nazwą whitelistowanej kategorii (nie domyślnej z PS).
+# TASK-CHAT-010: 476 = "Vouchery prezentowe" (parent 368 PREZENTY jest excluded).
+WHITELISTED_SUBCATEGORY_IDS = [476]
+
+# Produkty wykluczone ręcznie (np. maseczka COVID w kategorii Gadżety)
+EXCLUDED_PRODUCT_IDS = [5910]
+
+# Zapytanie główne: aktywne produkty z lang_id=1 (polski).
+# CHAT-T-144 (ADR-123 nota 93a): USUNIĘTY filtr `ps.visibility != 'none'` — visibility='none'
+# NIE ukrywa produktu przed klientem (wyszukiwarka sklepu = Luigi's Box, ignoruje to pole),
+# więc bot ma je znać. Pole ps.visibility zostaje w SELECT (używane gdzie indziej), filtruje
+# tylko ps.active. Kryterium „bot poleca" = active + available_for_order (backend, CHAT-T-143).
+# ADR-122: category_name budowane z KONKATENACJI wszystkich dozwolonych kategorii produktu
+# (pr_category_product), a NIE z pojedynczej id_category_default. Filtr śmieci przez nested set
+# (kategoria wykluczona LUB potomek wykluczonej), sort level_depth→name (drugi klucz konieczny
+# dla determinizmu tekstu = determinizmu wektora), limit 4, separator " + ".
+# Placeholdery {excluded} i {whitelist} wypełniane w extract_products() przez .format().
+PRODUCTS_SQL = """
+SELECT
+    p.id_product,
+    p.id_category_default,
+    pl.name AS product_name,
+    pl.description,
+    pl.link_rewrite,
+    (
+        SELECT SUBSTRING_INDEX(
+            GROUP_CONCAT(cl2.name ORDER BY c2.level_depth, cl2.name SEPARATOR ' + '),
+            ' + ', 4
+        )
+        FROM pr_category_product cp2
+        JOIN pr_category c2 ON c2.id_category = cp2.id_category
+        JOIN pr_category_shop cs2 ON cs2.id_category = c2.id_category AND cs2.id_shop = 1
+        JOIN pr_category_lang cl2 ON cl2.id_category = c2.id_category AND cl2.id_lang = 1
+        JOIN pr_category root2 ON root2.id_category = 2
+        WHERE cp2.id_product = p.id_product
+          AND c2.active = 1
+          AND c2.nleft > root2.nleft AND c2.nright < root2.nright
+          AND (
+            c2.id_category IN ({whitelist})
+            OR (
+                c2.id_category NOT IN ({excluded})
+                AND NOT EXISTS (
+                    SELECT 1 FROM pr_category ex
+                    WHERE ex.id_category IN ({excluded})
+                      AND c2.nleft > ex.nleft AND c2.nright < ex.nright
+                )
+            )
+          )
+    ) AS category_name,
+    m.name AS brand_name,
+    ROUND(ps.price * (1 + COALESCE(t.rate, 23) / 100), 2) AS price_brutto,
+    ps.active,
+    ps.visibility,
+    COALESCE(sa.quantity, 0) AS quantity
+FROM pr_product p
+JOIN pr_product_lang pl ON p.id_product = pl.id_product AND pl.id_lang = 1
+JOIN pr_product_shop ps ON p.id_product = ps.id_product AND ps.id_shop = 1
+LEFT JOIN pr_manufacturer m ON p.id_manufacturer = m.id_manufacturer
+LEFT JOIN (
+    SELECT id_product, MAX(quantity) as quantity
+    FROM pr_stock_available
+    GROUP BY id_product
+) sa ON p.id_product = sa.id_product
+LEFT JOIN pr_tax_rule tr ON p.id_tax_rules_group = tr.id_tax_rules_group AND tr.id_country = 14
+LEFT JOIN pr_tax t ON tr.id_tax = t.id_tax
+WHERE ps.active = 1
+ORDER BY p.id_product
+"""
+
+# Cechy produktów
+FEATURES_SQL = """
+SELECT fp.id_product, fl.name AS feature_name, fvl.value AS feature_value
+FROM pr_feature_product fp
+JOIN pr_feature_lang fl ON fp.id_feature = fl.id_feature AND fl.id_lang = 1
+JOIN pr_feature_value_lang fvl ON fp.id_feature_value = fvl.id_feature_value AND fvl.id_lang = 1
+"""
+
+# Cover image
+IMAGES_SQL = """
+SELECT id_product, id_image FROM pr_image WHERE cover = 1
+"""
+
+# Dozwolone kategorie: potomkowie "Główna" (id=2), aktywne, bez wykluczonych i ich potomków
+ALLOWED_CATEGORIES_SQL = """
+SELECT c.id_category
+FROM pr_category c
+JOIN pr_category_shop cs ON c.id_category = cs.id_category AND cs.id_shop = 1
+JOIN pr_category root ON root.id_category = 2
+WHERE c.nleft > root.nleft AND c.nright < root.nright
+  AND c.active = 1
+  AND c.id_category NOT IN ({excluded})
+  AND NOT EXISTS (
+    SELECT 1 FROM pr_category excl
+    WHERE excl.id_category IN ({excluded})
+      AND c.nleft BETWEEN excl.nleft AND excl.nright
+  )
+"""
+
+
+def get_allowed_categories(cur) -> set[int]:
+    """Pobiera dozwolone ID kategorii z drzewa PrestaShop (nested set).
+
+    Dodaje WHITELISTED_SUBCATEGORY_IDS jako override — kategorie te są dozwolone
+    nawet jeśli ich parent jest w EXCLUDED_CATEGORY_IDS.
+    """
+    excluded_str = ",".join(str(x) for x in EXCLUDED_CATEGORY_IDS)
+    sql = ALLOWED_CATEGORIES_SQL.format(excluded=excluded_str)
+    cur.execute(sql)
+    allowed = {row["id_category"] for row in cur.fetchall()}
+    allowed.update(WHITELISTED_SUBCATEGORY_IDS)
+    logger.info(
+        "Dozwolone kategorie: %d (wykluczone: %d IDs, whitelist override: %d)",
+        len(allowed), len(EXCLUDED_CATEGORY_IDS), len(WHITELISTED_SUBCATEGORY_IDS),
+    )
+    return allowed
+
+
+def get_whitelisted_products(cur) -> dict[int, dict]:
+    """Zwraca produkty przypisane do WHITELISTED_SUBCATEGORY_IDS z ich override-cat
+    (id + nazwa), niezależnie od id_category_default. Klucz: id_product.
+    """
+    if not WHITELISTED_SUBCATEGORY_IDS:
+        return {}
+    ids_str = ",".join(str(x) for x in WHITELISTED_SUBCATEGORY_IDS)
+    cur.execute(f"""
+        SELECT cp.id_product, cp.id_category, cl.name AS category_name
+        FROM pr_category_product cp
+        JOIN pr_category_lang cl ON cl.id_category = cp.id_category AND cl.id_lang = 1
+        WHERE cp.id_category IN ({ids_str})
+    """)
+    mapping: dict[int, dict] = {}
+    for row in cur.fetchall():
+        pid = row["id_product"]
+        # Pierwsze trafienie wygrywa (zwykle jest 1 whitelist per produkt).
+        if pid not in mapping:
+            mapping[pid] = {
+                "id_category": row["id_category"],
+                "category_name": row["category_name"],
+            }
+    logger.info("Whitelist override dotyczy %d produktów", len(mapping))
+    return mapping
+
+
+def get_wyprzedaz_products(cur) -> set[int]:
+    """CHAT-T-142: ID produktów należących do aktywnej kategorii w poddrzewie WYPRZEDAŻE (467).
+
+    Te produkty mają wejść do indeksu nawet gdy ich category_name jest puste (bo wyprzedaż
+    jest wykluczona z tekstu). Odróżnia je od śmieci (Prowizja PayPal, kursy IANTD) — te nie
+    należą do ŻADNEJ aktywnej kategorii i pozostają odrzucone.
+    """
+    cur.execute(
+        """
+        SELECT DISTINCT cp.id_product
+        FROM pr_category_product cp
+        JOIN pr_category c ON c.id_category = cp.id_category
+        JOIN pr_category_shop cs ON cs.id_category = c.id_category AND cs.id_shop = 1
+        JOIN pr_category w ON w.id_category = %s
+        WHERE c.active = 1
+          AND c.nleft >= w.nleft AND c.nright <= w.nright
+        """,
+        (WYPRZEDAZ_ROOT_ID,),
+    )
+    ids = {row["id_product"] for row in cur.fetchall()}
+    logger.info("Produkty w poddrzewie WYPRZEDAŻE (indeks mimo pustej kategorii): %d", len(ids))
+    return ids
+
+
+def is_server_mode() -> bool:
+    """CHAT-T-150: True gdy EMBEDDINGS_ENV=server (cron na VPS, MySQL lokalny bez tunelu)."""
+    return os.getenv("EMBEDDINGS_ENV", "local").strip().lower() == "server"
+
+
+def open_ssh_tunnel():
+    """Otwiera SSH tunnel do MySQL na VPS divezone.pl."""
+    # Zamknij ewentualny stary tunel
+    subprocess.run(["pkill", "-f", "ssh.*33060.*divezonededyk"], capture_output=True)
+    time.sleep(0.5)
+
+    ssh_cmd = [
+        "ssh",
+        "-i", os.getenv("SSH_KEY_PATH", "/Users/karol/.ssh/id_ed25519"),
+        "-p", os.getenv("SSH_PORT", "5739"),
+        "-L", f"{LOCAL_MYSQL_PORT}:127.0.0.1:3306",
+        "-f", "-N",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "ConnectTimeout=10",
+        f"{os.getenv('SSH_USER', 'divezone')}@{os.getenv('SSH_HOST', 'divezonededyk.smarthost.pl')}",
+    ]
+    result = subprocess.run(ssh_cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise ConnectionError(f"SSH tunnel failed: {result.stderr}")
+    logger.info("SSH tunnel otwarty na localhost:%d", LOCAL_MYSQL_PORT)
+    time.sleep(1)
+
+
+def close_ssh_tunnel():
+    """Zamyka SSH tunnel."""
+    subprocess.run(["pkill", "-f", "ssh.*33060.*divezonededyk"], capture_output=True)
+    logger.info("SSH tunnel zamknięty")
+
+
+def open_mysql_access():
+    """CHAT-T-150: przygotowuje dostęp do MySQL zależnie od trybu.
+
+    Tryb serwerowy — MySQL jest lokalny, tunel zbędny (tunelowałby sam do siebie).
+    Tryb lokalny — jak dotąd: otwiera tunel SSH do VPS. To jedyna zmiana ścieżki dostępu;
+    open_ssh_tunnel()/close_ssh_tunnel() pozostają nietknięte i wołane warunkowo.
+    """
+    if is_server_mode():
+        logger.info("Tryb serwerowy: MySQL lokalny, bez tunelu SSH")
+        return
+    open_ssh_tunnel()
+
+
+def close_mysql_access():
+    """CHAT-T-150: domyka dostęp do MySQL (tunel tylko w trybie lokalnym)."""
+    if is_server_mode():
+        return
+    close_ssh_tunnel()
+
+
+def get_mysql_connection():
+    """Zwraca połączenie z MySQL PrestaShop.
+
+    CHAT-T-150: host/port zależne od trybu. Serwer → DB_HOST/DB_PORT (domyślnie 127.0.0.1:3306,
+    bez tunelu). Lokalnie → 127.0.0.1:LOCAL_MYSQL_PORT przez tunel (bez zmian).
+    User, hasło i baza jak dotąd ze zmiennych środowiskowych.
+    """
+    if is_server_mode():
+        host = os.getenv("DB_HOST", "127.0.0.1")
+        port = int(os.getenv("DB_PORT", "3306"))
+    else:
+        host = "127.0.0.1"
+        port = LOCAL_MYSQL_PORT
+    return pymysql.connect(
+        host=host,
+        port=port,
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_NAME_PROD", "divezone_2025"),
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+
+
+def normalize_document_text(text: str) -> str:
+    """CHAT-T-150 (ADR-128 nota 1, wzorzec ENC-013): kanonikalizacja treści przed hashem.
+
+    Białe znaki (w tym nowe linie sklejające części dokumentu) zwijane do pojedynczej spacji,
+    brzegi przycięte. Stosowana SYMETRYCZNIE po obu stronach porównania (treść z MySQL i treść
+    zapisana w PG), więc różnice wcięć/CRLF nie generują fałszywej delty ani zbędnego re-embedu.
+    """
+    if not text:
+        return ""
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def document_text_hash(text: str) -> str:
+    """CHAT-T-150: sha256 (hex) ze znormalizowanego document_text. Liczony w locie, bez kolumny."""
+    return hashlib.sha256(normalize_document_text(text).encode("utf-8")).hexdigest()
+
+
+def strip_html(text: str) -> str:
+    """Usuwa HTML z tekstu. Zwraca czysty tekst."""
+    if not text:
+        return ""
+    soup = BeautifulSoup(text, "html.parser")
+    clean = soup.get_text(separator=" ", strip=True)
+    # Usuń wielokrotne spacje
+    clean = re.sub(r"\s+", " ", clean).strip()
+    return clean
+
+
+def build_document_text(product: dict) -> str:
+    """Buduje tekst dokumentowy do embeddingu."""
+    parts = [f"Produkt: {product['product_name']}"]
+
+    if product.get("brand_name"):
+        parts.append(f"Marka: {product['brand_name']}")
+
+    if product.get("category_name"):
+        parts.append(f"Kategoria: {product['category_name']}")
+
+    if product.get("price_brutto"):
+        parts.append(f"Cena: {product['price_brutto']:.2f} PLN")
+
+    # Opis: tylko description (długi opis), bez description_short (CMS śmieci)
+    desc = strip_html(product.get("description") or "")
+    if desc:
+        desc = desc[:MAX_DESCRIPTION_LENGTH]
+        parts.append(f"Opis: {desc}")
+    else:
+        logger.warning("Produkt %s bez opisu", product.get("ps_product_id") or product.get("id_product"))
+
+    # Cechy
+    if product.get("features"):
+        features_str = ", ".join(f"{k}: {v}" for k, v in product["features"].items())
+        parts.append(f"Cechy: {features_str}")
+
+    return "\n".join(parts)
+
+
+def extract_products(limit: int = None) -> list[dict]:
+    """
+    Wyciąga produkty z MySQL PrestaShop.
+
+    Args:
+        limit: opcjonalny limit produktów (do testów)
+
+    Returns:
+        lista słowników z danymi produktów i document_text
+    """
+    conn = get_mysql_connection()
+    cur = conn.cursor()
+
+    # Pobierz dozwolone kategorie (filtr drzewa kategorii) + whitelist override
+    allowed_categories = get_allowed_categories(cur)
+    whitelisted_products = get_whitelisted_products(cur)
+    wyprzedaz_products = get_wyprzedaz_products(cur)  # CHAT-T-142: outlet trzymamy w indeksie
+
+    # Pobierz produkty (ADR-122: category_name z konkatenacji — placeholdery excluded/whitelist)
+    excluded_str = ",".join(str(x) for x in EXCLUDED_CATEGORY_IDS)
+    whitelist_str = ",".join(str(x) for x in WHITELISTED_SUBCATEGORY_IDS) or "0"
+    sql = PRODUCTS_SQL.format(excluded=excluded_str, whitelist=whitelist_str)
+    if limit:
+        sql += f" LIMIT {int(limit)}"
+    cur.execute(sql)
+    products_raw = cur.fetchall()
+    total_before_filter = len(products_raw)
+    logger.info("Pobrano %d produktów z MySQL (przed filtrem kategorii)", total_before_filter)
+
+    # Filtruj: domyślna kategoria dozwolona LUB produkt na whitelist (parent excluded
+    # ale przypisany do whitelistowanej sub-kategorii — override).
+    def is_allowed(p: dict) -> bool:
+        if p["id_product"] in EXCLUDED_PRODUCT_IDS:
+            return False
+        if p.get("id_category_default") in allowed_categories:
+            return True
+        # ADR-122 (KROK 3): fallback dla root-cat — produkt z niedozwoloną id_category_default
+        # (np. root=2) wchodzi, jeśli reguła konkatenacji znalazła mu >=1 dozwoloną kategorię
+        # (category_name niepuste). Śmieci bez żadnej aktywnej kategorii → puste → odrzucone,
+        # bez ręcznej listy w EXCLUDED_PRODUCT_IDS.
+        if p.get("category_name"):
+            return True
+        # CHAT-T-142: outlet — jedyną kategorią jest WYPRZEDAŻE (wykluczona z tekstu), ale produkt
+        # jest sprzedażowy → trzymamy w indeksie (embeduje się na nazwie + marce).
+        if p["id_product"] in wyprzedaz_products:
+            return True
+        return p["id_product"] in whitelisted_products
+
+    products_raw = [p for p in products_raw if is_allowed(p)]
+
+    # Override category_name dla produktów wpuszczonych przez whitelist
+    # (id_category_default wskazuje wykluczonego parenta typu PREZENTY).
+    for p in products_raw:
+        pid = p["id_product"]
+        if p.get("id_category_default") not in allowed_categories and pid in whitelisted_products:
+            override = whitelisted_products[pid]
+            p["id_category_default"] = override["id_category"]
+            p["category_name"] = override["category_name"]
+
+    logger.info("Po filtrze kategorii + produktów: %d produktów (odrzucono %d)",
+                len(products_raw), total_before_filter - len(products_raw))
+
+    # Pobierz features
+    cur.execute(FEATURES_SQL)
+    features_raw = cur.fetchall()
+    features_map = {}
+    for f in features_raw:
+        pid = f["id_product"]
+        if pid not in features_map:
+            features_map[pid] = {}
+        features_map[pid][f["feature_name"]] = f["feature_value"]
+
+    # Pobierz cover images
+    cur.execute(IMAGES_SQL)
+    images_map = {row["id_product"]: row["id_image"] for row in cur.fetchall()}
+
+    conn.close()
+
+    # Złóż produkty
+    products = []
+    for p in products_raw:
+        pid = p["id_product"]
+        link_rewrite = p.get("link_rewrite", "")
+
+        product = {
+            "ps_product_id": pid,
+            "product_name": p["product_name"],
+            "product_description": strip_html(p.get("description") or ""),
+            "category_name": p.get("category_name"),
+            "brand_name": p.get("brand_name"),
+            "features": features_map.get(pid, {}),
+            "price": float(p["price_brutto"]) if p["price_brutto"] else None,
+            "is_active": True,
+            "in_stock": (p.get("quantity") or 0) > 0,
+            "product_url": f"https://divezone.pl/{link_rewrite}.html" if link_rewrite else None,
+            "image_url": None,
+        }
+
+        # URL obrazka
+        image_id = images_map.get(pid)
+        if image_id and link_rewrite:
+            product["image_url"] = f"https://divezone.pl/{image_id}-large_default/{link_rewrite}.jpg"
+
+        # Document text do embeddingu
+        product["document_text"] = build_document_text({**product, **p})
+
+        products.append(product)
+
+    logger.info("Przygotowano %d produktów z document_text", len(products))
+    return products
+
+
+if __name__ == "__main__":
+    open_mysql_access()
+    try:
+        products = extract_products(limit=5)
+        for p in products:
+            print(f"\n{'─'*60}")
+            print(f"ID: {p['ps_product_id']} | {p['product_name']}")
+            print(f"Cena: {p['price']} PLN | Kategoria: {p['category_name']} | Marka: {p['brand_name']}")
+            print(f"W magazynie: {p['in_stock']} | Features: {json.dumps(p['features'], ensure_ascii=False)}")
+            print(f"URL: {p['product_url']}")
+            print(f"IMG: {p['image_url']}")
+            print(f"\nDOCUMENT_TEXT:\n{p['document_text']}")
+    finally:
+        close_mysql_access()

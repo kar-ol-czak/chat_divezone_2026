@@ -1,0 +1,69 @@
+product_id,nazwa,marka,active,visibility,plec_wykryta,podstawa_plci,proponowany_chart,rozmiary_PS,status
+6167,Bare 2mm Elate Short Damski,Bare,1,both,K,nazwa: damski,Bare/K,"10, 12, 14, 2, 4, 6, 8",OK — plec z nazwy
+6073,BARE 2mm Revel Shorty - męskie,Bare,1,both,M,nazwa: meski,Bare/M,"2XL, 3XL, L, M, ML, S, XL",OK — plec z nazwy
+5914,Bare 2mm Sport S-Flex Shorty,Bare,1,none,?,nazwa: brak znacznika plci,—,"2XL, 2XLS, 3XL, L, LT, M, ML, MLS, MLT, MS, MT, S, XL, XLS, XLT","PŁEĆ NIEJEDNOZNACZNA (nazwa: brak znacznika plci) — DO DECYZJI, sugestia M?"
+6166,Bare 3/2mm Elate Full Damski,Bare,1,both,K,nazwa: damski,Bare/K,"10, 12, 14, 2, 4, 6, 8",OK — plec z nazwy
+6164,Bare 5mm Elate Full Damski,Bare,1,both,K,nazwa: damski,Bare/K,"10, 10 Plus, 12, 12 Plus, 14, 2, 4, 4T, 6, 6T, 8, 8 Plus, 8T",OK — plec z nazwy
+6838,BARE 5mm Evoke Full,Bare,1,both,?,nazwa: brak znacznika plci,—,"10, 10 Plus, 12, 12 Plus, 14, 2, 4, 6, 6+, 6T, 8, 8 Plus, 8T","PŁEĆ NIEJEDNOZNACZNA (nazwa: brak znacznika plci) — DO DECYZJI, sugestia K?"
+6831,BARE 5mm Reactive Full,Bare,1,both,?,nazwa: brak znacznika plci,—,"2XL, 2XLS, 3XL, L, LS, LT, M, ML, MLS, MLT, MS, MT, S, XL, XLS, XLT","PŁEĆ NIEJEDNOZNACZNA (nazwa: brak znacznika plci) — DO DECYZJI, sugestia M?"
+6165,Bare 7mm Elate Full Damski,Bare,1,both,K,nazwa: damski,Bare/K,"10, 10 Plus, 12, 12 Plus, 14, 2, 4, 4T, 6, 6 Plus, 6T, 8, 8 Plus, 8T",OK — plec z nazwy
+6834,BARE 7mm Reactive Full,Bare,1,both,?,nazwa: brak znacznika plci,—,"2XL, 2XLS, 3XL, L, LS, LT, M, ML, MLS, MLT, MS, MT, S, XL, XLS, XLT","PŁEĆ NIEJEDNOZNACZNA (nazwa: brak znacznika plci) — DO DECYZJI, sugestia M?"
+6842,BARE Exowear Full Suit Damski,Bare,0,none,K,nazwa: damski,Bare/K,"10, 10 Plus, 12, 12 Plus, 14, 2, 4, 4T, 6, 6 Plus, 6T, 8, 8 Plus, 8T",OK — plec z nazwy
+6843,BARE Exowear Full Suit Męski,Bare,0,none,M,nazwa: meski,Bare/M,"2XL, 2XLS, 3XL, L, LS, LT, M, ML, MLS, MLT, MS, MT, S, XL, XLS, XLT",OK — plec z nazwy
+4553,BARE Guppy dla dzieci,Bare,1,both,DZIECI,nazwa: dla dzieci,—,"2, 4",DZIECI — brak charta dorosłego (poza zakresem M/K)
+5090,BARE Nixie Full 3/2mm Damski roz. 2,Bare,1,both,K,nazwa: damski,Bare/K,2,OK — plec z nazwy
+5095,BARE Nixie Shorty 2mm Damskie,Bare,1,none,K,nazwa: damski,Bare/K,"10, 2",OK — plec z nazwy
+6839,BARE Nixie Ultra Full 5mm Damski,Bare,1,both,K,nazwa: damski,Bare/K,"10, 10 Plus, 12, 12 Plus, 14, 2, 4, 4T, 6, 6+, 6T, 8, 8 Plus, 8T",OK — plec z nazwy
+6841,BARE Nixie Ultra Full 7mm Damski,Bare,1,both,K,nazwa: damski,Bare/K,"10, 10 Plus, 12, 12 Plus, 14, 2, 4, 4T, 6, 6+, 6T, 8, 8 Plus, 8T",OK — plec z nazwy
+5105,BARE Nixie Vest 7mm Damska,Bare,1,none,K,nazwa: damski,Bare/K,"10, 12, 14, 2, 4, 4T, 6, 6T, 8, 8T",OK — plec z nazwy
+5913,BARE Revel 3/2mm Full Męski,Bare,1,both,M,nazwa: meski,Bare/M,"2XL, 3XL, L, M, ML, S, XL",OK — plec z nazwy
+6183,Bare Revel 5mm Full Męski,Bare,1,both,M,nazwa: meski,Bare/M,"2XL, 2XLS, 3XL, L, LS, LT, M, ML, MLS, MLT, MS, MT, S, XL, XLS, XLT",OK — plec z nazwy
+5911,Bare Revel 7mm Full Męski,Bare,1,both,M,nazwa: meski,Bare/M,"2XL, 2XLS, 3XL, L, LS, LT, M, ML, MLS, MLT, MS, MT, S, XL, XLS, XLT",OK — plec z nazwy
+3537,BARE Sport 2mm Shorty Damskie roz. 8,Bare,1,none,K,nazwa: damski,Bare/K,8,OK — plec z nazwy
+5107,BARE Sport S-Flex 2mm Shorty Męski,Bare,1,none,M,nazwa: meski,Bare/M,"M, ML",OK — plec z nazwy
+5111,BARE Sport S-Flex Vest 7mm Męski,Bare,1,both,M,nazwa: meski,Bare/M,"2XL, 2XLS, 3XL, L, LS, LT, M, ML, MLS, MLT, MS, MT, S, XL, XLS, XLT",OK — plec z nazwy
+7331,BARE Sport Vest 7mm Damski,Bare,1,both,K,nazwa: damski,Bare/K,"2XL, 2XLS, 3XL, L, LS, LT, M, ML, MLS, MLT, MS, MT, S, XL, XLS, XLT",OK — plec z nazwy
+4554,BARE Tadpole dla dzieci,Bare,1,both,DZIECI,nazwa: dla dzieci,—,2,DZIECI — brak charta dorosłego (poza zakresem M/K)
+6848,Bluza damska BARE Exowear,Bare,0,none,K,nazwa: damski,Bare/K,"10, 12, 14, 2, 4, 6, 8",OK — plec z nazwy
+6849,Bluza damska BARE Exowear - na zamek,Bare,0,none,K,nazwa: damski,Bare/K,"10, 12, 14, 2, 4, 6, 8",OK — plec z nazwy
+6844,Bluza męska BARE Exowear,Bare,0,none,M,nazwa: meski,Bare/M,"2XL, 3XL, L, M, ML, S, XL",OK — plec z nazwy
+6845,Bluza zapinana BARE Exowear - męska,Bare,1,both,M,nazwa: meski,Bare/M,"L, XL",OK — plec z nazwy
+1146,Pianka BARE Dolphin Floaty 1mm,Bare,1,both,?,nazwa: brak znacznika plci,—,"2, 4, 6","PŁEĆ NIEJEDNOZNACZNA (nazwa: brak znacznika plci) — DO DECYZJI, sugestia K?"
+1890,"Pianka BARE Sprint Shorty 1,5mm",Bare,1,none,?,nazwa: brak znacznika plci,—,"2, 4","PŁEĆ NIEJEDNOZNACZNA (nazwa: brak znacznika plci) — DO DECYZJI, sugestia K?"
+6850,Spodnie BARE Exowear - damskie,Bare,0,none,K,nazwa: damski,Bare/K,"10, 12, 14, 2, 4, 6, 8",OK — plec z nazwy
+6846,Spodnie BARE Exowear - męskie,Bare,0,none,M,nazwa: meski,Bare/M,"2XL, 3XL, L, M, ML, S, XL",OK — plec z nazwy
+5073,SCUBAPRO Definition 3mm Damski,Scubapro,1,both,K,nazwa: damski,Scubapro/K,"L, M, S, XL, XS",OK — plec z nazwy
+4718,SCUBAPRO Definition 3mm Męski,Scubapro,1,both,M,nazwa: meski,Scubapro/M,"2XL, 3XL, L, M, S, XL",OK — plec z nazwy
+4170,SCUBAPRO Definition 5mm Damski,Scubapro,1,both,K,nazwa: damski,Scubapro/K,"2XL, L, LS, LT, M, MT, S, XL, XLS, XS",OK — plec z nazwy
+4171,SCUBAPRO Definition 5mm Męski,Scubapro,1,both,M,nazwa: meski,Scubapro/M,"2XL, 3XL, L, LS, LT, M, MT, S, XL, XLS",OK — plec z nazwy
+3197,SCUBAPRO Definition 7mm Damski,Scubapro,1,both,K,nazwa: damski,Scubapro/K,"2XL, L, LS, LT, M, MT, S, XL, XLS, XS",OK — plec z nazwy
+5074,SCUBAPRO Definition 7mm Męski,Scubapro,1,both,M,nazwa: meski,Scubapro/M,"2XL, 2XLS, 3XL, 4XL, L, LS, LT, M, MT, S, XL, XLS",OK — plec z nazwy
+4697,"SCUBAPRO Definition Shorty 2,5mm Damski",Scubapro,1,both,K,nazwa: damski,Scubapro/K,"2XL, L, M, S, XL, XS",OK — plec z nazwy
+3193,"SCUBAPRO Definition Shorty 2,5mm Męski",Scubapro,1,both,M,nazwa: meski,Scubapro/M,"2XL, 3XL, 4XL, L, M, S, XL",OK — plec z nazwy
+3198,SCUBAPRO Definition Vest 6mm Damski,Scubapro,1,both,K,nazwa: damski,Scubapro/K,"2XL, L, LS, LT, M, MT, S, XL, XLS, XS",OK — plec z nazwy
+4716,SCUBAPRO Definition Vest 6mm Męski,Scubapro,1,both,M,nazwa: meski,Scubapro/M,"2XL, 2XLS, 3XL, 4XL, L, LS, LT, M, MT, S, XL, XLS",OK — plec z nazwy
+6185,SCUBAPRO Everflex 3/2mm Damski,Scubapro,1,none,K,nazwa: damski,Scubapro/K,L,OK — plec z nazwy
+6184,SCUBAPRO Everflex 3/2mm Męski,Scubapro,1,none,M,nazwa: meski,Scubapro/M,S,OK — plec z nazwy
+2278,SCUBAPRO Everflex 5/4mm Damski,Scubapro,1,both,K,nazwa: damski,Scubapro/K,"M tall, S",OK — plec z nazwy
+5075,SCUBAPRO Everflex 5/4mm Męski,Scubapro,1,both,M,nazwa: meski,Scubapro/M,"L, M, XL, XXL",OK — plec z nazwy
+5078,SCUBAPRO Everflex 6mm Vest Damski,Scubapro,1,both,K,nazwa: damski,Scubapro/K,"2XL, L, LS, M, MS, MT, S, ST, XL, XS",OK — plec z nazwy
+5077,SCUBAPRO Everflex 7/5mm Męski,Scubapro,1,none,M,nazwa: meski,Scubapro/M,L,OK — plec z nazwy
+6672,SCUBAPRO Everflex Yulex-Dive 3/2mm Męski,Scubapro,0,both,M,nazwa: meski,Scubapro/M,"2XL, 3XL, L, LS, M, MT, S, XL, XLS, XLT",OK — plec z nazwy
+6677,SCUBAPRO Everflex Yulex-Dive 5/4mm Damski,Scubapro,1,both,K,nazwa: damski,Scubapro/K,"2XL, LS, M, MS, MT, S, ST, XL, XS",OK — plec z nazwy
+6675,SCUBAPRO Everflex Yulex-Dive 5/4mm Męski,Scubapro,1,both,M,nazwa: meski,Scubapro/M,"2XL, 3XL, L, LS, LT, M, MT, S, XL, XLS",OK — plec z nazwy
+6678,"SCUBAPRO Everflex Yulex-Dive 7,5/5 mm Damski",Scubapro,1,both,K,nazwa: damski,Scubapro/K,"2XL, LS, M, MS, MT, S, ST, XL, XS",OK — plec z nazwy
+6676,"SCUBAPRO Everflex Yulex-Dive 7,5/5 mm Męski",Scubapro,1,both,M,nazwa: meski,Scubapro/M,"2XL, 3XL, L, LS, M, MT, S, XL, XLS, XLT",OK — plec z nazwy
+5374,SCUBAPRO Hybrid Vest 6mm Damski,Scubapro,1,none,K,nazwa: damski,Scubapro/K,"L, M, S, XL, XS",OK — plec z nazwy
+5373,SCUBAPRO Hybrid Vest 6mm Męski,Scubapro,1,none,M,nazwa: meski,Scubapro/M,"2XL, 3XL, 4XL, L, L short, L tall, M, S, XL",OK — plec z nazwy
+6681,SCUBAPRO Kamizelka Everflex Yulex-Dive 2 mm Hooded Vest Unisex,Scubapro,0,both,UNISEX,nazwa: unisex,—,"2XL, L, M, S, XL",UNISEX — DO DECYZJI (chart M? K? oba? bot i tak pyta o plec)
+6680,SCUBAPRO Kamizelka Everflex Yulex-Dive 5/3mm Hooded Vest Damska,Scubapro,1,both,K,nazwa: damski,Scubapro/K,"2XL, L, M, S, XL, XS",OK — plec z nazwy
+6679,SCUBAPRO Kamizelka Everflex Yulex-Dive 5/3mm Hooded Vest Męska,Scubapro,1,both,M,nazwa: meski,Scubapro/M,"2XL, 3XL, L, M, S, XL",OK — plec z nazwy
+4243,Scubapro OneFlex Overal 5mm,Scubapro,1,none,?,nazwa: brak znacznika plci,Scubapro/M + Scubapro/K,"MESKI:[L,L-L,L-R,M,S,XL,XXL,XXXL] DAMSKI:[L,M,S,XL,XS]",BI-GENDER (grupy ROZMIAR MĘSKI/DAMSKI) — DO DECYZJI: 2 charty?
+4244,Scubapro OneFlex Overal 7mm,Scubapro,1,none,?,nazwa: brak znacznika plci,Scubapro/M + Scubapro/K,"MESKI:[L,L-L,L-R,M,S,XL,XXL,XXXL] DAMSKI:[L,M,S,XL,XS]",BI-GENDER (grupy ROZMIAR MĘSKI/DAMSKI) — DO DECYZJI: 2 charty?
+4245,Scubapro OneFlex Vest 5mm ocieplacz rozmiar L,Scubapro,1,none,?,nazwa: brak znacznika plci,—,,"PŁEĆ NIEJEDNOZNACZNA (nazwa: brak znacznika plci) — DO DECYZJI, sugestia M?"
+7563,Scubapro Rebel 5 Kamizelka z Kapturem dla dzieci,Scubapro,1,both,DZIECI,nazwa: dla dzieci,—,"L, M, S, XL, XS",DZIECI — brak charta dorosłego (poza zakresem M/K)
+4851,SCUBAPRO Rebel Overal 6mm,Scubapro,1,both,?,nazwa: brak znacznika plci,—,"L, M, S, XL","PŁEĆ NIEJEDNOZNACZNA (nazwa: brak znacznika plci) — DO DECYZJI, sugestia M?"
+3027,"SCUBAPRO Rebel Overall 2,5mm",Scubapro,1,both,?,nazwa: brak znacznika plci,—,"L, M, S, XL","PŁEĆ NIEJEDNOZNACZNA (nazwa: brak znacznika plci) — DO DECYZJI, sugestia M?"
+3365,SCUBAPRO Rebel Shorty 2mm pianka,Scubapro,1,both,?,nazwa: brak znacznika plci,—,"L, M, S, XL, XS, XXS","PŁEĆ NIEJEDNOZNACZNA (nazwa: brak znacznika plci) — DO DECYZJI, sugestia M?"
+5444,SCUBAPRO UPF 50 Steamer Damski,Scubapro,1,both,K,nazwa: damski,Scubapro/K,"L, M, S, XL, XS",OK — plec z nazwy
+5445,SCUBAPRO UPF 50 Steamer Męski,Scubapro,1,both,M,nazwa: meski,Scubapro/M,"2XL, 3XL, L, M, S, XL",OK — plec z nazwy

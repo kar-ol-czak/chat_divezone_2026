@@ -1,0 +1,225 @@
+{
+  "concept_key": "ZESTAW_SKRZYDLO_SINGLE",
+  "name_pl": "skrzydło z uprzężą do poj. butli",
+  "definition": "Kompletny zestaw wypornościowy typu backplate and wing, przeznaczony do nurkowania z pojedynczą butlą. Składa się z worka wypornościowego umieszczonego wyłącznie na plecach, sztywnej lub miękkiej płyty (backplate) oraz uprzęży. W przeciwieństwie do klasycznych jacketów, skrzydło nie posiada komór powietrznych na bokach ani na klatce piersiowej, co zapewnia nurkowi nieograniczoną swobodę ruchów i znacznie ułatwia utrzymanie idealnie poziomej sylwetki (trymu) pod wodą.",
+  "subtypes_client": [
+    {
+      "name": "Zestawy rekreacyjne i uniwersalne",
+      "description": "Klasyczne konfiguracje ze stalową lub aluminiową płytą, standardową uprzężą i workiem o wyporności około 13-16 l (13 l to dolna granica produkcyjna). Pasują do pojedynczej butli 12-15 l w suchym skafandrze. Przy grubej piance mokrej wyporność rośnie przez kompresję na głębokości i wybór wymaga konsultacji."
+    },
+    {
+      "name": "Zestawy podróżne (Travel)",
+      "description": "Ultralekkie zestawy zaprojektowane z myślą o limitach bagażowych w samolotach. Wykorzystują miękkie płyty, szkieletowe konstrukcje aluminiowe lub karbonowe. Mają mniejszą wagę (często poniżej 3 kg) i mniejszą wyporność (ok. 10-13 kg), optymalną do nurkowania w ciepłych wodach w cienkich piankach."
+    }
+  ],
+  "synonyms": {
+    "official": [
+      {
+        "text": "Skrzydło do pojedynczej butli",
+        "evidence_id": "EV-A-004"
+      }
+    ],
+    "close": [
+      {
+        "text": "skrzydła do nurkowania",
+        "evidence_id": "EV-A-011"
+      },
+      {
+        "text": "skrzydła nurkowe",
+        "evidence_id": "EV-A-010"
+      }
+    ],
+    "slang": [
+      {
+        "text": "jacket nurkowy skrzydło",
+        "evidence_id": "EV-A-023"
+      }
+    ],
+    "anglicisms": [
+      {
+        "text": "Backplate and wing setup",
+        "evidence_id": "EV-A-051"
+      },
+      {
+        "text": "Diving Wing",
+        "evidence_id": "EV-A-050"
+      },
+      {
+        "text": "backplate wing bcd",
+        "evidence_id": "EV-A-056"
+      }
+    ],
+    "misspelled": [
+      {
+        "text": "bcd+3",
+        "evidence_id": "EV-A-048"
+      },
+      {
+        "text": "bcd nurkowanie co to",
+        "evidence_id": "EV-A-046"
+      }
+    ]
+  },
+  "longtail_phrases": [
+    {
+      "text": "Skrzydło nurkowe tecline",
+      "evidence_id": "EV-A-001"
+    },
+    {
+      "text": "Skrzydło nurkowe XDEEP",
+      "evidence_id": "EV-A-003"
+    },
+    {
+      "text": "skrzydło nurkowe halcyon",
+      "evidence_id": "EV-A-007"
+    },
+    {
+      "text": "skrzydło nurkowe oms",
+      "evidence_id": "EV-A-008"
+    },
+    {
+      "text": "backplate wing vs bcd",
+      "evidence_id": "EV-A-057"
+    },
+    {
+      "text": "backplate wing weights",
+      "evidence_id": "EV-A-069"
+    },
+    {
+      "text": "backplate wing weight pockets",
+      "evidence_id": "EV-A-060"
+    },
+    {
+      "text": "backplate wing harness",
+      "evidence_id": "EV-A-061"
+    },
+    {
+      "text": "xdeep backplate wing",
+      "evidence_id": "EV-A-070"
+    }
+  ],
+  "purchase_parameters": [
+    {
+      "name": "Wyporność worka (Lift capacity)",
+      "description": "Kluczowy parametr dobierany do ciężaru zabieranego gazu oraz utraty wyporu kombinezonu na głębokości. Single 12-15 l z suchym skafandrem: worek 13-16 l (rządzi sam gaz, kompresja bliska zeru). Single z grubą pianką mokrą: wyporność rośnie przez kompresję, wybór wymaga konsultacji. Single z lekką pianką w ciepłych wodach: 10-13 l wystarcza."
+    },
+    {
+      "name": "Waga całkowita i gabaryty",
+      "description": "Kryterium decydujące przy częstych podróżach lotniczych. Zestawy travel ważą około 2.5-3 kg, podczas gdy klasyczne zestawy ze stalową płytą mogą ważyć ponad 5 kg, co jednak pomaga zredukować ilość ołowiu na pasie."
+    },
+    {
+      "name": "Obecność kieszeni balastowych",
+      "description": "Wiele skrzydeł sprzedawanych jest jako czyste uprzęże. Zintegrowane kieszenie balastowe (często w rozmiarach M lub XL) trzeba dobrać i dokupić osobno, co pozwala na idealne dopasowanie do potrzeb nurka."
+    },
+    {
+      "name": "Typ uprzęży",
+      "description": "Uprząż jednoczęściowa (DIR) jest bezawaryjna i minimalistyczna, ale wymaga wprawy przy ubieraniu. Uprząż regulowana (często oznaczana jako Deluxe) posiada klamry ułatwiające rozpinanie, co jest bardzo wygodne na powierzchni."
+    }
+  ],
+  "cross_sell": [
+    {
+      "product": "Zintegrowane kieszenie balastowe",
+      "concept_key": "KIESZENIE_ZINTEGROWANE",
+      "description": "Aż 43.5% klientów kupujących skrzydło single dobiera do niego zintegrowany system balastowy, ponieważ wiele modeli nie posiada go w standardzie.",
+      "evidence_id": "EV-S-002"
+    },
+    {
+      "product": "Kieszenie trymujące na pas butli",
+      "concept_key": "TRYMOWKA",
+      "description": "Klienci wybierający lekkie skrzydła wyjazdowe często dokupują kieszenie trymujące, aby optymalnie rozłożyć balast i odciążyć talię.",
+      "evidence_id": "EV-S-005"
+    },
+    {
+      "product": "Automat oddechowy do pojedynczej butli",
+      "concept_key": "ZESTAW_AUTOMATU_REKR",
+      "description": "Podstawowy element wyposażenia kupowany często razem z pierwszym zestawem wypornościowym po ukończeniu kursu podstawowego.",
+      "evidence_id": "EV-B-001"
+    }
+  ],
+  "faq": [
+    {
+      "question": "Jakie skrzydło do nurkowania na początek wybrać?",
+      "answer": "Dla początkujących po kursie OWD najlepiej sprawdzi się zestaw rekreacyjny z workiem typu oponka (donut) o wyporności około 13-17 kg. Warto wybrać model z regulowaną uprzężą, która ułatwia zakładanie i zdejmowanie sprzętu, oraz dokupić zintegrowane kieszenie balastowe, aby zrezygnować z niewygodnego pasa.",
+      "evidence_ids": [
+        "EV-P-001",
+        "EV-A-061"
+      ]
+    },
+    {
+      "question": "Czym jest skrzydło nurkowe i czym różni się od jacketu?",
+      "answer": "Skrzydło to worek wypornościowy umieszczony wyłącznie na plecach, połączony ze sztywną płytą i uprzężą. W przeciwieństwie do jacketu, nie pompuje się na bokach i brzuchu. Daje to niesamowitą swobodę ruchów i ułatwia utrzymanie idealnie poziomej sylwetki pod wodą. Obecnie skrzydła całkowicie wypierają klasyczne jackety.",
+      "evidence_ids": [
+        "EV-P-002",
+        "EV-A-067"
+      ]
+    },
+    {
+      "question": "Co to jest BCD w nurkowaniu?",
+      "answer": "BCD (Buoyancy Control Device) to ogólna, anglojęzyczna nazwa na sprzęt do kontroli pływalności. Zalicza się do niego zarówno klasyczne jackety, jak i nowoczesne skrzydła z płytą.",
+      "evidence_ids": [
+        "EV-P-008"
+      ]
+    },
+    {
+      "question": "Czy do skrzydła muszę dokupić inflator i wąż?",
+      "answer": "Nie, inflator oraz wąż średniego ciśnienia (LP) są standardowym wyposażeniem każdego nowego zestawu skrzydła do pojedynczej butli. Wąż podłącza się do pierwszego stopnia automatu oddechowego.",
+      "evidence_ids": [
+        "EV-A-059"
+      ]
+    },
+    {
+      "question": "Czy lekkie skrzydło wyjazdowe (travel) poradzi sobie w zimnej wodzie w Polsce?",
+      "answer": "Skrzydła typu travel mają mniejszą wyporność (ok. 10-13 l) i mniejsze kieszenie balastowe. Do polskich warunków z grubą pianką mokrą taka wyporność jest niewystarczająca, bo pianka traci wypór na głębokości. Dla suchego skafandra z pojedynczą butlą 12-15 l worek 13-16 l wystarcza, a 10-13 l travelowego jest na dolnej granicy. Przy nietypowej konfiguracji skontaktuj się z nami (dive@divezone.pl, 56 307 03 03).",
+      "evidence_ids": [
+        "EV-A-068",
+        "EV-A-066"
+      ]
+    }
+  ],
+  "seller_notes": "W Polsce skrzydła całkowicie dominują rynek, wypierając klasyczne jackety nawet wśród początkujących nurków rekreacyjnych. Klienci najczęściej wybierają gotowe, pełne zestawy (worek, płyta, uprząż, adapter do pojedynczej butli). Zdecydowanym liderem sprzedaży jest marka XDEEP (serie Zen, Ghost, Zeos). Ważne przy doradzaniu: kieszenie balastowe często nie są w standardzie i trzeba je dobrać osobno, co robi prawie połowa klientów (43.5%). Przy zestawach travel zawsze weryfikuj cięższą konfigurację klienta (stalowa butla, dużo balastu, gruba pianka), aby uniknąć problemu ze zbyt małą wypornością worka.",
+  "concept_number": 29,
+  "missing_data": [
+    "Brak precyzyjnych danych o awaryjności poszczególnych modeli worków wypornościowych.",
+    "Brak statystyk dotyczących preferencji wyboru materiału płyty (stal vs aluminium) w ujęciu procentowym."
+  ],
+  "name_en": "Backplate and wing setup",
+  "not_to_confuse": [
+    {
+      "concept_key": "JACKET",
+      "explanation": "Jacket pompuje się z każdej strony (również pod ramionami i na brzuchu), co może ściskać klatkę piersiową. Skrzydło pompuje się wyłącznie na plecach."
+    },
+    {
+      "concept_key": "ZESTAW_SKRZYDLO_TWIN",
+      "explanation": "Skrzydła do twina mają znacznie większą wyporność (zazwyczaj 19-23 kg) i szerszy rozstaw worka. Użycie ich z pojedynczą butlą powoduje zjawisko owijania się worka wokół butli, co utrudnia zrzucanie gazu."
+    }
+  ],
+  "related_concept_keys": [
+    "BACKPLATE",
+    "UPRZAZ",
+    "SKRZYDLO",
+    "KIESZENIE_ZINTEGROWANE",
+    "JACKET",
+    "BUTLA_NURKOWA",
+    "TRYMOWKA"
+  ],
+  "subtypes_technical": [
+    {
+      "name": "Kształt worka: Oponka (Donut)",
+      "description": "Worek w kształcie zamkniętego koła. Zdecydowanie najpopularniejszy w konfiguracji z pojedynczą butlą, ponieważ umożliwia swobodny przepływ gazu wewnątrz worka, co ułatwia trymowanie i zrzucanie powietrza."
+    },
+    {
+      "name": "Materiał płyty (Backplate)",
+      "description": "Płyty stalowe ważą około 2.5-3 kg i stanowią doskonały balast zintegrowany, odciążając pas. Płyty aluminiowe ważą około 0.8-1 kg i są wybierane głównie przez osoby często podróżujące samolotami."
+    }
+  ],
+  "ungrounded_additions": [
+    {
+      "text": "skrzydło",
+      "reason": "Powszechnie używany skrót myślowy w slangu nurkowym na cały zestaw BCD typu backplate and wing."
+    },
+    {
+      "text": "oponka",
+      "reason": "Potoczne określenie worka o kształcie zamkniętego koła (donut), dominującego w skrzydłach do pojedynczej butli."
+    }
+  ]
+}

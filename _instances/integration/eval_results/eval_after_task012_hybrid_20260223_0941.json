@@ -1,0 +1,2709 @@
+{
+  "tag": "after_task012_hybrid",
+  "timestamp": "2026-02-23T09:41:20.661396",
+  "config": {
+    "embedding_model": "text-embedding-3-large",
+    "embedding_dimensions": 1536,
+    "search_limit": 10,
+    "search_mode": "hybrid",
+    "total_queries": 55,
+    "rrf_k": 60,
+    "track_limit": 30
+  },
+  "aggregate_metrics": {
+    "zero_results_rate": 0.0,
+    "category_hit_at_5": 0.9565,
+    "category_hit_at_10": 0.9783,
+    "brand_hit_at_5": 1.0,
+    "brand_hit_at_10": 1.0,
+    "avg_product_mrr": 0.875,
+    "avg_product_recall_at_5": 0.9167,
+    "avg_top_similarity": 0.0396,
+    "avg_similarity_top5": 0.0353,
+    "track_dominance": {
+      "semantic": 21,
+      "fulltext": 17,
+      "trigram": 17
+    }
+  },
+  "queries_evaluated": {
+    "with_expected_categories": 46,
+    "with_expected_brands": 12,
+    "with_expected_products": 12
+  },
+  "details": [
+    {
+      "query_id": "Q001",
+      "query": "pianka",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0443,
+      "avg_similarity_top5": 0.0421,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.5,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 6,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "AQUALUNG Hydroflex, Pianka Męska 3 mm",
+          "brand": "AQUALUNG",
+          "category": "Skafandry Na CIEPŁE wody",
+          "similarity": 0.0443
+        },
+        {
+          "name": "AQUALUNG Hydroflex, Pianka Damska 3 mm",
+          "brand": "AQUALUNG",
+          "category": "Skafandry Na CIEPŁE wody",
+          "similarity": 0.0438
+        },
+        {
+          "name": "Tusa CONTOUR PLUS 525, Pianka Męska 5 mm",
+          "brand": "TUSA",
+          "category": "Skafandry mokre",
+          "similarity": 0.041
+        },
+        {
+          "name": "SCUBAPRO Rebel Shorty 2mm pianka",
+          "brand": "SCUBAPRO",
+          "category": "Skafandry Na CIEPŁE wody",
+          "similarity": 0.0408
+        },
+        {
+          "name": "Tusa CONTOUR PLUS 525, Pianka Damska 5 mm",
+          "brand": "TUSA",
+          "category": "Skafandry mokre",
+          "similarity": 0.0404
+        }
+      ]
+    },
+    {
+      "query_id": "Q002",
+      "query": "pianka na zimną wodę",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0323,
+      "avg_similarity_top5": 0.0299,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "dominant_track": "trigram",
+      "semantic_rrf": 9,
+      "fulltext_rrf": 0,
+      "trigram_rrf": 6,
+      "top_5_results": [
+        {
+          "name": "Pianka Mares PIONEER 5 MAN",
+          "brand": "MARES",
+          "category": "Skafandry Na ZIMNE wody",
+          "similarity": 0.0323
+        },
+        {
+          "name": "Pianka BARE Dolphin Floaty 1mm",
+          "brand": "BARE",
+          "category": "Skafandry Na CIEPŁE wody",
+          "similarity": 0.0308
+        },
+        {
+          "name": "Pianka BARE Sprint Shorty 1,5mm",
+          "brand": "BARE",
+          "category": "Skafandry Na CIEPŁE wody",
+          "similarity": 0.0303
+        },
+        {
+          "name": "Pianka Aqualung Aquaflex 5mm Woman roz. M lub ML",
+          "brand": "AQUALUNG",
+          "category": "Skafandry mokre i akcesoria",
+          "similarity": 0.0298
+        },
+        {
+          "name": "SCUBAPRO Rebel Shorty 2mm pianka",
+          "brand": "SCUBAPRO",
+          "category": "Skafandry Na CIEPŁE wody",
+          "similarity": 0.0263
+        }
+      ]
+    },
+    {
+      "query_id": "Q003",
+      "query": "pianka na Morze Czerwone",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0304,
+      "avg_similarity_top5": 0.0238,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "dominant_track": "trigram",
+      "semantic_rrf": 7,
+      "fulltext_rrf": 0,
+      "trigram_rrf": 6,
+      "top_5_results": [
+        {
+          "name": "Pianka Mares PIONEER 5 MAN",
+          "brand": "MARES",
+          "category": "Skafandry Na ZIMNE wody",
+          "similarity": 0.0304
+        },
+        {
+          "name": "FILTR CZERWONY 67 MM DIVEVOLK",
+          "brand": "DIVEVOLK",
+          "category": "Fotografia i Video",
+          "similarity": 0.029
+        },
+        {
+          "name": "AQUALUNG Hydroflex, Pianka Męska 3 mm",
+          "brand": "AQUALUNG",
+          "category": "Skafandry Na CIEPŁE wody",
+          "similarity": 0.0267
+        },
+        {
+          "name": "Pianka BARE Dolphin Floaty 1mm",
+          "brand": "BARE",
+          "category": "Skafandry Na CIEPŁE wody",
+          "similarity": 0.0164
+        },
+        {
+          "name": "Czapka Mola Mola czerwona",
+          "brand": null,
+          "category": "Czapki",
+          "similarity": 0.0164
+        }
+      ]
+    },
+    {
+      "query_id": "Q004",
+      "query": "BARE 7mm",
+      "intent": "navigational",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0429,
+      "avg_similarity_top5": 0.0377,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "brand_hit_at_5": true,
+      "brand_hit_at_10": true,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 10,
+      "trigram_rrf": 3,
+      "top_5_results": [
+        {
+          "name": "Kaptur BARE Elastek Coldwater Hood 7mm",
+          "brand": "BARE",
+          "category": "Kaptury",
+          "similarity": 0.0429
+        },
+        {
+          "name": "Kaptur BARE Dry Hood 7/5mm",
+          "brand": "BARE",
+          "category": "Kaptury",
+          "similarity": 0.0423
+        },
+        {
+          "name": "Kaptur BARE Elastek Dry Hood 7/5mm",
+          "brand": "BARE",
+          "category": "Kaptury",
+          "similarity": 0.0403
+        },
+        {
+          "name": "Buty BARE Boots 7mm",
+          "brand": "BARE",
+          "category": "Buty",
+          "similarity": 0.0318
+        },
+        {
+          "name": "BARE 7mm Reactive Full",
+          "brand": "BARE",
+          "category": "Skafandry Na ZIMNE wody",
+          "similarity": 0.0311
+        }
+      ]
+    },
+    {
+      "query_id": "Q005",
+      "query": "Shearwater Teric",
+      "intent": "navigational",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0492,
+      "avg_similarity_top5": 0.0466,
+      "brand_hit_at_5": true,
+      "brand_hit_at_10": true,
+      "product_mrr": 1.0,
+      "product_recall_at_5": 1.0,
+      "product_recall_at_10": 1.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 6,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "SHEARWATER Teric",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0492
+        },
+        {
+          "name": "SHEARWATER Teric - szary",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0481
+        },
+        {
+          "name": "SHEARWATER Teric - niebieski",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0474
+        },
+        {
+          "name": "SHEARWATER Teric +  transmiter Swift",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0444
+        },
+        {
+          "name": "Nadajnik / transmiter Shearwater Swift",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0438
+        }
+      ]
+    },
+    {
+      "query_id": "Q006",
+      "query": "Shearwater Perdix",
+      "intent": "navigational",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0489,
+      "avg_similarity_top5": 0.0421,
+      "brand_hit_at_5": true,
+      "brand_hit_at_10": true,
+      "product_mrr": 1.0,
+      "product_recall_at_5": 1.0,
+      "product_recall_at_10": 1.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 4,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "SHEARWATER Perdix 2 Ti",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0489
+        },
+        {
+          "name": "Folia ochronna na wyświetlacz do SHEARWATER Perdix",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.045
+        },
+        {
+          "name": "SHEARWATER Perdix 2 Journey Bronze",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0442
+        },
+        {
+          "name": "Shearwater Perdix - osłona silikonowa",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0412
+        },
+        {
+          "name": "SHEARWATER Peregrine",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.031
+        }
+      ]
+    },
+    {
+      "query_id": "Q007",
+      "query": "komputer nurkowy",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0481,
+      "avg_similarity_top5": 0.0444,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.16666666666666666,
+      "dominant_track": "trigram",
+      "semantic_rrf": 9,
+      "fulltext_rrf": 10,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "SUUNTO NAUTIC S Komputer nurkowy",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.0481
+        },
+        {
+          "name": "Suunto Ocean Sand - smart komputer nurkowy",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.045
+        },
+        {
+          "name": "SUUNTO Nautic Komputer nurkowy (na bungee)",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.0435
+        },
+        {
+          "name": "AQUALUNG i100 komputer nurkowy",
+          "brand": "AQUALUNG",
+          "category": "Komputery AQUALUNG",
+          "similarity": 0.0429
+        },
+        {
+          "name": "SUUNTO Nautic Komputer nurkowy (na pasku)",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.0426
+        }
+      ]
+    },
+    {
+      "query_id": "Q008",
+      "query": "komputer do trimixu",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0299,
+      "avg_similarity_top5": 0.0281,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.6666666666666666,
+      "product_mrr": 0.0,
+      "product_recall_at_5": 0.0,
+      "product_recall_at_10": 0.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 9,
+      "fulltext_rrf": 0,
+      "trigram_rrf": 9,
+      "top_5_results": [
+        {
+          "name": "Komputer SHEARWATER Tern AMOLED",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0299
+        },
+        {
+          "name": "Komputer SHEARWATER TERN TX + transmiter SWIFT",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.028
+        },
+        {
+          "name": "Komputer SUUNTO D5 Wildberry",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.028
+        },
+        {
+          "name": "Halcyon Symbios komputer typu HUD + transmiter",
+          "brand": "HALCYON",
+          "category": "Komputery Halcyon",
+          "similarity": 0.0274
+        },
+        {
+          "name": "Komputer SUUNTO D5 All Black",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.0273
+        }
+      ]
+    },
+    {
+      "query_id": "Q009",
+      "query": "komputer nurkowy dla początkującego do 2000 zł",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0323,
+      "avg_similarity_top5": 0.0295,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.5,
+      "dominant_track": "trigram",
+      "semantic_rrf": 9,
+      "fulltext_rrf": 0,
+      "trigram_rrf": 8,
+      "top_5_results": [
+        {
+          "name": "AQUALUNG i100 komputer nurkowy",
+          "brand": "AQUALUNG",
+          "category": "Komputery AQUALUNG",
+          "similarity": 0.0323
+        },
+        {
+          "name": "SUUNTO NAUTIC S Komputer nurkowy",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.0311
+        },
+        {
+          "name": "Suunto Ocean Sand - smart komputer nurkowy",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.0296
+        },
+        {
+          "name": "SCUBAPRO Aladin A1 Komputer Nurkowy",
+          "brand": "SCUBAPRO",
+          "category": "Komputery SCUBAPRO",
+          "similarity": 0.0279
+        },
+        {
+          "name": "Garmin Descent G2 - czarny multisportowy komputer nurkowy",
+          "brand": "GARMIN",
+          "category": "Komputery Garmin",
+          "similarity": 0.0267
+        }
+      ]
+    },
+    {
+      "query_id": "Q010",
+      "query": "automat oddechowy",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0426,
+      "avg_similarity_top5": 0.0412,
+      "category_hit_at_5": false,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.0,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 8,
+      "fulltext_rrf": 9,
+      "trigram_rrf": 9,
+      "top_5_results": [
+        {
+          "name": "TUSA Torba na automat",
+          "brand": "TUSA",
+          "category": "Torby na Automaty",
+          "similarity": 0.0426
+        },
+        {
+          "name": "TECLINE Automat R4 TEC1",
+          "brand": "TECLINE",
+          "category": "TECLINE",
+          "similarity": 0.0411
+        },
+        {
+          "name": "TECLINE Automat R1 REC1",
+          "brand": "TECLINE",
+          "category": "TECLINE",
+          "similarity": 0.0409
+        },
+        {
+          "name": "Automat APEKS ATX40 / DS4",
+          "brand": "APEKS",
+          "category": "APEKS",
+          "similarity": 0.0408
+        },
+        {
+          "name": "Automat POSEIDON Cyklon 5000 + Octopus Cyklon",
+          "brand": "POSEIDON",
+          "category": "POSEIDON",
+          "similarity": 0.0406
+        }
+      ]
+    },
+    {
+      "query_id": "Q011",
+      "query": "automat na zimne wody Bałtyk",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.028,
+      "avg_similarity_top5": 0.0225,
+      "category_hit_at_5": false,
+      "category_hit_at_10": false,
+      "category_recall_at_5": 0.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 7,
+      "fulltext_rrf": 0,
+      "trigram_rrf": 6,
+      "top_5_results": [
+        {
+          "name": "TECLINE Automat V1 ICE TEC2",
+          "brand": "TECLINE",
+          "category": "TECLINE",
+          "similarity": 0.028
+        },
+        {
+          "name": "TECLINE Automat V1 ICE TEC1",
+          "brand": "TECLINE",
+          "category": "TECLINE",
+          "similarity": 0.0265
+        },
+        {
+          "name": "Automat TECLINE V2 ICE TEC1 zestaw DIR",
+          "brand": "TECLINE",
+          "category": "TECLINE",
+          "similarity": 0.0251
+        },
+        {
+          "name": "Grzałka Michalaka",
+          "brand": "DIVEZONE.PL",
+          "category": "APEKS",
+          "similarity": 0.0164
+        },
+        {
+          "name": "TECLINE Torba na automat zielona O2",
+          "brand": "TECLINE",
+          "category": "Akcesoria do automatów",
+          "similarity": 0.0164
+        }
+      ]
+    },
+    {
+      "query_id": "Q012",
+      "query": "Apeks XTX50",
+      "intent": "navigational",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0492,
+      "avg_similarity_top5": 0.0453,
+      "brand_hit_at_5": true,
+      "brand_hit_at_10": true,
+      "product_mrr": 1.0,
+      "product_recall_at_5": 1.0,
+      "product_recall_at_10": 1.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 7,
+      "trigram_rrf": 9,
+      "top_5_results": [
+        {
+          "name": "APEKS XTX50 / DST",
+          "brand": "APEKS",
+          "category": "APEKS",
+          "similarity": 0.0492
+        },
+        {
+          "name": "APEKS XTX50 2. stopień",
+          "brand": "APEKS",
+          "category": "2 stopnie",
+          "similarity": 0.0474
+        },
+        {
+          "name": "APEKS XTX50 / DST + Octopus XTX40",
+          "brand": "APEKS",
+          "category": "APEKS",
+          "similarity": 0.0439
+        },
+        {
+          "name": "Automat APEKS XTX50 / TEK3 x 2",
+          "brand": "APEKS",
+          "category": "APEKS",
+          "similarity": 0.0433
+        },
+        {
+          "name": "APEKS XTX 50 Octopus żółty",
+          "brand": "APEKS",
+          "category": "2 stopnie",
+          "similarity": 0.0429
+        }
+      ]
+    },
+    {
+      "query_id": "Q013",
+      "query": "latarka nurkowa",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.047,
+      "avg_similarity_top5": 0.0416,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.6666666666666666,
+      "dominant_track": "semantic",
+      "semantic_rrf": 8,
+      "fulltext_rrf": 8,
+      "trigram_rrf": 8,
+      "top_5_results": [
+        {
+          "name": "Latarka nurkowa ORCATORCH D620",
+          "brand": "OrcaTorch",
+          "category": "Duże z Głowicą",
+          "similarity": 0.047
+        },
+        {
+          "name": "Latarka nurkowa Orcatorch D710",
+          "brand": "OrcaTorch",
+          "category": "Małe i do Ręki",
+          "similarity": 0.0441
+        },
+        {
+          "name": "Latarka nurkowa ORCATORCH D800 2100lm",
+          "brand": "OrcaTorch",
+          "category": "Małe i do Ręki",
+          "similarity": 0.0432
+        },
+        {
+          "name": "Latarka nurkowa ORCATORCH D550 970lm",
+          "brand": "OrcaTorch",
+          "category": "Małe i do Ręki",
+          "similarity": 0.0424
+        },
+        {
+          "name": "Latarka nurkowa ORCATORCH D630 v2.0",
+          "brand": "OrcaTorch",
+          "category": "Duże z Głowicą",
+          "similarity": 0.0315
+        }
+      ]
+    },
+    {
+      "query_id": "Q014",
+      "query": "latarka główna do jaskini 4000 lumenów",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0313,
+      "avg_similarity_top5": 0.0294,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 0,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "Latarka HI-MAX X7, 3000 lm",
+          "brand": "HI-MAX",
+          "category": "Małe i do Ręki",
+          "similarity": 0.0313
+        },
+        {
+          "name": "Latarka HI-MAX H8 2000 lm",
+          "brand": "HI-MAX",
+          "category": "Małe i do Ręki",
+          "similarity": 0.0301
+        },
+        {
+          "name": "Latarka ORCATORCH D611",
+          "brand": "OrcaTorch",
+          "category": "Duże z Głowicą",
+          "similarity": 0.0288
+        },
+        {
+          "name": "Latarka TECLINE LED T6, 6000 lm",
+          "brand": "TECLINE",
+          "category": "Małe i do Ręki",
+          "similarity": 0.0286
+        },
+        {
+          "name": "Latarka TECLINE LED US-3000 Goodman, 3000lm",
+          "brand": "TECLINE",
+          "category": "Duże z Głowicą",
+          "similarity": 0.0285
+        }
+      ]
+    },
+    {
+      "query_id": "Q015",
+      "query": "skrzydło BCD",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.037,
+      "avg_similarity_top5": 0.0306,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.25,
+      "dominant_track": "trigram",
+      "semantic_rrf": 6,
+      "fulltext_rrf": 6,
+      "trigram_rrf": 9,
+      "top_5_results": [
+        {
+          "name": "Skrzydło APEKS WTX-D40 do singla",
+          "brand": "APEKS",
+          "category": "Skrzydła",
+          "similarity": 0.037
+        },
+        {
+          "name": "Skrzydło OMS Deep Ocean 2.0",
+          "brand": "OMS",
+          "category": "Skrzydła",
+          "similarity": 0.0303
+        },
+        {
+          "name": "Skrzydło TECLINE Peanut 21",
+          "brand": "TECLINE",
+          "category": "Skrzydła",
+          "similarity": 0.0298
+        },
+        {
+          "name": "Skrzydło TECLINE Donut 22",
+          "brand": "TECLINE",
+          "category": "Skrzydła",
+          "similarity": 0.0284
+        },
+        {
+          "name": "Skrzydło OMS Performance Mono 32LBS",
+          "brand": "OMS",
+          "category": "Skrzydła",
+          "similarity": 0.0276
+        }
+      ]
+    },
+    {
+      "query_id": "Q016",
+      "query": "skrzydło do twinset",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0309,
+      "avg_similarity_top5": 0.0285,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "dominant_track": "trigram",
+      "semantic_rrf": 7,
+      "fulltext_rrf": 5,
+      "trigram_rrf": 8,
+      "top_5_results": [
+        {
+          "name": "Skrzydło TECLINE Donut 22",
+          "brand": "TECLINE",
+          "category": "Skrzydła",
+          "similarity": 0.0309
+        },
+        {
+          "name": "Skrzydło TECLINE Donut 22 z uprzężą DIR",
+          "brand": "TECLINE",
+          "category": "Skrzydła z uprzężą do Twina",
+          "similarity": 0.0283
+        },
+        {
+          "name": "Skrzydło TECLINE Donut 30 Special Edition",
+          "brand": "TECLINE",
+          "category": "Skrzydła",
+          "similarity": 0.028
+        },
+        {
+          "name": "Skrzydło Scubapro X-TEK Pro TEK System Twin 60lbs",
+          "brand": "SCUBAPRO",
+          "category": "Skrzydła z uprzężą do Twina",
+          "similarity": 0.0277
+        },
+        {
+          "name": "Zestaw skrzydło XDEEP Zeos Deluxe",
+          "brand": "xDEEP",
+          "category": "Skrzydła z uprzężą do Poj. Butli",
+          "similarity": 0.0276
+        }
+      ]
+    },
+    {
+      "query_id": "Q017",
+      "query": "xDEEP Zeos",
+      "intent": "navigational",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0474,
+      "avg_similarity_top5": 0.0408,
+      "brand_hit_at_5": true,
+      "brand_hit_at_10": true,
+      "product_mrr": 1.0,
+      "product_recall_at_5": 1.0,
+      "product_recall_at_10": 1.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 10,
+      "trigram_rrf": 3,
+      "top_5_results": [
+        {
+          "name": "Skrzydło XDEEP ZEOS 28",
+          "brand": "xDEEP",
+          "category": "Skrzydła",
+          "similarity": 0.0474
+        },
+        {
+          "name": "Zestaw skrzydło XDEEP Zeos Standard",
+          "brand": "xDEEP",
+          "category": "Skrzydła z uprzężą do Poj. Butli",
+          "similarity": 0.047
+        },
+        {
+          "name": "Skrzydło XDEEP ZEOS 38",
+          "brand": "xDEEP",
+          "category": "Skrzydła",
+          "similarity": 0.0457
+        },
+        {
+          "name": "XDEEP Pęcherz wewnętrzny ZEOS",
+          "brand": "xDEEP",
+          "category": "Akcesoria",
+          "similarity": 0.0323
+        },
+        {
+          "name": "Zestaw skrzydło XDEEP Zeos Deluxe",
+          "brand": "xDEEP",
+          "category": "Skrzydła z uprzężą do Poj. Butli",
+          "similarity": 0.0315
+        }
+      ]
+    },
+    {
+      "query_id": "Q018",
+      "query": "suchy skafander",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0454,
+      "avg_similarity_top5": 0.0431,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.3333333333333333,
+      "dominant_track": "trigram",
+      "semantic_rrf": 7,
+      "fulltext_rrf": 10,
+      "trigram_rrf": 9,
+      "top_5_results": [
+        {
+          "name": "Suchy skafander AVATAR męski",
+          "brand": "Avatar",
+          "category": "Skafandry suche",
+          "similarity": 0.0454
+        },
+        {
+          "name": "Suchy skafander AVATAR damski",
+          "brand": "Avatar",
+          "category": "Skafandry suche",
+          "similarity": 0.0452
+        },
+        {
+          "name": "Suchy skafander AVATAR męski outlet",
+          "brand": "Avatar",
+          "category": "Skafandry suche i ocieplacze",
+          "similarity": 0.0423
+        },
+        {
+          "name": "Suchy skafander AVATAR AIRon 102 Damski",
+          "brand": "Avatar",
+          "category": "Skafandry suche",
+          "similarity": 0.0415
+        },
+        {
+          "name": "Suchy skafander AVATAR AIRon 102",
+          "brand": "Avatar",
+          "category": "Skafandry suche",
+          "similarity": 0.0411
+        }
+      ]
+    },
+    {
+      "query_id": "Q019",
+      "query": "SANTI suchy skafander",
+      "intent": "navigational",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0472,
+      "avg_similarity_top5": 0.0428,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.5,
+      "brand_hit_at_5": true,
+      "brand_hit_at_10": true,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 9,
+      "fulltext_rrf": 9,
+      "trigram_rrf": 6,
+      "top_5_results": [
+        {
+          "name": "SANTI E.Lite Plus - suchy skafander męski",
+          "brand": "SANTI",
+          "category": "SUCHE Trylaminat, Cordura",
+          "similarity": 0.0472
+        },
+        {
+          "name": "Torba SANTI na suchy skafander",
+          "brand": "SANTI",
+          "category": "Torby na Suche i Ocieplacze",
+          "similarity": 0.0461
+        },
+        {
+          "name": "SANTI E.Lite Plus - suchy skafander damski",
+          "brand": "SANTI",
+          "category": "SUCHE Trylaminat, Cordura",
+          "similarity": 0.046
+        },
+        {
+          "name": "SANTI E.Lite Plus Ladies First - suchy skafander damski",
+          "brand": "SANTI",
+          "category": "SUCHE Trylaminat, Cordura",
+          "similarity": 0.0433
+        },
+        {
+          "name": "Santi Edge - suchy skafander nurkowy",
+          "brand": "SANTI",
+          "category": "SUCHE Trylaminat, Cordura",
+          "similarity": 0.0315
+        }
+      ]
+    },
+    {
+      "query_id": "Q020",
+      "query": "ocieplacz pod suchy skafander",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0415,
+      "avg_similarity_top5": 0.0304,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 4,
+      "trigram_rrf": 7,
+      "top_5_results": [
+        {
+          "name": "Ocieplacz SCUBAPRO Climasphere",
+          "brand": "SCUBAPRO",
+          "category": "Ocieplacze do Suchych",
+          "similarity": 0.0415
+        },
+        {
+          "name": "Ocieplacz BARE Super Hi-Loft Polarwear Extreme",
+          "brand": "BARE",
+          "category": "Ocieplacze do Suchych",
+          "similarity": 0.028
+        },
+        {
+          "name": "TYPHOON Cienki ocieplacz letni, lekka bielizna termiczna",
+          "brand": "Typhoon",
+          "category": "Ocieplacze do Suchych",
+          "similarity": 0.0276
+        },
+        {
+          "name": "Ocieplacz grzewczy KWARK",
+          "brand": "KWARK",
+          "category": "Skafandry suche",
+          "similarity": 0.0275
+        },
+        {
+          "name": "Ocieplacz AVATAR 901 męski",
+          "brand": "Avatar",
+          "category": "Ocieplacze do Suchych",
+          "similarity": 0.0273
+        }
+      ]
+    },
+    {
+      "query_id": "Q021",
+      "query": "maska do nurkowania",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0383,
+      "avg_similarity_top5": 0.0307,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.5,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 8,
+      "fulltext_rrf": 8,
+      "trigram_rrf": 5,
+      "top_5_results": [
+        {
+          "name": "Maska MARES Juno",
+          "brand": "MARES",
+          "category": "Maski jednoszybowe",
+          "similarity": 0.0383
+        },
+        {
+          "name": "Maska OCEANIC Duo",
+          "brand": "OCEANIC",
+          "category": "Maski dwuszybowe",
+          "similarity": 0.0302
+        },
+        {
+          "name": "SEAC UNICA S/M BLACK/ORANGE maska pełnotwarzowa",
+          "brand": "SEAC",
+          "category": "Zestawy Maska+Fajka",
+          "similarity": 0.0284
+        },
+        {
+          "name": "SEAC UNICA L/XL BLUE/ORANGE maska pełnotwarzowa do snorkelingu",
+          "brand": "SEAC",
+          "category": "Zestawy Maska+Fajka",
+          "similarity": 0.0284
+        },
+        {
+          "name": "MASKA NURKOWA POSEIDON TECHNICA",
+          "brand": "POSEIDON",
+          "category": "Maski dwuszybowe",
+          "similarity": 0.0282
+        }
+      ]
+    },
+    {
+      "query_id": "Q022",
+      "query": "płetwy",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0383,
+      "avg_similarity_top5": 0.0338,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.75,
+      "dominant_track": "trigram",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 6,
+      "trigram_rrf": 6,
+      "top_5_results": [
+        {
+          "name": "Płetwy OMS TRIBE",
+          "brand": "OMS",
+          "category": "Płetwy Gumowe JET",
+          "similarity": 0.0383
+        },
+        {
+          "name": "Płetwy OMS Slipstream",
+          "brand": "OMS",
+          "category": "Płetwy Gumowe JET",
+          "similarity": 0.037
+        },
+        {
+          "name": "Płetwy HOLLIS F2",
+          "brand": "HOLLIS",
+          "category": "Płetwy Gumowe JET",
+          "similarity": 0.0315
+        },
+        {
+          "name": "Płetwy DIVESYSTEM Tech Fin ze sprężynami - różowe",
+          "brand": "DIVE SYSTEM",
+          "category": "Płetwy Gumowe JET",
+          "similarity": 0.0313
+        },
+        {
+          "name": "Płetwy MARES Raptor",
+          "brand": "MARES",
+          "category": "Płetwy Paskowe na Buta",
+          "similarity": 0.0309
+        }
+      ]
+    },
+    {
+      "query_id": "Q023",
+      "query": "Scubapro MK25 EVO",
+      "intent": "navigational",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0481,
+      "avg_similarity_top5": 0.0455,
+      "brand_hit_at_5": true,
+      "brand_hit_at_10": true,
+      "product_mrr": 1.0,
+      "product_recall_at_5": 1.0,
+      "product_recall_at_10": 1.0,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 8,
+      "trigram_rrf": 8,
+      "top_5_results": [
+        {
+          "name": "SCUBAPRO MK25 EVO/ S620Ti",
+          "brand": "SCUBAPRO",
+          "category": "SCUBAPRO",
+          "similarity": 0.0481
+        },
+        {
+          "name": "SCUBAPRO MK25 EVO / G260",
+          "brand": "SCUBAPRO",
+          "category": "SCUBAPRO",
+          "similarity": 0.0471
+        },
+        {
+          "name": "SCUBAPRO MK25 EVO",
+          "brand": "SCUBAPRO",
+          "category": "1 stopnie",
+          "similarity": 0.0463
+        },
+        {
+          "name": "Automat SCUBAPRO MK25 EVO / S600",
+          "brand": "SCUBAPRO",
+          "category": "SCUBAPRO",
+          "similarity": 0.0454
+        },
+        {
+          "name": "SCUBAPRO MK25 EVO / S600 + Octopus R195",
+          "brand": "SCUBAPRO",
+          "category": "SCUBAPRO",
+          "similarity": 0.0406
+        }
+      ]
+    },
+    {
+      "query_id": "Q024",
+      "query": "Suunto D5",
+      "intent": "navigational",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0438,
+      "avg_similarity_top5": 0.0387,
+      "brand_hit_at_5": true,
+      "brand_hit_at_10": true,
+      "product_mrr": 1.0,
+      "product_recall_at_5": 1.0,
+      "product_recall_at_10": 1.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 7,
+      "fulltext_rrf": 9,
+      "trigram_rrf": 7,
+      "top_5_results": [
+        {
+          "name": "Komputer SUUNTO D5 Black/Lime",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.0438
+        },
+        {
+          "name": "Komputer SUUNTO D5 White",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.0438
+        },
+        {
+          "name": "Komputer SUUNTO D5 All Black",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.0434
+        },
+        {
+          "name": "Komputer SUUNTO D5 Wildberry",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.0315
+        },
+        {
+          "name": "Komputer SUUNTO D5 Aqua Blue",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.0312
+        }
+      ]
+    },
+    {
+      "query_id": "Q025",
+      "query": "Halcyon skrzydło Eclipse",
+      "intent": "navigational",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0487,
+      "avg_similarity_top5": 0.038,
+      "brand_hit_at_5": true,
+      "brand_hit_at_10": true,
+      "product_mrr": 0.5,
+      "product_recall_at_5": 1.0,
+      "product_recall_at_10": 1.0,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 8,
+      "fulltext_rrf": 2,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "Skrzydło HALCYON Evolve Wing 40/60 lbs",
+          "brand": "HALCYON",
+          "category": "Skrzydła",
+          "similarity": 0.0487
+        },
+        {
+          "name": "Zestaw HALCYON Eclipse System 30/40 lbs SS/ALU",
+          "brand": "HALCYON",
+          "category": "Skrzydła z uprzężą do Poj. Butli",
+          "similarity": 0.0467
+        },
+        {
+          "name": "Skrzydło HALCYON Evolve System 40/60 lbs",
+          "brand": "HALCYON",
+          "category": "Skrzydła z uprzężą do Twina",
+          "similarity": 0.0323
+        },
+        {
+          "name": "Skrzydło HALCYON Evolve System CINCH",
+          "brand": "HALCYON",
+          "category": "Skrzydła z uprzężą do Twina",
+          "similarity": 0.032
+        },
+        {
+          "name": "Maska HALCYON H View",
+          "brand": "HALCYON",
+          "category": "Maski jednoszybowe",
+          "similarity": 0.0305
+        }
+      ]
+    },
+    {
+      "query_id": "Q026",
+      "query": "rękawice nurkowe na zimno",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0315,
+      "avg_similarity_top5": 0.0291,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.5,
+      "dominant_track": "trigram",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 0,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "Rękawice neoprenowe TECLINE 5 mm",
+          "brand": "TECLINE",
+          "category": "Rękawice",
+          "similarity": 0.0315
+        },
+        {
+          "name": "Rękawice TUSA DG-5600",
+          "brand": "TUSA",
+          "category": "Rękawice",
+          "similarity": 0.029
+        },
+        {
+          "name": "Rękawice TUSA TA-0209",
+          "brand": "TUSA",
+          "category": "Rękawice",
+          "similarity": 0.0288
+        },
+        {
+          "name": "Rękawice SCUBAPRO G-Flex 5mm",
+          "brand": "SCUBAPRO",
+          "category": "Rękawice",
+          "similarity": 0.0287
+        },
+        {
+          "name": "Rękawice SCUBAPRO Tropic Kolorowe 1,5mm",
+          "brand": "SCUBAPRO",
+          "category": "Rękawice",
+          "similarity": 0.0273
+        }
+      ]
+    },
+    {
+      "query_id": "Q027",
+      "query": "buty neoprenowe",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0489,
+      "avg_similarity_top5": 0.0458,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.5,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 10,
+      "trigram_rrf": 9,
+      "top_5_results": [
+        {
+          "name": "Buty neoprenowe Tecline 5 mm",
+          "brand": "TECLINE",
+          "category": "Skafandry mokre",
+          "similarity": 0.0489
+        },
+        {
+          "name": "TYPHOON Buty neoprenowe 6,5 mm",
+          "brand": "Typhoon",
+          "category": "Buty",
+          "similarity": 0.0474
+        },
+        {
+          "name": "TYPHOON Buty neoprenowe 3mm Storm",
+          "brand": "Typhoon",
+          "category": "Buty",
+          "similarity": 0.0462
+        },
+        {
+          "name": "Buty TECLINE neoprenowe krótkie 3mm",
+          "brand": "TECLINE",
+          "category": "Buty",
+          "similarity": 0.0448
+        },
+        {
+          "name": "Buty BARE Feet 3mm",
+          "brand": "BARE",
+          "category": "Buty",
+          "similarity": 0.0417
+        }
+      ]
+    },
+    {
+      "query_id": "Q028",
+      "query": "bojka dekompresyjna",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0328,
+      "avg_similarity_top5": 0.0305,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.5,
+      "dominant_track": "semantic",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 4,
+      "trigram_rrf": 3,
+      "top_5_results": [
+        {
+          "name": "Tusa BOJKA - TA-1102",
+          "brand": "TUSA",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0328
+        },
+        {
+          "name": "XDEEP Bojka otwarta 140cm",
+          "brand": "xDEEP",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0317
+        },
+        {
+          "name": "HALCYON Duża boja nurkowa (1.4m), zamknięta, pomarańczowa",
+          "brand": "HALCYON",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0313
+        },
+        {
+          "name": "Boja TECLINE 15/183 cm zawór nadm. i kaczy dziób, pomarańczowa",
+          "brand": "TECLINE",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0284
+        },
+        {
+          "name": "HALCYON Extra duża boja nurkowa (1.8 m), zamknięta, pomarańczowa",
+          "brand": "HALCYON",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0284
+        }
+      ]
+    },
+    {
+      "query_id": "Q029",
+      "query": "coś na zimno pod piankę",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0164,
+      "avg_similarity_top5": 0.0159,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.6666666666666666,
+      "dominant_track": "semantic",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 0,
+      "trigram_rrf": 0,
+      "top_5_results": [
+        {
+          "name": "Skarpety zimowe NO GRAVITY",
+          "brand": "NO GRAVITY",
+          "category": "Ocieplacze do Suchych",
+          "similarity": 0.0164
+        },
+        {
+          "name": "Rękawiczki KWARK Flex",
+          "brand": "KWARK",
+          "category": "Ocieplacze do Suchych",
+          "similarity": 0.0161
+        },
+        {
+          "name": "Kamizelka KWARK Navy",
+          "brand": "KWARK",
+          "category": "Ocieplacze do Suchych",
+          "similarity": 0.0159
+        },
+        {
+          "name": "KWARK Techniczna Bielizna Nurkowa- góra",
+          "brand": "KWARK",
+          "category": "Odzież Termoaktywna",
+          "similarity": 0.0156
+        },
+        {
+          "name": "Ocieplacz KWARK Navy Extreme Damski",
+          "brand": "KWARK",
+          "category": "Ocieplacze do Suchych",
+          "similarity": 0.0154
+        }
+      ]
+    },
+    {
+      "query_id": "Q030",
+      "query": "prezent dla nurka do 500 zł",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.03,
+      "avg_similarity_top5": 0.019,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.6,
+      "dominant_track": "trigram",
+      "semantic_rrf": 6,
+      "fulltext_rrf": 0,
+      "trigram_rrf": 5,
+      "top_5_results": [
+        {
+          "name": "Książka Nurkowanie dla zaawansowanych",
+          "brand": "Wydawnictwa Nurkowe",
+          "category": "Książki nurkowe",
+          "similarity": 0.03
+        },
+        {
+          "name": "SUUNTO Zoop Novo Black",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.0164
+        },
+        {
+          "name": "Latarka nurkowa OrcaTorch D920 - 5000 lm",
+          "brand": "OrcaTorch",
+          "category": "Latarki nurkowe",
+          "similarity": 0.0164
+        },
+        {
+          "name": "SUUNTO Zoop Novo Wildberry",
+          "brand": "SUUNTO",
+          "category": "Komputery SUUNTO",
+          "similarity": 0.0161
+        },
+        {
+          "name": "Puzzle SANTI Orda Cave",
+          "brand": "SANTI",
+          "category": "Gadżety",
+          "similarity": 0.0159
+        }
+      ]
+    },
+    {
+      "query_id": "Q031",
+      "query": "mk3i",
+      "intent": "navigational",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0306,
+      "avg_similarity_top5": 0.0215,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "product_mrr": 1.0,
+      "product_recall_at_5": 1.0,
+      "product_recall_at_10": 1.0,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 9,
+      "fulltext_rrf": 3,
+      "trigram_rrf": 0,
+      "top_5_results": [
+        {
+          "name": "Garmin Descent Mk3i, Carbon Gray DLC Ti/Black 51mm",
+          "brand": "GARMIN",
+          "category": "Komputery Garmin",
+          "similarity": 0.0306
+        },
+        {
+          "name": "Garmin Descent Mk3i 51mm pasek silikon + Transmiter T2",
+          "brand": "GARMIN",
+          "category": "Komputery Garmin",
+          "similarity": 0.0282
+        },
+        {
+          "name": "MARES Konsola Mission 3",
+          "brand": "MARES",
+          "category": "Konsole",
+          "similarity": 0.0164
+        },
+        {
+          "name": "Garmin Descent Mk3i, Carbon Gray DLC Ti bransoleta Ti 51mm",
+          "brand": "GARMIN",
+          "category": "Komputery Garmin",
+          "similarity": 0.0164
+        },
+        {
+          "name": "Maska Hollis M3",
+          "brand": "HOLLIS",
+          "category": "Maski dwuszybowe",
+          "similarity": 0.0161
+        }
+      ]
+    },
+    {
+      "query_id": "Q032",
+      "query": "kaptur",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0458,
+      "avg_similarity_top5": 0.044,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "dominant_track": "trigram",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 10,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "Kaptur FOURTH ELEMENT 5mm",
+          "brand": "FOURTH ELEMENT",
+          "category": "Kaptury",
+          "similarity": 0.0458
+        },
+        {
+          "name": "Kaptur FOURTH ELEMENT 3mm",
+          "brand": "FOURTH ELEMENT",
+          "category": "Kaptury",
+          "similarity": 0.0442
+        },
+        {
+          "name": "Kaptur FOURTH ELEMENT 7mm",
+          "brand": "FOURTH ELEMENT",
+          "category": "Kaptury",
+          "similarity": 0.0439
+        },
+        {
+          "name": "Kaptur SANTI Neoprenowy \"7\" (6 mm)",
+          "brand": "SANTI",
+          "category": "Kaptury",
+          "similarity": 0.043
+        },
+        {
+          "name": "Kaptur SANTI Neoprenowy \"11\" (8 mm)",
+          "brand": "SANTI",
+          "category": "Kaptury",
+          "similarity": 0.043
+        }
+      ]
+    },
+    {
+      "query_id": "Q033",
+      "query": "bojka",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0482,
+      "avg_similarity_top5": 0.0462,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.5,
+      "dominant_track": "semantic",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 10,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "Tusa BOJKA - TA-1102",
+          "brand": "TUSA",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0482
+        },
+        {
+          "name": "XDEEP Bojka otwarta 140 cm żółta",
+          "brand": "xDEEP",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0465
+        },
+        {
+          "name": "XDEEP Bojka otwarta 140cm",
+          "brand": "xDEEP",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0465
+        },
+        {
+          "name": "XDEEP Bojka zamknięta 90 cm",
+          "brand": "xDEEP",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0455
+        },
+        {
+          "name": "XDEEP Bojka zamknięta 140cm",
+          "brand": "xDEEP",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0443
+        }
+      ]
+    },
+    {
+      "query_id": "Q034",
+      "query": "waz",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0272,
+      "avg_similarity_top5": 0.0222,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.6666666666666666,
+      "dominant_track": "semantic",
+      "semantic_rrf": 7,
+      "fulltext_rrf": 6,
+      "trigram_rrf": 0,
+      "top_5_results": [
+        {
+          "name": "Wąż SCUBATECH LP 70cm czarny, standard",
+          "brand": "SCUBATECH",
+          "category": "Węże do Automatów",
+          "similarity": 0.0272
+        },
+        {
+          "name": "Wąż SCUBATECH LP 90cm czarny",
+          "brand": "SCUBATECH",
+          "category": "Węże do Automatów",
+          "similarity": 0.0255
+        },
+        {
+          "name": "Wąż SCUBATECH LP 120cm czarny",
+          "brand": "SCUBATECH",
+          "category": "Węże do Automatów",
+          "similarity": 0.0255
+        },
+        {
+          "name": "KWARK Opaska Power Stretch Pro",
+          "brand": "KWARK",
+          "category": "Czapki",
+          "similarity": 0.0164
+        },
+        {
+          "name": "Wąż SCUBATECH Proflex do inflatora 70cm - różowy",
+          "brand": "SCUBATECH",
+          "category": "Węże do Inflatorów",
+          "similarity": 0.0164
+        }
+      ]
+    },
+    {
+      "query_id": "Q035",
+      "query": "rekawice",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0468,
+      "avg_similarity_top5": 0.0438,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.5,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 10,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "Rękawice BODY GLOVE Exo 5mm",
+          "brand": "BODY GLOVE",
+          "category": "Rękawice",
+          "similarity": 0.0468
+        },
+        {
+          "name": "Rękawice TUSA DG-5600",
+          "brand": "TUSA",
+          "category": "Rękawice",
+          "similarity": 0.0435
+        },
+        {
+          "name": "Rękawice TUSA TA-0209",
+          "brand": "TUSA",
+          "category": "Rękawice",
+          "similarity": 0.043
+        },
+        {
+          "name": "Rękawice BARE 5mm Glove",
+          "brand": "BARE",
+          "category": "Rękawice",
+          "similarity": 0.043
+        },
+        {
+          "name": "Rękawice BARE GLOVE 3mm Czarne",
+          "brand": "BARE",
+          "category": "Rękawice",
+          "similarity": 0.0426
+        }
+      ]
+    },
+    {
+      "query_id": "Q036",
+      "query": "noz",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0303,
+      "avg_similarity_top5": 0.0295,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 9,
+      "trigram_rrf": 0,
+      "top_5_results": [
+        {
+          "name": "Nóż MARES Force Nano Plus",
+          "brand": "MARES",
+          "category": "Noże",
+          "similarity": 0.0303
+        },
+        {
+          "name": "Nóż AQUALUNG Squeeze",
+          "brand": "AQUALUNG",
+          "category": "Noże",
+          "similarity": 0.0303
+        },
+        {
+          "name": "Nóż SCUBATECH Minirazor Alfa, plastik",
+          "brand": "SCUBATECH",
+          "category": "Noże",
+          "similarity": 0.0296
+        },
+        {
+          "name": "Nóż MARES Force Snap",
+          "brand": "MARES",
+          "category": "Noże",
+          "similarity": 0.0292
+        },
+        {
+          "name": "Nóż SCUBATECH Minirazor Alfa, nylon",
+          "brand": "SCUBATECH",
+          "category": "Noże",
+          "similarity": 0.0284
+        }
+      ]
+    },
+    {
+      "query_id": "Q037",
+      "query": "pletwy",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0446,
+      "avg_similarity_top5": 0.0415,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.75,
+      "dominant_track": "trigram",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 8,
+      "trigram_rrf": 7,
+      "top_5_results": [
+        {
+          "name": "Płetwy MARES Power Plana",
+          "brand": "MARES",
+          "category": "Płetwy Gumowe JET",
+          "similarity": 0.0446
+        },
+        {
+          "name": "Płetwy APEKS RK3",
+          "brand": "APEKS",
+          "category": "Płetwy Gumowe JET",
+          "similarity": 0.044
+        },
+        {
+          "name": "Płetwy OMS Slipstream",
+          "brand": "OMS",
+          "category": "Płetwy Gumowe JET",
+          "similarity": 0.041
+        },
+        {
+          "name": "Płetwy HOLLIS F1",
+          "brand": "HOLLIS",
+          "category": "Płetwy Gumowe JET",
+          "similarity": 0.0404
+        },
+        {
+          "name": "Płetwy MARES Raptor",
+          "brand": "MARES",
+          "category": "Płetwy Paskowe na Buta",
+          "similarity": 0.0377
+        }
+      ]
+    },
+    {
+      "query_id": "Q038",
+      "query": "manometr",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0463,
+      "avg_similarity_top5": 0.0446,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.5,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 10,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "OMS Manometr SPG 63 mm",
+          "brand": "OMS",
+          "category": "Manometry",
+          "similarity": 0.0463
+        },
+        {
+          "name": "OMS Manometr SPG 52 mm",
+          "brand": "OMS",
+          "category": "Manometry",
+          "similarity": 0.0462
+        },
+        {
+          "name": "OMS Manometr MASTER SPG 63 mm",
+          "brand": "OMS",
+          "category": "Manometry",
+          "similarity": 0.0439
+        },
+        {
+          "name": "OMS Manometr Stage SPG 400 bar",
+          "brand": "OMS",
+          "category": "Manometry",
+          "similarity": 0.0436
+        },
+        {
+          "name": "OMS Manometr MASTER SPG 52 mm",
+          "brand": "OMS",
+          "category": "Manometry",
+          "similarity": 0.043
+        }
+      ]
+    },
+    {
+      "query_id": "Q039",
+      "query": "kompas",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0476,
+      "avg_similarity_top5": 0.0469,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 9,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "Kompas SUUNTO SK-8 - na gumce",
+          "brand": "SUUNTO",
+          "category": "Kompasy",
+          "similarity": 0.0476
+        },
+        {
+          "name": "Kompas SUUNTO SK-8 - na pasku",
+          "brand": "SUUNTO",
+          "category": "Kompasy",
+          "similarity": 0.0474
+        },
+        {
+          "name": "Kompas TECLINE na pasku",
+          "brand": "TECLINE",
+          "category": "Kompasy",
+          "similarity": 0.0474
+        },
+        {
+          "name": "TECLINE Kompas X7 z paskiem",
+          "brand": "TECLINE",
+          "category": "Kompasy",
+          "similarity": 0.0465
+        },
+        {
+          "name": "SCUBAPRO Kompas FS-2 na pasku",
+          "brand": "SCUBAPRO",
+          "category": "Kompasy",
+          "similarity": 0.0458
+        }
+      ]
+    },
+    {
+      "query_id": "Q040",
+      "query": "karabinczyk",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0479,
+      "avg_similarity_top5": 0.0468,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 10,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "Karabińczyk OMS BigGrip 3/8\"",
+          "brand": "OMS",
+          "category": "Karabinki nurkowe",
+          "similarity": 0.0479
+        },
+        {
+          "name": "Karabińczyk OMS BigGrip 1\"",
+          "brand": "OMS",
+          "category": "Karabinki nurkowe",
+          "similarity": 0.0472
+        },
+        {
+          "name": "Karabińczyk OMS BigGrip 1 1/4\"",
+          "brand": "OMS",
+          "category": "Karabinki nurkowe",
+          "similarity": 0.0469
+        },
+        {
+          "name": "XDEEP karabińczyk jednostronny",
+          "brand": "xDEEP",
+          "category": "Karabinki nurkowe",
+          "similarity": 0.0462
+        },
+        {
+          "name": "Karabińczyk OMS BigGrip Double-Ender 3 3/4\"",
+          "brand": "OMS",
+          "category": "Karabinki nurkowe",
+          "similarity": 0.0459
+        }
+      ]
+    },
+    {
+      "query_id": "Q041",
+      "query": "skarpety",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0484,
+      "avg_similarity_top5": 0.0465,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.5,
+      "dominant_track": "semantic",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 10,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "KWARK Skarpety Walonki Navy",
+          "brand": "KWARK",
+          "category": "Ocieplacze do Suchych",
+          "similarity": 0.0484
+        },
+        {
+          "name": "Skarpety zimowe NO GRAVITY",
+          "brand": "NO GRAVITY",
+          "category": "Ocieplacze do Suchych",
+          "similarity": 0.0471
+        },
+        {
+          "name": "Skarpety BARE Neo Socks",
+          "brand": "BARE",
+          "category": "Buty",
+          "similarity": 0.047
+        },
+        {
+          "name": "Skarpety Santi Bergen - Merino",
+          "brand": null,
+          "category": "WYPRZEDAŻE",
+          "similarity": 0.0451
+        },
+        {
+          "name": "KWARK Skarpety krótkie Aqua Shell",
+          "brand": "KWARK",
+          "category": "Ocieplacze do Suchych",
+          "similarity": 0.045
+        }
+      ]
+    },
+    {
+      "query_id": "Q042",
+      "query": "latarka",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0397,
+      "avg_similarity_top5": 0.0359,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.75,
+      "dominant_track": "trigram",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 3,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "Latarka HI-MAX X8, 860 lm",
+          "brand": "HI-MAX",
+          "category": "Oświetlenia Video",
+          "similarity": 0.0397
+        },
+        {
+          "name": "Latarka GRALMARINE 3XML-2",
+          "brand": "GRALMARINE",
+          "category": "Duże z Głowicą",
+          "similarity": 0.0393
+        },
+        {
+          "name": "Latarka GRALMARINE KX Spot T",
+          "brand": "GRALMARINE",
+          "category": "Małe i do Ręki",
+          "similarity": 0.0392
+        },
+        {
+          "name": "Latarka MIRANDA 7280",
+          "brand": "Miranda",
+          "category": "Duże z Głowicą",
+          "similarity": 0.0308
+        },
+        {
+          "name": "Latarka HI-MAX H8 2000 lm",
+          "brand": "HI-MAX",
+          "category": "Małe i do Ręki",
+          "similarity": 0.0304
+        }
+      ]
+    },
+    {
+      "query_id": "Q043",
+      "query": "pianka do nurkowania w zimnej wodzie",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0164,
+      "avg_similarity_top5": 0.0162,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 5,
+      "fulltext_rrf": 0,
+      "trigram_rrf": 5,
+      "top_5_results": [
+        {
+          "name": "AQUALUNG Balance Comfort Pianka Damska 7 mm",
+          "brand": "AQUALUNG",
+          "category": "Skafandry Na ZIMNE wody",
+          "similarity": 0.0164
+        },
+        {
+          "name": "Książka Nurkowanie pod lodem + DVD",
+          "brand": "Wydawnictwa Nurkowe",
+          "category": "Książki nurkowe",
+          "similarity": 0.0164
+        },
+        {
+          "name": "AQUAZONE Skafander Mokry EXTREME 6mm + Docieplenie",
+          "brand": "Aqua Zone",
+          "category": "Komplety Pianek do nurkowania",
+          "similarity": 0.0161
+        },
+        {
+          "name": "Książka Nurkowanie dla zaawansowanych",
+          "brand": "Wydawnictwa Nurkowe",
+          "category": "Książki nurkowe",
+          "similarity": 0.0161
+        },
+        {
+          "name": "Pianka Mares PIONEER 5 MAN",
+          "brand": "MARES",
+          "category": "Skafandry Na ZIMNE wody",
+          "similarity": 0.0159
+        }
+      ]
+    },
+    {
+      "query_id": "Q044",
+      "query": "suchy skafander nurkowy",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0323,
+      "avg_similarity_top5": 0.0307,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.6666666666666666,
+      "dominant_track": "trigram",
+      "semantic_rrf": 8,
+      "fulltext_rrf": 4,
+      "trigram_rrf": 8,
+      "top_5_results": [
+        {
+          "name": "Santi Edge - suchy skafander nurkowy",
+          "brand": "SANTI",
+          "category": "SUCHE Trylaminat, Cordura",
+          "similarity": 0.0323
+        },
+        {
+          "name": "Suchy skafander AVATAR męski",
+          "brand": "Avatar",
+          "category": "Skafandry suche",
+          "similarity": 0.031
+        },
+        {
+          "name": "Suchy skafander AVATAR damski",
+          "brand": "Avatar",
+          "category": "Skafandry suche",
+          "similarity": 0.031
+        },
+        {
+          "name": "Książka Nurkowanie w suchym skafandrze",
+          "brand": "Wydawnictwa Nurkowe",
+          "category": "Książki nurkowe",
+          "similarity": 0.0297
+        },
+        {
+          "name": "Suchy skafander AVATAR męski outlet",
+          "brand": "Avatar",
+          "category": "Skafandry suche i ocieplacze",
+          "similarity": 0.0294
+        }
+      ]
+    },
+    {
+      "query_id": "Q045",
+      "query": "nóż nurkowy",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0397,
+      "avg_similarity_top5": 0.0316,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 9,
+      "fulltext_rrf": 9,
+      "trigram_rrf": 3,
+      "top_5_results": [
+        {
+          "name": "Nóż SCUBAPRO X-Cut tytanowy",
+          "brand": "SCUBAPRO",
+          "category": "Noże",
+          "similarity": 0.0397
+        },
+        {
+          "name": "SCUBATECH Nóż do cięcia sieci - szarpak",
+          "brand": "SCUBATECH",
+          "category": "Noże",
+          "similarity": 0.0301
+        },
+        {
+          "name": "Nóż AQUALUNG Squeeze",
+          "brand": "AQUALUNG",
+          "category": "Noże",
+          "similarity": 0.0296
+        },
+        {
+          "name": "Nóż SCUBAPRO White Tip",
+          "brand": "SCUBAPRO",
+          "category": "Noże",
+          "similarity": 0.0293
+        },
+        {
+          "name": "Mares nóż MC-70 - łatwy do dobycia",
+          "brand": "MARES",
+          "category": "Noże",
+          "similarity": 0.029
+        }
+      ]
+    },
+    {
+      "query_id": "Q046",
+      "query": "jacket nurkowy",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.031,
+      "avg_similarity_top5": 0.03,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.6666666666666666,
+      "dominant_track": "trigram",
+      "semantic_rrf": 8,
+      "fulltext_rrf": 4,
+      "trigram_rrf": 8,
+      "top_5_results": [
+        {
+          "name": "Jacket SCUBAPRO Go",
+          "brand": "SCUBAPRO",
+          "category": "TURYSTYCZNE, LEKKIE",
+          "similarity": 0.031
+        },
+        {
+          "name": "Jacket SCUBAPRO X-One",
+          "brand": "SCUBAPRO",
+          "category": "KLASYCZNE",
+          "similarity": 0.0301
+        },
+        {
+          "name": "Jacket AQUALUNG Pro HD",
+          "brand": "AQUALUNG",
+          "category": "KLASYCZNE",
+          "similarity": 0.0301
+        },
+        {
+          "name": "Jacket TUSA X-WING (BCJ-8000)",
+          "brand": "TUSA",
+          "category": "SKRZYDŁA, HYBRYDY",
+          "similarity": 0.0296
+        },
+        {
+          "name": "Jacket APEKS Exotec BCD",
+          "brand": "APEKS",
+          "category": "Skrzydła i jackety",
+          "similarity": 0.0294
+        }
+      ]
+    },
+    {
+      "query_id": "Q047",
+      "query": "skrzydło do nurkowania",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0472,
+      "avg_similarity_top5": 0.04,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.3333333333333333,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 5,
+      "trigram_rrf": 8,
+      "top_5_results": [
+        {
+          "name": "Skrzydło APEKS WTX-D18 do singla",
+          "brand": "APEKS",
+          "category": "Skrzydła",
+          "similarity": 0.0472
+        },
+        {
+          "name": "Skrzydło APEKS WTX-D30 do singla",
+          "brand": "APEKS",
+          "category": "Skrzydła",
+          "similarity": 0.0469
+        },
+        {
+          "name": "Skrzydło APEKS WTX-D40 do singla",
+          "brand": "APEKS",
+          "category": "Skrzydła",
+          "similarity": 0.0442
+        },
+        {
+          "name": "Skrzydło XDEEP Zen",
+          "brand": "xDEEP",
+          "category": "Skrzydła",
+          "similarity": 0.031
+        },
+        {
+          "name": "Skrzydło OMS Deep Ocean 2.0",
+          "brand": "OMS",
+          "category": "Skrzydła",
+          "similarity": 0.0306
+        }
+      ]
+    },
+    {
+      "query_id": "Q048",
+      "query": "garmin descent mk3i",
+      "intent": "navigational",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0484,
+      "avg_similarity_top5": 0.0409,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "brand_hit_at_5": true,
+      "brand_hit_at_10": true,
+      "product_mrr": 1.0,
+      "product_recall_at_5": 1.0,
+      "product_recall_at_10": 1.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 3,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "Garmin Descent Mk3i, Carbon Gray DLC Ti/Black 51mm",
+          "brand": "GARMIN",
+          "category": "Komputery Garmin",
+          "similarity": 0.0484
+        },
+        {
+          "name": "Garmin Descent Mk3i, Carbon Gray DLC Ti bransoleta Ti 51mm",
+          "brand": "GARMIN",
+          "category": "Komputery Garmin",
+          "similarity": 0.0474
+        },
+        {
+          "name": "Garmin Descent Mk3i 51mm pasek silikon + Transmiter T2",
+          "brand": "GARMIN",
+          "category": "Komputery Garmin",
+          "similarity": 0.0469
+        },
+        {
+          "name": "Garmin Descent Mk3s, 43mm Passivated Steel/Fog Gray",
+          "brand": "GARMIN",
+          "category": "Komputery Garmin",
+          "similarity": 0.0311
+        },
+        {
+          "name": "Garmin Descent Mk3si 43mm, Carbon Gray DLC Ti/Black",
+          "brand": "GARMIN",
+          "category": "Komputery Garmin",
+          "similarity": 0.0308
+        }
+      ]
+    },
+    {
+      "query_id": "Q049",
+      "query": "shearwater peregrine",
+      "intent": "navigational",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0492,
+      "avg_similarity_top5": 0.0473,
+      "brand_hit_at_5": true,
+      "brand_hit_at_10": true,
+      "product_mrr": 1.0,
+      "product_recall_at_5": 1.0,
+      "product_recall_at_10": 1.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 7,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "SHEARWATER Peregrine",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0492
+        },
+        {
+          "name": "SHEARWATER Peregrine Adventures DARK",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0476
+        },
+        {
+          "name": "Pasek do komputera SHEARWATER Peregrine",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0469
+        },
+        {
+          "name": "SHEARWATER Peregrine Adventures LIGHT",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0466
+        },
+        {
+          "name": "Shearwater Peregrine  - osłona silikonowa",
+          "brand": "SHEARWATER",
+          "category": "Komputery SHEARWATER",
+          "similarity": 0.0459
+        }
+      ]
+    },
+    {
+      "query_id": "Q050",
+      "query": "santi edge",
+      "intent": "navigational",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0328,
+      "avg_similarity_top5": 0.0304,
+      "brand_hit_at_5": true,
+      "brand_hit_at_10": true,
+      "product_mrr": 1.0,
+      "product_recall_at_5": 1.0,
+      "product_recall_at_10": 1.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 9,
+      "fulltext_rrf": 1,
+      "trigram_rrf": 8,
+      "top_5_results": [
+        {
+          "name": "Santi Edge - suchy skafander nurkowy",
+          "brand": "SANTI",
+          "category": "SUCHE Trylaminat, Cordura",
+          "similarity": 0.0328
+        },
+        {
+          "name": "SANTI Czapka THINSULATE BEANIE",
+          "brand": "SANTI",
+          "category": "Czapki",
+          "similarity": 0.0303
+        },
+        {
+          "name": "Czapka SANTI Red Point",
+          "brand": "SANTI",
+          "category": "Czapki",
+          "similarity": 0.03
+        },
+        {
+          "name": "Pasek do maski SANTI",
+          "brand": "SANTI",
+          "category": "Akcesoria",
+          "similarity": 0.0299
+        },
+        {
+          "name": "SANTI Enduro",
+          "brand": "SANTI",
+          "category": "SUCHE Trylaminat, Cordura",
+          "similarity": 0.0289
+        }
+      ]
+    },
+    {
+      "query_id": "Q051",
+      "query": "pianka do nurkowania",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0323,
+      "avg_similarity_top5": 0.0298,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "dominant_track": "semantic",
+      "semantic_rrf": 6,
+      "fulltext_rrf": 6,
+      "trigram_rrf": 5,
+      "top_5_results": [
+        {
+          "name": "AQUAZONE Skafander Mokry EXTREME 6mm + Docieplenie",
+          "brand": "Aqua Zone",
+          "category": "Komplety Pianek do nurkowania",
+          "similarity": 0.0323
+        },
+        {
+          "name": "AQUALUNG Balance Comfort Pianka Damska 7 mm",
+          "brand": "AQUALUNG",
+          "category": "Skafandry Na ZIMNE wody",
+          "similarity": 0.0299
+        },
+        {
+          "name": "SCUBAPRO Rebel Shorty 2mm pianka",
+          "brand": "SCUBAPRO",
+          "category": "Skafandry Na CIEPŁE wody",
+          "similarity": 0.0294
+        },
+        {
+          "name": "Pianka Mares PIONEER 5 MAN",
+          "brand": "MARES",
+          "category": "Skafandry Na ZIMNE wody",
+          "similarity": 0.0289
+        },
+        {
+          "name": "AQUAZONE Skafander Mokry CLASSIC 5mm + Docieplenie",
+          "brand": "Aqua Zone",
+          "category": "Komplety Pianek do nurkowania",
+          "similarity": 0.0284
+        }
+      ]
+    },
+    {
+      "query_id": "Q052",
+      "query": "noz nurkowy",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0443,
+      "avg_similarity_top5": 0.0337,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 1.0,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 9,
+      "fulltext_rrf": 10,
+      "trigram_rrf": 2,
+      "top_5_results": [
+        {
+          "name": "Mares nóż nurkowy ASCENT",
+          "brand": "MARES",
+          "category": "Noże",
+          "similarity": 0.0443
+        },
+        {
+          "name": "Nóż SCUBAPRO K-5",
+          "brand": "SCUBAPRO",
+          "category": "Noże",
+          "similarity": 0.0323
+        },
+        {
+          "name": "Mares nóż nurkowy IAGO",
+          "brand": "MARES",
+          "category": "Noże",
+          "similarity": 0.0318
+        },
+        {
+          "name": "Nóż AQUALUNG Squeeze",
+          "brand": "AQUALUNG",
+          "category": "Noże",
+          "similarity": 0.0308
+        },
+        {
+          "name": "Nóż TUSA Imprex Mini (FK-10)",
+          "brand": "TUSA",
+          "category": "Noże",
+          "similarity": 0.0295
+        }
+      ]
+    },
+    {
+      "query_id": "Q053",
+      "query": "skrzydlo nurkowe",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0276,
+      "avg_similarity_top5": 0.0207,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.6666666666666666,
+      "dominant_track": "fulltext",
+      "semantic_rrf": 5,
+      "fulltext_rrf": 5,
+      "trigram_rrf": 2,
+      "top_5_results": [
+        {
+          "name": "Skrzydło TECLINE Peanut 21 Professional - zestaw kevlar Comfort 5,2kg",
+          "brand": "TECLINE",
+          "category": "Skrzydła z uprzężą do Poj. Butli",
+          "similarity": 0.0276
+        },
+        {
+          "name": "Skrzydło TECLINE Peanut 16 Professional - zestaw kevlar DIR",
+          "brand": "TECLINE",
+          "category": "Skrzydła z uprzężą do Poj. Butli",
+          "similarity": 0.0268
+        },
+        {
+          "name": "Skrzydło OMS Deep Ocean 2.0",
+          "brand": "OMS",
+          "category": "Skrzydła",
+          "similarity": 0.0164
+        },
+        {
+          "name": "Skrzydło TECLINE Peanut 16 Professional - zestaw kevlar Comfort",
+          "brand": "TECLINE",
+          "category": "Skrzydła z uprzężą do Poj. Butli",
+          "similarity": 0.0164
+        },
+        {
+          "name": "Książka Wypadki nurkowe",
+          "brand": "Wydawnictwa Nurkowe",
+          "category": "Książki nurkowe",
+          "similarity": 0.0164
+        }
+      ]
+    },
+    {
+      "query_id": "Q054",
+      "query": "boja dekompresyjna",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0456,
+      "avg_similarity_top5": 0.0329,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.5,
+      "dominant_track": "trigram",
+      "semantic_rrf": 10,
+      "fulltext_rrf": 10,
+      "trigram_rrf": 1,
+      "top_5_results": [
+        {
+          "name": "BOJA IST SB-5Q",
+          "brand": "IST",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0456
+        },
+        {
+          "name": "Boja TECLINE 15/183 cm zawór nadm. i kaczy dziób, pomarańczowa",
+          "brand": "TECLINE",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0304
+        },
+        {
+          "name": "TECLINE Boja 18/122 cm zawór nadm. i kaczy dziób, pomarańczowa",
+          "brand": "TECLINE",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0301
+        },
+        {
+          "name": "Boja TECLINE 11/117 cm, zamknięta, zawór nadm. pomarańczowa z karabińczykiem",
+          "brand": "TECLINE",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0291
+        },
+        {
+          "name": "Boja TECLINE 25/122 cm, otwarta, z ciężarkami ołowianymi",
+          "brand": "TECLINE",
+          "category": "Bojki dekompresyjne",
+          "similarity": 0.0291
+        }
+      ]
+    },
+    {
+      "query_id": "Q055",
+      "query": "maska pelnotwarzowa",
+      "intent": "exploratory",
+      "results_count": 10,
+      "zero_result": false,
+      "top_similarity": 0.0425,
+      "avg_similarity_top5": 0.0413,
+      "category_hit_at_5": true,
+      "category_hit_at_10": true,
+      "category_recall_at_5": 0.5,
+      "dominant_track": "trigram",
+      "semantic_rrf": 6,
+      "fulltext_rrf": 9,
+      "trigram_rrf": 10,
+      "top_5_results": [
+        {
+          "name": "SEAC UNICA S/M BLACK/ORANGE maska pełnotwarzowa",
+          "brand": "SEAC",
+          "category": "Zestawy Maska+Fajka",
+          "similarity": 0.0425
+        },
+        {
+          "name": "maska pełnotwarzowa SEAC UNICA S/M BLACK/ORANGE - outlet",
+          "brand": "SEAC",
+          "category": "Maski i Fajki",
+          "similarity": 0.042
+        },
+        {
+          "name": "SEAC UNICA S/M WHITE/PINK maska pelnotwarzowa do snorkelingu",
+          "brand": "SEAC",
+          "category": "Zestawy Maska+Fajka",
+          "similarity": 0.0416
+        },
+        {
+          "name": "SEAC UNICA S/M BLACK/LIME maska pełnotwarzowa do snorkelingu",
+          "brand": "SEAC",
+          "category": "Zestawy Maska+Fajka",
+          "similarity": 0.0412
+        },
+        {
+          "name": "SEAC UNICA L/XL BLACK/ORANGE maska pełnotwarzowa do snorkelingu",
+          "brand": "SEAC",
+          "category": "Zestawy Maska+Fajka",
+          "similarity": 0.0395
+        }
+      ]
+    }
+  ]
+}

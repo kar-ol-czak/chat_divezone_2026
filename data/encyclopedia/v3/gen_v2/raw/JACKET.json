@@ -1,0 +1,212 @@
+{
+  "concept_key": "JACKET",
+  "name_pl": "jacket",
+  "definition": "Urządzenie do kontroli pływalności (BCD) w formie kamizelki, w której worek wypornościowy otacza tułów nurka (znajduje się na plecach oraz po bokach). Zapewnia stabilną pozycję na powierzchni wody i służy do regulacji pływalności pod wodą poprzez dodawanie lub upuszczanie powietrza. Obecnie w nurkowaniu rekreacyjnym jackety są coraz częściej wypierane przez skrzydła, które oferują lepszy trym.",
+  "subtypes_client": [
+    {
+      "name": "Jackety klasyczne (rekreacyjne)",
+      "description": "Standardowe modele z pełnym workiem wokół tułowia i zintegrowanym systemem balastowym. Zapewniają bardzo stabilną pozycję pionową na powierzchni wody, idealne na lokalne nurkowania rekreacyjne."
+    },
+    {
+      "name": "Jackety podróżne (travel)",
+      "description": "Lekkie modele o zredukowanej masie i gabarytach, przeznaczone do transportu lotniczego. Często posiadają mniejszy worek wypornościowy i mniejsze kieszenie balastowe, co nierzadko wymaga użycia dodatkowych kieszeni trymujących."
+    },
+    {
+      "name": "Jackety hybrydowe",
+      "description": "Łączą cechy klasycznego jacketu (wygodna uprząż z regulacją) z workiem umieszczonym głównie na plecach. Poprawia to trym pod wodą, zbliżając właściwości sprzętu do klasycznego skrzydła."
+    }
+  ],
+  "synonyms": {
+    "official": [
+      {
+        "text": "Kamizelka do nurkowania",
+        "evidence_id": "EV-A-044"
+      }
+    ],
+    "close": [
+      {
+        "text": "jacket nurkowy",
+        "evidence_id": "EV-K-001"
+      },
+      {
+        "text": "jackety nurkowe",
+        "evidence_id": "EV-K-002"
+      }
+    ],
+    "slang": [
+      {
+        "text": "kamizelka balastowa do nurkowania",
+        "evidence_id": "EV-A-043"
+      },
+      {
+        "text": "kamizelka do nurkowania jacket",
+        "evidence_id": "EV-A-039"
+      }
+    ],
+    "anglicisms": [
+      {
+        "text": "bcd nurkowanie co to",
+        "evidence_id": "EV-A-046"
+      }
+    ],
+    "misspelled": [
+      {
+        "text": "jacket nurkowy m",
+        "evidence_id": "EV-A-013"
+      },
+      {
+        "text": "nurkowanie kamizelka",
+        "evidence_id": "EV-A-035"
+      }
+    ]
+  },
+  "longtail_phrases": [
+    {
+      "text": "jacket nurkowy dla dzieci",
+      "evidence_id": "EV-K-003"
+    },
+    {
+      "text": "ranking jacketów nurkowych",
+      "evidence_id": "EV-K-006"
+    },
+    {
+      "text": "lekki jacket nurkowy",
+      "evidence_id": "EV-A-015"
+    },
+    {
+      "text": "jacket nurkowy damski",
+      "evidence_id": "EV-A-016"
+    },
+    {
+      "text": "jacket nurkowy podróżny",
+      "evidence_id": "EV-A-018"
+    },
+    {
+      "text": "jacket nurkowy hybrydowy",
+      "evidence_id": "EV-A-026"
+    },
+    {
+      "text": "kamizelka do nurkowania dla dorosłych",
+      "evidence_id": "EV-A-038"
+    },
+    {
+      "text": "kamizelka asekuracyjna do nurkowania",
+      "evidence_id": "EV-A-041"
+    }
+  ],
+  "purchase_parameters": [
+    {
+      "name": "Wyporność (Lift)",
+      "description": "Wyrażana w litrach lub kilogramach. Musi być dobrana do wagi nurka, masy butli i ilości balastu. Gruba mokra pianka traci wyporność na głębokości i wymaga większego worka. Suchy skafander wpływa głównie na ilość balastu, nie na dobór wyporności jacketu. Zestawy turystyczne mają mniejszą wyporność, więc do ciężkiej konfiguracji w zimnych wodach wybierz model z większym workiem."
+    },
+    {
+      "name": "Masa własna i gabaryty",
+      "description": "Kluczowe kryterium dla osób często latających samolotem. Modele podróżne wykorzystują lżejsze materiały i plastikowe D-ringi, aby maksymalnie obniżyć wagę bagażu."
+    },
+    {
+      "name": "Pojemność systemu balastowego",
+      "description": "Wielkość zintegrowanych kieszeni balastowych. W lżejszych jacketach kieszenie bywają mniejsze, co przy potrzebie zabrania większej ilości ołowiu wymusza stosowanie dodatkowych kieszeni trymujących na butlę lub tradycyjnego pasa balastowego."
+    }
+  ],
+  "cross_sell": [
+    {
+      "product": "Kieszenie trymujące",
+      "concept_key": "TRYMOWKA",
+      "description": "Klienci kupujący lekkie jackety podróżne często potrzebują dodatkowych kieszeni na butlę, aby zrekompensować mniejsze kieszenie główne i odpowiednio rozłożyć balast.",
+      "evidence_id": "EV-B-010"
+    },
+    {
+      "product": "Skrzydło nurkowe",
+      "concept_key": "SKRZYDLO",
+      "description": "Alternatywa dla jacketu, coraz chętniej wybierana przez nurków ze względu na lepszy trym i pozycję pod wodą. Wypiera klasyczne jackety z rynku.",
+      "evidence_id": "EV-P-001"
+    },
+    {
+      "product": "Pas balastowy",
+      "concept_key": "PAS_BALASTOWY",
+      "description": "Niezbędny, jeśli wybrany lekki jacket nie posiada wystarczająco pojemnego zintegrowanego systemu balastowego.",
+      "evidence_id": "EV-B-010"
+    }
+  ],
+  "faq": [
+    {
+      "question": "Do czego służy jacket nurkowy?",
+      "answer": "Jacket służy do kontrolowania pływalności pod wodą. Pozwala na dodawanie powietrza z butli lub jego upuszczanie, dzięki czemu nurek może swobodnie unosić się w toni, opadać lub bezpiecznie odpoczywać na powierzchni wody.",
+      "evidence_ids": [
+        "EV-P-004"
+      ]
+    },
+    {
+      "question": "Jak nazywa się kamizelka do nurkowania?",
+      "answer": "Profesjonalnie ten sprzęt nazywa się BCD (Buoyancy Control Device) lub kompensatorem pływalności. W Polsce najczęściej używa się określeń 'jacket' lub po prostu 'kamizelka nurkowa'.",
+      "evidence_ids": [
+        "EV-P-005",
+        "EV-P-007"
+      ]
+    },
+    {
+      "question": "Co to jest BCD w nurkowaniu?",
+      "answer": "BCD to skrót od angielskiego Buoyancy Control Device. Oznacza urządzenie do kontroli pływalności, do którego zaliczamy zarówno klasyczne jackety, jak i skrzydła nurkowe.",
+      "evidence_ids": [
+        "EV-P-008"
+      ]
+    },
+    {
+      "question": "Czy jacket nurkowy to kamizelka asekuracyjna lub ratunkowa?",
+      "answer": "Nie. Choć jacket utrzymuje nurka na powierzchni, nie jest certyfikowanym środkiem ratunkowym. W przypadku utraty przytomności klasyczny jacket nie gwarantuje odwrócenia nurka twarzą do góry i utrzymania dróg oddechowych nad wodą.",
+      "evidence_ids": [
+        "EV-A-041"
+      ]
+    },
+    {
+      "question": "Jaki jacket nurkowy podróżny wybrać na wyjazdy?",
+      "answer": "Szukaj modeli z kategorii 'travel'. Są one wykonane z lżejszych materiałów i łatwiej się składają do walizki. Pamiętaj jednak, że mają one zazwyczaj mniejszą wyporność i mniejsze kieszenie balastowe. Często warto od razu dokupić do nich kieszenie trymujące na pas z butlą.",
+      "evidence_ids": [
+        "EV-A-018"
+      ]
+    }
+  ],
+  "seller_notes": "Zwróć uwagę klientom, że sprzedaż klasycznych jacketów systematycznie spada na rzecz skrzydeł, ponieważ nurkowie szybko doceniają lepszy trym i wygodę worka na plecach. W przypadku sprzedaży jacketów turystycznych (travel) zawsze weryfikuj, czy klient nie będzie potrzebował dodatkowych kieszeni trymujących, ponieważ zintegrowane kieszenie bywają zbyt małe na pełny balast. Przypominaj, że wąż do inflatora jest zawsze w zestawie z nowym jacketem i nie trzeba go dokupywać osobno.",
+  "concept_number": 25,
+  "missing_data": [],
+  "name_en": "jacket BCD",
+  "not_to_confuse": [
+    {
+      "concept_key": "SKRZYDLO",
+      "explanation": "W skrzydle worek wypornościowy znajduje się wyłącznie na plecach, co ułatwia poziomą pozycję (trym) i nie ściska klatki piersiowej po napompowaniu. Jackety posiadają komory powietrzne również po bokach tułowia."
+    }
+  ],
+  "related_concept_keys": [
+    "SKRZYDLO",
+    "INFLATOR",
+    "WAZ_INFLATORA",
+    "BALAST",
+    "KIESZENIE_ZINTEGROWANE",
+    "TRYMOWKA",
+    "BUTLA_NURKOWA"
+  ],
+  "subtypes_technical": [
+    {
+      "name": "Konstrukcja jednopowłokowa",
+      "description": "Zewnętrzny materiał (np. Cordura) jest jednocześnie szczelnym workiem wypornościowym. Rozwiązanie to obniża wagę sprzętu, dlatego jest często stosowane w modelach podróżnych."
+    },
+    {
+      "name": "Konstrukcja dwupowłokowa",
+      "description": "Posiada wewnętrzny pęcherz z poliuretanu, który utrzymuje powietrze, chroniony zewnętrzną powłoką z wytrzymałego materiału. Bardziej odporna na przetarcia i uszkodzenia mechaniczne."
+    }
+  ],
+  "ungrounded_additions": [
+    {
+      "text": "BCD",
+      "reason": "Skrót od Buoyancy Control Device, pojawia się w zapytaniach (np. EV-P-008), powszechnie używany w branży jako synonim jacketu/skrzydła."
+    },
+    {
+      "text": "czaket",
+      "reason": "Zapis fonetyczny słowa jacket, powszechnie używany w slangu przez nurków i eksperta w transkrypcji."
+    },
+    {
+      "text": "kamizelka ratowniczo-wyrównawcza",
+      "reason": "Oficjalna polska nazwa z podręczników nurkowych (KRW), brak bezpośrednio w evidence, ale kluczowa dla definicji."
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+# Red-team harness — Promptfoo config (T-024, ADR-060)
+# Architektura kaskadowa W0/W1/W2 (panel 3/3 konsensus).
+# Custom Python provider zarządza multi-turn dialog z DEV endpoint czatu.
+
+description: "DiveChat red-team harness — kaskada W0/W1/W2 [ADR-060]"
+
+# Środowisko (czytane z .env w PROJECT_ROOT przez provider)
+env: {}
+
+# Provider — Python script realizujący multi-turn dialog.
+# scenario_id przekazywany przez vars.scenario_id per test (mapowanie z YAML).
+providers:
+  - id: "file://../tools/divechat_provider.py:call_api"
+    label: "divechat-dev"
+    config:
+      api_base: "https://chat.divezone.pl"
+
+# Prompt jest no-op — provider ignoruje prompt string i czerpie wszystko ze
+# scenariusza YAML wskazanego przez vars.scenario_id.
+prompts:
+  - "[scenario:{{scenario_id}}]"
+
+# KROK 1 STOP 1: jeden test — JAIL-001 (canary case 87, semi_scripted 5 tur).
+# Po STOP 1 generator testów (scenarios_to_promptfoo.py) wygeneruje pełną listę
+# dla wszystkich ~50 YAML.
+tests:
+  - description: "JAIL-001 — praca magisterska pod lodem (canary case 87)"
+    vars:
+      scenario_id: "JAIL-001"
+    # Brak assertions w KROK 1 — sanity check provider/transport.
+    # W KROK 2+ dochodzi W0 (python assertion) + W1 (llm-rubric).
