@@ -4549,3 +4549,39 @@ kierunek: CHAT-T-176 — przenieść zmienną treść z prefiksu + rozważyć TT
 mylił się, nazywając cache historii największą oszczędnością; pomiar (warunek Karola 55) to
 wychwycił przed wdrożeniem. **Karol (decyzja 59a) potwierdził: T-175 NIE deployować.** Kod
 zostaje w repo na wypadek, gdyby po naprawie zapisów (T-176) cache historii miał sens.
+
+**Nota 2 (2026-07-27, przyczyna C + kierunek Sonnet 5).** CC (T-176 KROK 1) znalazło
+trzecią przyczynę, spoza diagnozy architekta: thinking z `budget_tokens` (reasoning_effort
+=minimal→1024) tworzy DWA osobne prefiksy cache (wstrzyk ~22 tok przed narzędziami tylko gdy
+ostatnia wiadomość od użytkownika). To ~47% zapisów cache. Nie da się obejść breakpointem.
+Zweryfikowano w dokumentacji: `budget_tokens`+`type:enabled` jest DEPRECATED na Sonnet 4.6,
+a Sonnet 5 odrzuca je błędem 400. Adaptive thinking zachowuje breakpointy cache (rozwiązuje
+C). Kierunek: migracja na Sonnet 5 z budget_tokens→adaptive = CHAT-T-177. Naprawa A (T-176)
+wdrożona osobno jako fundament. Wyłączenie thinking rozważane (decyzja 60b) — adaptive z
+niskim effort realizuje to lepiej niż twarde disabled.
+
+---
+
+### ADR-139: Migracja na Claude Sonnet 5 z adaptive thinking
+
+**Kontekst.** Produkcja czatu używa `claude-sonnet-4-6` z thinking przez `budget_tokens`
+(reasoning_effort=minimal). Trzy problemy: (1) Sonnet 5 dostępny od 30.06.2026, mocniejszy,
+intro $2/$10 do 31.08 (potem $3/$15 = jak 4.6); (2) `budget_tokens`+`type:enabled` jest
+deprecated na 4.6 i ODRZUCANE błędem 400 na Sonnet 5 — przełączenie modelu bez migracji kodu
+= zgon czatu; (3) budget_tokens tworzy podwójny prefiks cache (ADR-138 nota 2, przyczyna C,
+~47% zapisów).
+
+**Decyzja (Karol, kierunek 62).** Migrować na `claude-sonnet-5` ze skoordynowaną zmianą:
+budget_tokens→adaptive thinking (effort), usunięcie niedomyślnej temperatury (Sonnet 5
+odrzuca 400), pomiar nowego tokenizera (+do 35% tokenów). Adaptive thinking rozwiązuje
+przyczynę C (zachowuje breakpointy cache) i realizuje intencję „mniej myślenia dla prostych
+zapytań" lepiej niż twarde wyłączenie (model sam decyduje wg złożoności).
+
+**Ryzyka.** 400 na produkcji przy błędzie migracji (całkowity zgon czatu) — stąd rollback
+przez `model_primary` jednym ustawieniem. Nowy tokenizer może podnieść koszt mimo tej samej
+stawki — stąd wymóg pomiaru przed/po. Regresja jakości — replay trudnych pytań.
+
+**Powiązania.** Rozwiązuje przyczynę C z ADR-138. Domyka wątek thinking (decyzja 60b).
+Niezależne od T-176 (naprawa A, fundament cache), które wdrażane osobno.
+
+**Realizacja:** CHAT-T-177.
