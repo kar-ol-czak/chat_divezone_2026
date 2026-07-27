@@ -1,9 +1,0 @@
-# CHAT-T-073 ANEKS A (Q223a): poprawny MIME dla manifestu PWA.
-# Bez tego serwer zwracal application/octet-stream — Chrome/Android
-# toleruje, Safari/iOS potrafi zignorowac manifest, ryzyko dla iPhone.
-#
-# Plik AddType-only. ZERO RewriteRule, ZERO interakcji z parent .htaccess
-# (DirectoryIndex + rewrite do index.php API) — statyki /m/* dalej
-# serwowane wprost, /m/api/* dalej przez router PHP.
-
-AddType application/manifest+json .webmanifest

@@ -3,6 +3,13 @@
 ## Opis projektu
 Czat AI ze wyszukiwaniem semantycznym dla sklepu nurkowego divezone.pl (PrestaShop 1.7.6, prefix tabel: pr_). Wykorzystuje pgvector, function calling (Claude/OpenAI API), bazę wiedzy ekspercką. Architektura hybrydowa: moduł PS (widget + panel admina) + standalone API na chat.divezone.pl (PHP 8.4).
 
+## ⚠️ FORMAT KAŻDEGO RAPORTU (obowiązkowo, wszystkie instancje)
+Każdy raport z pracy MUSI mieć na SAMEJ GÓRZE i na SAMYM DOLE ramkę z numerem taska i instancją, w formacie:
+```
+═══ CHAT-T-NNN · INSTANCJA · [KROK X / DEPLOYED / STOP] ═══
+```
+Powód: operator prowadzi kilka wątków równolegle i wkleja raporty między sesjami. Bez numeru taska u góry i u dołu raport trafia pod niewłaściwą rozmowę i powstają kosztowne pomyłki (zdarzyło się 2026-07-27). Numer taska w środku raportu NIE wystarcza — musi być pierwszą i ostatnią linią.
+
 ## ⚠️ MAPA INFRASTRUKTURY I WDROŻEŃ — dla architekta (czytaj PRZED pisaniem tasków i deployem)
 
 **DWA OSOBNE ŚWIATY WDROŻENIOWE — nie mylić, każdy to inny rsync w inne miejsce:**
