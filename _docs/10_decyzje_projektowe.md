@@ -4585,3 +4585,10 @@ stawki — stąd wymóg pomiaru przed/po. Regresja jakości — replay trudnych 
 Niezależne od T-176 (naprawa A, fundament cache), które wdrażane osobno.
 
 **Realizacja:** CHAT-T-177.
+
+**Nota (Karol, 2026-07-24) — trzy parametry doprecyzowane, potwierdzone dokumentacją Anthropic:**
+- **Effort = `low`** (Q32a). Dziś `minimal` (budżet 1024). Adaptive na Sonnet 5 jest domyślnie `high` (myśli prawie zawsze) — zostawienie domyślnego PODNIOSŁOBY koszt i latencję wobec dziś, bo tokeny myślenia liczą się do max_tokens. Mapowanie `minimal→low` jest OBOWIĄZKOWE, nie kosmetyczne. Czat to głównie proste zapytania; trudny dobór sprzętu obsługują narzędzia deterministyczne, nie rozumowanie modelu. Ewaluacja: replay trudnych rozmów przy `low`, podnieść do `medium` tylko jeśli jakość spadnie.
+- **Model = `claude-sonnet-5`** (Q33a). Dla obsługi klienta (knowledge work, nie agentic coding) Sonnet 5 nie ustępuje Opus 4.8, a kosztuje mniej. Opus rezerwowany do zadań architektonicznych.
+- **Timing = migracja teraz** (Q34c). Intro $2/$10 do 31.08.2026 vs $3/$15 na 4.6 = taniej mimo tokenizera (+~30%, potwierdzone docs Anthropic). Stawka niższa o 33% równoważy wzrost tokenów. Pomiar tokenizera OBOWIĄZKOWY, ale nie blokuje migracji — MUSI trafić do decyzji przed 31.08, bo po tej dacie stawka wraca do $3/$15 i równanie się zmienia.
+
+Weryfikacja faktów bazowych (architekt, web_search 2026-07-27, docs Anthropic): `budget_tokens`+`type:enabled` → 400 na Sonnet 5 (jak Opus 4.8/4.7); sampling params niedomyślne → 400; nowy tokenizer ~30% więcej tokenów. Wszystkie trzy przesłanki tasku potwierdzone niezależnie.
