@@ -107,12 +107,18 @@ final class ChatService
         // Dzięki temu historia (divechat_messages + JSONB) zostaje czysta, a system[0]
         // i tak jest filtrowany przy zapisie. Działa dla obu providerów (Claude bierze
         // system osobno; OpenAI jako pierwszą wiadomość role=system).
-        $systemPrompt = SystemPrompt::build($settings['emoji_enabled']);
+        // CHAT-T-176 (ADR-138): prompt idzie DWOMA blokami systemowymi. Pierwszy
+        // (stały, cacheable=true) jest cache'owanym prefiksem — drugi (data + kontekst
+        // chipów tej tury) leci BEZ cache_control, więc jego zmiana nie unieważnia
+        // ~45 tys. tokenów prefiksu. Oba mają role=system, więc filtr historii i zapis
+        // rozmowy traktują je tak jak dotąd jeden.
+        $systemVolatile = SystemPrompt::buildVolatile();
         if ($chipContext !== null && $chipContext !== '') {
-            $systemPrompt .= self::buildChipContextBlock($chipContext);
+            $systemVolatile .= self::buildChipContextBlock($chipContext);
         }
         $messages = [
-            ['role' => 'system', 'content' => $systemPrompt],
+            ['role' => 'system', 'content' => SystemPrompt::buildStatic($settings['emoji_enabled']), 'cacheable' => true],
+            ['role' => 'system', 'content' => $systemVolatile, 'cacheable' => false],
         ];
 
         foreach ($trimmedHistory as $msg) {
@@ -120,6 +126,12 @@ final class ChatService
                 $messages[] = $msg;
             }
         }
+
+        // CHAT-T-176: granicę "co jest nowe w tej turze" zapamiętujemy TU, licząc
+        // realną długość tablicy, zamiast odtwarzać ją później arytmetyką
+        // (1 + count($trimmedHistory)). Bloków systemowych są teraz dwa, a z historii
+        // odsiewamy role=system — każde takie założenie rozjeżdża zapis o jedną pozycję.
+        $newStartIdx = count($messages);
 
         // Dodaj nową wiadomość użytkownika
         $messages[] = ['role' => 'user', 'content' => $message];
@@ -347,9 +359,9 @@ final class ChatService
         }, $fullHistory);
 
         // Wyciągnij NOWE wiadomości z tego turnu (po trimmed history + user msg)
-        //   $messages = [system, ...trimmedHistory, userMsg, ...toolLoopMsgs]
-        //   Nowe = userMsg + toolLoopMsgs (od pozycji 1 + count(trimmedHistory))
-        $newStartIdx = 1 + count($trimmedHistory); // skip system + trimmed history
+        //   $messages = [...bloki system, ...trimmedHistory, userMsg, ...toolLoopMsgs]
+        //   Nowe = userMsg + toolLoopMsgs — granica ($newStartIdx) zapamiętana wyżej,
+        //   tuż przed doklejeniem wiadomości użytkownika.
         $newMessages = array_slice($messages, $newStartIdx);
 
         // Serializuj tool_calls w nowych wiadomościach

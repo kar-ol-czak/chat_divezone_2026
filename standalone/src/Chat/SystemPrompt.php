@@ -38,31 +38,49 @@ final class SystemPrompt
     ];
 
     /**
+     * CHAT-T-176 (ADR-138): pełny prompt = część STAŁA + część ZMIENNA.
+     * Zachowane dla kompatybilności (testy, provider bez cache'owania) — kod
+     * produkcyjny woła buildStatic() i buildVolatile() OSOBNO, bo tylko wtedy
+     * blok stały nadaje się na cache'owany prefiks. Patrz buildStatic().
+     */
+    public static function build(bool $emojiEnabled = true, ?\DateTimeImmutable $now = null): string
+    {
+        return self::buildStatic($emojiEnabled) . "\n\n" . self::buildVolatile($now);
+    }
+
+    /**
+     * CHAT-T-176 (ADR-138): CZĘŚĆ STAŁA promptu — to ona jest cache'owanym prefiksem.
+     *
+     * KRYTYCZNE: nic, co zmienia się częściej niż deploy, nie może tu trafić.
+     * Prompt caching Anthropic działa na PREFIKSIE — jedna zmienna wysoko w tekście
+     * unieważnia cache całego ogona (>1000 linii). Data (zmienna codziennie) i kontekst
+     * chipów (zmienny per rozmowa) są dlatego w buildVolatile(), doklejanym jako OSOBNY
+     * blok systemowy BEZ cache_control. Zmierzone: zmiana daty/chipów nadal trafia
+     * w cache prefiksu (sonda KROK 2).
+     *
+     * Marki i reguła emoji ZOSTAJĄ tutaj świadomie: marki to stałe klasy, a emoji to
+     * globalne ustawienie panelu (jednakowe dla wszystkich rozmów, zmieniane raz na
+     * ruski rok) — żadne z nich nie fragmentuje cache między rozmowami.
+     *
      * CHAT-T-070 (ADR-085): kotwica daty + reguła "zawsze narzędzie".
      * Model bez kotwicy defaultuje do swojego knowledge cutoffu i podaje
      * np. date=2025-01-25 na "jutro" (rok cutoffu). Kotwica + reguła
      * "NIGDY nie podawaj dnia tygodnia ani statusu bez get_shop_schedule"
-     * eliminują halucynację.
+     * eliminują halucynację. Sama kotwica siedzi teraz w buildVolatile().
      */
-    public static function build(bool $emojiEnabled = true, ?\DateTimeImmutable $now = null): string
+    public static function buildStatic(bool $emojiEnabled = true): string
     {
         $brands = self::ALLOWED_BRANDS;
         $banned = self::BANNED_BRANDS;
         $emojiRule = $emojiEnabled ? '' : "\n            EMOJI: Nie używaj emoji w odpowiedziach.";
 
-        $now ??= new \DateTimeImmutable('now', new \DateTimeZone('Europe/Warsaw'));
-        $tomorrow = $now->modify('+1 day');
-        $todayLabel = self::WEEKDAY_PL[(int) $now->format('N')] . ' ' . $now->format('Y-m-d');
-        $tomorrowLabel = self::WEEKDAY_PL[(int) $tomorrow->format('N')] . ' ' . $tomorrow->format('Y-m-d');
-
         return <<<PROMPT
             Jesteś ekspertem ds. sprzętu nurkowego w sklepie divezone.pl, największym sklepie nurkowym w Polsce. Pomagasz klientom dobrać sprzęt, odpowiadasz na pytania o produkty i zamówienia.
 
-            AKTUALNA DATA: {$todayLabel} (Europe/Warsaw). Jutro: {$tomorrowLabel}.
             REGUŁA DAT I STATUSU OTWARCIA (KRYTYCZNE — ADR-085):
             - Dla "dziś/jutro/pojutrze" oraz pytań o bieżący stan otwarcia → wywołaj get_shop_schedule z parametrem relative (today/tomorrow/day_after_tomorrow). NIE licz daty sam.
             - Dla "w <dzień tygodnia>" / "następny <dzień>" → relative=this_<dzień> lub next_<dzień>. Jeśli klient użył samej nazwy dnia (bez "następny/przyszły") a dziś JEST tym dniem — NIE zgaduj, DOPYTAJ klienta: dziś czy za tydzień, dopiero potem wołaj narzędzie.
-            - Dla konkretnej daty kalendarzowej ("15 lipca", "6 czerwca") → policz ROK z AKTUALNEJ DATY powyżej (Europe/Warsaw) i podaj przez parametr date w formacie YYYY-MM-DD.
+            - Dla konkretnej daty kalendarzowej ("15 lipca", "6 czerwca") → policz ROK z sekcji AKTUALNA DATA (podanej na KOŃCU tego promptu, strefa Europe/Warsaw) i podaj przez parametr date w formacie YYYY-MM-DD.
             - NIGDY nie podawaj dnia tygodnia ani statusu otwarcia bez wywołania get_shop_schedule. Odpowiadaj WYŁĄCZNIE z wyniku narzędzia (pole server_today potwierdza dzisiejszą datę — jeśli rozjeżdża się z Twoim założeniem, zaufaj server_today).
             - CYTOWANIE DATY: gdy podajesz datę klientowi, odczytaj DD i MM WPROST z pola `date` w tool result (format YYYY-MM-DD: pierwsze cyfry po pierwszym myślniku to miesiąc, drugie po drugim myślniku to dzień). NIE przeliczaj, NIE zaokrąglaj, NIE dodawaj/odejmuj. Po polsku: "DD <nazwa-miesiąca>". Np. date=2026-06-05 → "5 czerwca", date=2026-07-15 → "15 lipca". Pomyłka cyfry dnia = błąd klientowski.
 
@@ -180,7 +198,7 @@ final class SystemPrompt
             → Bot odpowiada z wyniku toola (working_day, opens_at/closes_at lub closed_reason). NIE liczy daty sam — backend zna prawdziwe "dziś" Europe/Warsaw.
 
             Klient (gdy dziś jest piątkiem): "Pracujecie w piątek?"
-            → Bot: "Masz na myśli dziś (piątek {$todayLabel}), czy piątek za tydzień?" (NIE woła narzędzia — najpierw rozstrzyga dwuznaczność)
+            → Bot: "Masz na myśli dziś (piątek 5 czerwca), czy piątek za tydzień?" (NIE woła narzędzia — najpierw rozstrzyga dwuznaczność; konkretny dzień bierze z sekcji AKTUALNA DATA na końcu promptu)
             → Po odpowiedzi: relative="this_friday" (dziś) lub relative="next_friday" (za tydzień).
 
             ZASADY:
@@ -1072,5 +1090,27 @@ final class SystemPrompt
             - NIGDY nie używaj nagłówków (#, ##), list numerowanych (1. 2. 3.) ani innego Markdown poza pogrubieniem i bulletami `-`.
             - Bądź konkretny, unikaj ogólników.{$emojiRule}
             PROMPT;
+    }
+
+    /**
+     * CHAT-T-176 (ADR-138): CZĘŚĆ ZMIENNA promptu — kotwica daty (ADR-085).
+     *
+     * Wysyłana jako OSOBNY blok systemowy BEZ cache_control, ZA blokiem stałym.
+     * Dzięki temu codzienna zmiana daty nie unieważnia cache całego promptu
+     * (~45 tys. tokenów), a kosztuje tylko te kilkadziesiąt tokenów po pełnej cenie.
+     * ChatService dokleja do tego bloku kontekst chipów TEJ TURY (też zmienny).
+     *
+     * Treść i format kotwicy BEZ ZMIAN względem wersji sprzed rozbicia — przeniesiona
+     * została pozycja, nie znaczenie. Reguły korzystania z daty zostały w bloku stałym
+     * i odwołują się do tej sekcji jako "na KOŃCU tego promptu".
+     */
+    public static function buildVolatile(?\DateTimeImmutable $now = null): string
+    {
+        $now ??= new \DateTimeImmutable('now', new \DateTimeZone('Europe/Warsaw'));
+        $tomorrow = $now->modify('+1 day');
+        $todayLabel = self::WEEKDAY_PL[(int) $now->format('N')] . ' ' . $now->format('Y-m-d');
+        $tomorrowLabel = self::WEEKDAY_PL[(int) $tomorrow->format('N')] . ' ' . $tomorrow->format('Y-m-d');
+
+        return "AKTUALNA DATA: {$todayLabel} (Europe/Warsaw). Jutro: {$tomorrowLabel}.";
     }
 }

@@ -42,13 +42,19 @@ final class ClaudeProvider implements AIProviderInterface
 
     public function chat(array $messages, array $tools = [], array $options = []): AIResponse
     {
-        // Wydziel system prompt i konwertuj wiadomości
-        $system = '';
+        // Wydziel system prompt i konwertuj wiadomości.
+        // CHAT-T-176 (ADR-138): bloków systemowych może być kilka. Zachowujemy ich
+        // kolejność i flagę `cacheable` — cache_control trafi TYLKO na ostatni
+        // cache'owalny blok (patrz buildSystemBlocks()).
+        $systemParts = [];
         $claudeMessages = [];
 
         foreach ($messages as $msg) {
             match ($msg['role']) {
-                'system' => $system = $msg['content'],
+                'system' => $systemParts[] = [
+                    'text' => (string) $msg['content'],
+                    'cacheable' => $msg['cacheable'] ?? true,
+                ],
                 'user' => $claudeMessages[] = [
                     'role' => 'user',
                     'content' => $msg['content'],
@@ -103,14 +109,9 @@ final class ClaudeProvider implements AIProviderInterface
         }
 
         // System prompt z cache_control → prompt caching Anthropic.
-        if ($system !== '') {
-            $body['system'] = [
-                [
-                    'type' => 'text',
-                    'text' => $system,
-                    'cache_control' => ['type' => 'ephemeral'],
-                ],
-            ];
+        $systemBlocks = $this->buildSystemBlocks($systemParts);
+        if ($systemBlocks !== []) {
+            $body['system'] = $systemBlocks;
         }
 
         if (!empty($tools)) {
@@ -130,6 +131,47 @@ final class ClaudeProvider implements AIProviderInterface
 
         $data = json_decode($response->getBody()->getContents(), true);
         return $this->parseResponse($data);
+    }
+
+    /**
+     * CHAT-T-176 (ADR-138): składa bloki `system` z pojedynczym breakpointem cache.
+     *
+     * `cache_control` ląduje na OSTATNIM bloku oznaczonym jako cache'owalny — cache
+     * Anthropic obejmuje wtedy cały prefiks (narzędzia + bloki systemowe do tego
+     * miejsca włącznie), a wszystko za breakpointem (data, kontekst chipów) jest
+     * liczone normalnie i może się zmieniać bez unieważniania prefiksu.
+     *
+     * Puste bloki pomijamy — Anthropic odrzuca pusty blok tekstowy (HTTP 400).
+     * Gdy żaden blok nie jest cache'owalny, wysyłamy je bez cache_control (nic się
+     * nie psuje, tracimy tylko cache — zachowanie bezpieczne przy błędnym wywołaniu).
+     *
+     * @param list<array{text: string, cacheable: bool}> $parts
+     * @return list<array<string, mixed>>
+     */
+    private function buildSystemBlocks(array $parts): array
+    {
+        $parts = array_values(array_filter($parts, static fn(array $p) => $p['text'] !== ''));
+        if ($parts === []) {
+            return [];
+        }
+
+        $breakpoint = null;
+        foreach ($parts as $i => $part) {
+            if ($part['cacheable']) {
+                $breakpoint = $i;
+            }
+        }
+
+        $blocks = [];
+        foreach ($parts as $i => $part) {
+            $block = ['type' => 'text', 'text' => $part['text']];
+            if ($i === $breakpoint) {
+                $block['cache_control'] = ['type' => 'ephemeral'];
+            }
+            $blocks[] = $block;
+        }
+
+        return $blocks;
     }
 
     /**
