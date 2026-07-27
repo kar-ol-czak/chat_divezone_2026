@@ -4547,4 +4547,5 @@ zapisy. Realny palnik to nadmiarowe ZAPISY cache system promptu, z dwóch przycz
 (B) TTL 5 min kontra rozproszony ruch. T-175 WSTRZYMANY (kod w repo, niewdrożony). Nowy
 kierunek: CHAT-T-176 — przenieść zmienną treść z prefiksu + rozważyć TTL 1h. Architekt
 mylił się, nazywając cache historii największą oszczędnością; pomiar (warunek Karola 55) to
-wychwycił przed wdrożeniem.
+wychwycił przed wdrożeniem. **Karol (decyzja 59a) potwierdził: T-175 NIE deployować.** Kod
+zostaje w repo na wypadek, gdyby po naprawie zapisów (T-176) cache historii miał sens.
