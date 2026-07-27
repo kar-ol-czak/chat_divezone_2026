@@ -4508,3 +4508,33 @@ bez liczb, CHAT-T-173). Powiązany pomysł na przyszłość (Chat-68): ponowna w
 z zamówieniem wyłącznie na adres użyty przy składaniu, nigdy na adres podany w rozmowie.
 
 **Realizacja:** CHAT-T-172.
+
+---
+
+### ADR-138: Rozszerzenie prompt cachingu na narzędzia i historię rozmowy
+
+**Kontekst.** `ClaudeProvider.php` cache'uje tylko system prompt (`cache_control: ephemeral`,
+linia 111). Definicje narzędzi (`formatTools`) i historia rozmowy (`$claudeMessages`) idą
+po cenie cache-miss ($3/M Sonnet 4.6) w każdej turze. Wykryte przy decyzji KEEP=6 (T-159):
+historia nie jest cache'owana, więc każda wieloturowa rozmowa płaci pełną stawkę za
+powtarzany prefiks. Cache: odczyt 0.10× (90% taniej), zapis 1.25×, minimum 1024 tokeny.
+
+**Decyzja (Karol 55).** Rozszerzyć caching o narzędzia i historię. Oszczędność rzędu
+wielokrotnie większego niż wybór KEEP (dotyczy wszystkich wieloturowych rozmów, nie tylko
+35 najdłuższych). Warunek Karola: POMIAR przed i po (pola `cache_read_input_tokens` /
+`cache_creation_input_tokens` już czytane w `parseResponse` linie 246-247), nie wdrażać
+na ślepo.
+
+**Ograniczenia twarde.** Max 4 breakpointy `cache_control` łącznie (system+tools+messages);
+przekroczenie = HTTP 400 na każdym żądaniu. Cache działa na prefiksie — breakpoint po treści
+zmiennej co turę = zero reużycia mimo włączonego cache. Stub z T-159 stabilizuje starsze
+tool_result, co sprzyja cache historii.
+
+**Strategia.** Breakpoint #1 system (jest), #2 koniec bloku tools, #3 koniec narastającej
+historii przed świeżym inputem. Zapas #4. Jeśli cache historii okaże się kruchy (zmienna
+struktura wiadomości) — fallback do system+tools (stały prefiks), historia osobno.
+
+**Powiązania.** Wynika z pomiaru kosztowego przy ADR-brak/T-159 (KEEP=6). Niezależne od
+wyboru KEEP — caching obniża koszt bazowy, KEEP steruje ile historii jest w oknie.
+
+**Realizacja:** CHAT-T-175.
