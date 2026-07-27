@@ -127,6 +127,9 @@ i braku `.git/index.lock` — git pisze tymczasowy plik indeksu na SMB, a ten
 zawodzi przy zapisie.
 **Obejście (sprawdzone 2026-07-25):** prefiksuj polecenia gita `TMPDIR=/tmp`, np.
 `TMPDIR=/tmp git commit -m "..."`. Kieruje plik tymczasowy indeksu na dysk lokalny.
+**Gdy TMPDIR nie wystarcza (2026-07-26):** trzymaj CAŁY indeks na dysku lokalnym na czas
+operacji: `cp .git/index /tmp/idx && GIT_INDEX_FILE=/tmp/idx TMPDIR=/tmp git add ... && GIT_INDEX_FILE=/tmp/idx git commit -m "..." && cp /tmp/idx .git/index`, potem `git push`.
+Git w ogóle nie dotyka indeksu na SMB podczas add/commit.
 Najpierw jednak sprawdź prostsze przyczyny (Ockham): `df -h` (miejsce),
 `ls .git/index.lock` (lock po ubitym procesie CC). Dopiero gdy to czyste — TMPDIR.
 
