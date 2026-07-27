@@ -23,7 +23,9 @@ Uzycie — ZAPIS (wymaga --write, jak sql.py):
     python3 trello.py --write --move <idCard> --to-list <idList>
 
 SEKRETY (ADR-088): TRELLO_API_KEY / TRELLO_TOKEN / TRELLO_BOARD_ID_PROJEKTY2026
-czytane przez _conn.load_env() (odporny na 1 zepsuty klucz), NIGDY wlasnym parserem.
+z wspoldzielonego pliku DiveZone (/Users/karol/Documents/3_DIVEZONE/.divezone_secrets/
+secrets.env, dostepny dla wszystkich projektow), czytane przez _conn.load_env(path)
+(odporny na 1 zepsuty klucz), NIGDY wlasnym parserem.
 Klucz+token ida w query stringu WYLACZNIE do api.trello.com — komunikaty bledow
 pokazuja sciezke endpointu, NIGDY pelnego URL-a z query (sekret w query).
 
@@ -37,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.parse
@@ -47,20 +50,30 @@ from _conn import load_env
 API_BASE = "https://api.trello.com/1"
 TIMEOUT = 30
 
+# Sekrety TRELLO_* zyja w WSPOLDZIELONYM pliku DiveZone (dostepnym dla wszystkich
+# projektow), nie w .env tego projektu (decyzja Karola 2026-07-27). Czytany tym
+# samym odpornym parserem co reszta (_conn.load_env), nie wlasnym regexem (ADR-088).
+SHARED_SECRETS = "/Users/karol/Documents/3_DIVEZONE/.divezone_secrets/secrets.env"
+
 
 class TrelloError(Exception):
     pass
 
 
 def _creds() -> tuple[str, str, str]:
-    """(key, token, board_id) z .env. Sekret tylko w pamieci procesu."""
-    env = load_env()
+    """(key, token, board_id) z wspoldzielonego secrets.env. Sekret tylko w pamieci procesu."""
+    if not os.path.exists(SHARED_SECRETS):
+        sys.exit(
+            f"Brak pliku sekretow {SHARED_SECRETS}.\n"
+            "Sekrety dokłada Karol (patrz task CHAT-T-171 §3) — CC ich nie wpisuje."
+        )
+    env = load_env(SHARED_SECRETS)
     key = env.get("TRELLO_API_KEY", "")
     token = env.get("TRELLO_TOKEN", "")
     board = env.get("TRELLO_BOARD_ID_PROJEKTY2026", "")
     if not key or not token:
         sys.exit(
-            "Brak TRELLO_API_KEY / TRELLO_TOKEN w .env.\n"
+            f"Brak TRELLO_API_KEY / TRELLO_TOKEN w {SHARED_SECRETS}.\n"
             "Sekrety dokłada Karol (patrz task CHAT-T-171 §3) — CC ich nie wpisuje."
         )
     if not board:

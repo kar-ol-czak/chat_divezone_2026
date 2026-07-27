@@ -40,6 +40,23 @@ sondy, ktore wczesniej powstawaly ad-hoc i ginely po sesji.
     python3 replay.py -m "..." --show-tools                 # + pelny przebieg (show_conversation.py --tools)
     python3 replay.py --from-conversation 829 --show-tools  # powtorz 1. pytanie user z rozmowy 829
   Wyjscie: session_id, conv_id, narzedzia (tools_used), zapytania (search_diagnostics), odpowiedz.
+- `trello.py` — deterministyczne karty Chat (board Projekty2026) przez REST API Trello.
+  Zastepuje zawodny MCP Trello (padal pod Node 25, nie ladowal sie do sesji desktop).
+  Idzie tym samym kanalem co reszta narzedzi (Desktop Commander + urllib). Sekrety
+  TRELLO_API_KEY/TRELLO_TOKEN/TRELLO_BOARD_ID_PROJEKTY2026 z wspoldzielonego pliku
+  DiveZone (/Users/karol/Documents/3_DIVEZONE/.divezone_secrets/secrets.env, dostepny
+  dla wszystkich projektow) przez _conn.load_env(path) (ADR-088) — tylko w pamieci,
+  nigdy do stdout/logow (klucz w query stringu, komunikaty bledow pokazuja sciezke
+  endpointu bez query). --write obowiazkowe dla mutacji (jak sql.py).
+    python3 trello.py --list-lists                        # listy boardu z ID
+    python3 trello.py --list-cards <idList>               # karty listy
+    python3 trello.py --card <idCard>                     # szczegoly
+    python3 trello.py --write --new-card <idList> --name "opis" --chat-prefix
+        # tworzy + nadaje "Chat - <idShort> - opis" w jednym wywolaniu (idShort z odpowiedzi POST)
+    python3 trello.py --write --rename <idCard> --name "Chat - NN - opis [T-NNN]"
+    python3 trello.py --write --move <idCard> --to-list <idList>   # tylko idList, bez boardId
+  Bezpiecznik: --to-list/--new-card na liste spoza boardu Projekty2026 -> odmowa.
+  Kasowanie kart POZA zakresem narzedzia (robi Karol recznie).
 - `check_deploy.py <sciezka_w_repo>` — kontrola wdrozenia jednym poleceniem:
   md5 local<->prod + php -l (ea-php84) + smoke /api/health. Sam mapuje repo->serwer
   (standalone/ -> chat.divezone.pl BEZ prefiksu; modules/ -> newtmp2 = PRODUKCJA).
