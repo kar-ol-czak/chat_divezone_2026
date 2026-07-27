@@ -53,7 +53,8 @@ TIMEOUT = 30
 # Sekrety TRELLO_* zyja w WSPOLDZIELONYM pliku DiveZone (dostepnym dla wszystkich
 # projektow), nie w .env tego projektu (decyzja Karola 2026-07-27). Czytany tym
 # samym odpornym parserem co reszta (_conn.load_env), nie wlasnym regexem (ADR-088).
-SHARED_SECRETS = "/Users/karol/Documents/3_DIVEZONE/.divezone_secrets/secrets.env"
+# load_env() bez argumentu uzywa GLOBAL_ENV_CANDIDATES (lista sciezek dla obu maszyn,
+# /Volumes vs /Users) — NIE zaszywaj jednej sciezki, dysk SMB alternuje montowanie.
 
 
 class TrelloError(Exception):
@@ -61,19 +62,15 @@ class TrelloError(Exception):
 
 
 def _creds() -> tuple[str, str, str]:
-    """(key, token, board_id) z wspoldzielonego secrets.env. Sekret tylko w pamieci procesu."""
-    if not os.path.exists(SHARED_SECRETS):
-        sys.exit(
-            f"Brak pliku sekretow {SHARED_SECRETS}.\n"
-            "Sekrety dokłada Karol (patrz task CHAT-T-171 §3) — CC ich nie wpisuje."
-        )
-    env = load_env(SHARED_SECRETS)
+    """(key, token, board_id) z globalnego secrets.env (lista kandydatow w _conn).
+    Sekret tylko w pamieci procesu."""
+    env = load_env()
     key = env.get("TRELLO_API_KEY", "")
     token = env.get("TRELLO_TOKEN", "")
     board = env.get("TRELLO_BOARD_ID_PROJEKTY2026", "")
     if not key or not token:
         sys.exit(
-            f"Brak TRELLO_API_KEY / TRELLO_TOKEN w {SHARED_SECRETS}.\n"
+            "Brak TRELLO_API_KEY / TRELLO_TOKEN w globalnym secrets.env.\n"
             "Sekrety dokłada Karol (patrz task CHAT-T-171 §3) — CC ich nie wpisuje."
         )
     if not board:
