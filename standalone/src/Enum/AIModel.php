@@ -12,7 +12,6 @@ enum AIModel: string
 {
     // Claude
     case CLAUDE_OPUS_47 = 'claude-opus-4-7';
-    case CLAUDE_SONNET_5 = 'claude-sonnet-5';
     case CLAUDE_SONNET_46 = 'claude-sonnet-4-6';
     case CLAUDE_HAIKU_45 = 'claude-haiku-4-5';
 
@@ -27,10 +26,7 @@ enum AIModel: string
     public function provider(): string
     {
         return match ($this) {
-            self::CLAUDE_OPUS_47,
-            self::CLAUDE_SONNET_5,
-            self::CLAUDE_SONNET_46,
-            self::CLAUDE_HAIKU_45 => 'claude',
+            self::CLAUDE_OPUS_47, self::CLAUDE_SONNET_46, self::CLAUDE_HAIKU_45 => 'claude',
             default => 'openai',
         };
     }
@@ -49,7 +45,6 @@ enum AIModel: string
     {
         return match ($this) {
             self::CLAUDE_OPUS_47 => 'Claude Opus 4.7',
-            self::CLAUDE_SONNET_5 => 'Claude Sonnet 5',
             self::CLAUDE_SONNET_46 => 'Claude Sonnet 4.6',
             self::CLAUDE_HAIKU_45 => 'Claude Haiku 4.5',
             self::GPT_55 => 'GPT-5.5',
@@ -69,48 +64,6 @@ enum AIModel: string
     public function supportsReasoningEffort(): bool
     {
         return $this !== self::GPT_41;
-    }
-
-    /**
-     * CHAT-T-177 (ADR-139): model sterowany adaptive thinking zamiast budget_tokens.
-     *
-     * Na tych modelach `thinking: {type: enabled, budget_tokens: N}` jest ODRZUCANE
-     * błędem HTTP 400 — sterujemy `thinking: {type: adaptive}` + `output_config.effort`.
-     * Starsze modele (Sonnet 4.6, Haiku 4.5, Opus 4.7) zostają na budget_tokens.
-     */
-    public function supportsAdaptiveThinking(): bool
-    {
-        return $this === self::CLAUDE_SONNET_5;
-    }
-
-    /**
-     * CHAT-T-177 (ADR-139): model odrzuca niedomyślne temperature/top_p/top_k
-     * błędem HTTP 400 na KAŻDYM żądaniu. Bezpiecznik niezależny od
-     * supportsTemperature() — ta mówi „model rozumie temperaturę", ta mówi
-     * „wysłanie temperatury zabije żądanie".
-     */
-    public function rejectsNonDefaultTemperature(): bool
-    {
-        return $this === self::CLAUDE_SONNET_5;
-    }
-
-    /**
-     * Rezerwa tokenów myślenia doliczana do `max_tokens`.
-     *
-     * Na Claude `max_tokens` obejmuje myślenie ORAZ tekst odpowiedzi, więc bez
-     * rezerwy długie myślenie ucina odpowiedź. Skala jest ta sama co historyczne
-     * budget_tokens — dzięki temu migracja na adaptive (ADR-139) nie zmienia
-     * efektywnego sufitu odpowiedzi.
-     */
-    public function thinkingHeadroomTokens(string $effort): int
-    {
-        return match ($effort) {
-            'minimal' => 1024,
-            'low' => 4096,
-            'medium' => 8192,
-            'high', 'xhigh', 'max' => 16384,
-            default => 8192,
-        };
     }
 
     /**
@@ -136,30 +89,13 @@ enum AIModel: string
     /**
      * Mapuje effort z UI (minimal/low/medium/high) na wartość przekazywaną do API providera.
      * - openai → ten sam string
-     * - claude z adaptive thinking → string effort do `output_config` (ADR-139)
-     * - claude sprzed adaptive → int budget_tokens (1024/4096/8192/16384)
+     * - claude → int budget_tokens (1024/4096/8192/16384)
      * - GPT-4.1 → null (model nie wspiera reasoning_effort)
-     *
-     * CHAT-T-177 (decyzja Karola Q32a): `minimal` mapuje się na `low`, bo Anthropic
-     * nie ma poziomu „minimal" w adaptive. To mapowanie jest OBOWIĄZKOWE, nie
-     * kosmetyczne — pozostawienie domyślnego `high` podniosłoby koszt i latencję
-     * wobec dzisiejszego budżetu 1024.
      */
     public function mapEffortToProviderValue(string $effort): mixed
     {
         if (!$this->supportsReasoningEffort()) {
             return null;
-        }
-
-        if ($this->provider() === 'claude' && $this->supportsAdaptiveThinking()) {
-            return match ($effort) {
-                'minimal', 'low' => 'low',
-                'medium' => 'medium',
-                'high' => 'high',
-                'xhigh' => 'xhigh',
-                'max' => 'max',
-                default => 'medium',
-            };
         }
 
         return match ($this->provider()) {

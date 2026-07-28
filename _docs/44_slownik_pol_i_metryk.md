@@ -547,13 +547,14 @@ Format: co mówi dokument — co jest w kodzie — plik+linia. **Nie naprawiane,
   `get_expert_knowledge` czyta `encyclopedia_chunks` (530 chunków, `ExpertKnowledge.php:105`).
   `divechat_knowledge` jest osierocona.
 
-- **R-3 — `visibility` filtruje NIEspójnie między narzędziami.** ADR-122 nota 3 + ADR-123 nota 93a:
-  `visibility` NIE jest kryterium (Luigi's Box), usunięte z `ProductSearch` (zweryfikowane: 0
-  trafień `visible` w `ProductSearch.php`). ALE nadal filtruje w **`CuratedRecommendations.php:135`**
-  (`!$data['visible']` → skip, reason `visibility=none`) i **`PopularProducts.php:258`** (to samo).
-  Oba narzędzia POLECAJĄ produkty, więc wg logiki ADR-123 powinny też pominąć to kryterium
-  (albo ADR powinien odnotować rozbieżność). Efekt: produkt `vis='none'` + `afo=1` (jest ich 11
-  na PROD) wypada z rekomendacji i popularnych, choć da się go kupić.
+- **R-3 — ROZWIĄZANA 2026-07-28 (ADR-123 nota nr 2, karta Chat-69).** Było: `visibility` usunięte
+  z `ProductSearch` (ADR-123 nota 93a), ale nadal filtrowało w `CuratedRecommendations.php:135`
+  i `PopularProducts.php:258` — uznane za rozjazd. **Okazało się odwrotnie**: pomiar na żywo
+  2026-07-28 obalił fundament noty 93a (Luigi's Box NIE pokazuje `vis='none'`, wbrew dowodowi
+  z 2026-07-15 — ten sam produkt 3920 dziś nie wyszukiwalny). `CuratedRecommendations`/
+  `PopularProducts` miały rację przez cały czas; `ProductSearch` (CHAT-T-178) dogonił je, nie
+  odwrotnie. Kryterium wykluczenia z rekomendacji jest teraz jednolite we wszystkich trzech:
+  `afo=0` LUB `visibility='none'`.
 
 - **R-4 — rozmiarówki: dwa źródła.** PG ma `divechat_size_charts`/`_size_chart_rows`/
   `_product_size_chart`/`_size_label_alias` (**0 trafień w `standalone/src`**). `SizeRecommender`
@@ -617,7 +618,7 @@ bazy Railway, a inwentarz MySQL i kontrakty narzędzi — z kodu z numerami lini
 
 | pole / obiekt | odruch (BŁĘDNY) | stan faktyczny | źródło prawdy |
 |---|---|---|---|
-| `pr_product_shop.visibility` | `'none'` = klient tego nie znajdzie | wyszukiwarką sklepu jest **Luigi's Box** (zewnętrzna) i **ignoruje to pole**. Produkt `vis='none'` JEST w wynikach. Dowód Karola: `divezone.pl/szukaj?s=Torba MARES Cruise` → produkt 3920 | rozjazd R-3, ADR-123 nota 93a |
+| `pr_product_shop.visibility` | `'none'` = klient tego nie znajdzie | **ZMIENIŁO SIĘ 2026-07-28** (ADR-123 nota nr 2). Stary wpis (dowód z 2026-07-15: `divezone.pl/szukaj?s=Torba MARES Cruise`→3920) obalony pomiarem na żywo na TYM SAMYM produkcie — dziś Luigi's Box (`api.luigisbox.tech`, zweryfikowane network requests) NIE zwraca 3920 ani żadnego z 4 testowanych `vis='none'`. `visibility='none'` = „nieprodukowany" (Karol), docelowo formalizowane modułem HADES. Kryterium bota: `afo=0` LUB `visibility='none'` | R-3 (rozwiązana), ADR-123 nota nr 2, karta Chat-69 |
 | `pr_product_shop.available_for_order` | — | **właściwe** kryterium „czy można kupić". `afo=0` = wycofany ze sprzedaży | ADR-123 |
 | `pr_orders.valid` | `0` = niezapłacone | flaga **księgowa** (logable), nie ma nic wspólnego z zapłatą. Dowód: QETUBCWYS `valid=0`, stan „Zapłacone", Tpay | `current_state` → `pr_order_state.paid` |
 | `pr_orders.total_paid_real` | ile faktycznie wpłynęło | **2× zawyżone dla 1246/1259 zamówień Tpay** (99%). Moduł zapisuje płatność dwa razy: raz z `transaction_id`, raz z pustym. Inne bramki (Przelewy24, Revolut, PayPal, PayU = 624 zam.): **zero** podwojeń | **licz `total_paid`**. Karta Sklep - 31 |
