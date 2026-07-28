@@ -20,10 +20,17 @@ use GuzzleHttp\Exception\ServerException;
  * - tool_result jako content block w wiadomości user
  *
  * Reasoning effort: settings.reasoning_effort (UI string) → mapowane przez
- * AIModel::mapEffortToProviderValue() na int budget_tokens.
+ * AIModel::mapEffortToProviderValue() na int budget_tokens (modele sprzed adaptive)
+ * albo na string effort w `output_config` (Sonnet 5+, CHAT-T-177 / ADR-139).
  */
 final class ClaudeProvider implements AIProviderInterface
 {
+    /**
+     * Poziom effortu użyty, gdy model wspiera adaptive thinking, a ustawienia nie
+     * podają własnego (decyzja Karola Q32a — nigdy nie zostawiamy domyślnego `high`).
+     */
+    private const DEFAULT_ADAPTIVE_EFFORT = 'low';
+
     private readonly Client $http;
     private readonly string $apiKey;
     private readonly string $model;
@@ -70,53 +77,20 @@ final class ClaudeProvider implements AIProviderInterface
 
         // CHAT-T-041: max_tokens preferuje override z divechat_settings (przez $options),
         // fallback na konstruktorową wartość z .env. Dla modeli z thinking finalne
-        // max_tokens jest jeszcze podbijane poniżej, by zmieścić budget_tokens.
+        // max_tokens jest jeszcze podbijane w buildRequestBody(), by zmieścić myślenie.
         $effectiveMax = isset($options['max_tokens']) && (int) $options['max_tokens'] > 0
             ? (int) $options['max_tokens']
             : $this->maxTokens;
 
-        $body = [
-            'model' => $model,
-            'max_tokens' => $effectiveMax,
-            'messages' => $claudeMessages,
-        ];
-
-        // Reasoning effort → budget_tokens dla modeli wspierających thinking.
-        // options['effort'] przychodzi z ChatService jako string (minimal/low/medium/high)
-        // lub int (legacy budget_tokens) – rozpoznajemy oba.
-        $budgetTokens = null;
-        if (!empty($options['effort'])) {
-            if (is_int($options['effort'])) {
-                $budgetTokens = $options['effort'];
-            } elseif (is_string($options['effort']) && $aiModel !== null) {
-                $mapped = $aiModel->mapEffortToProviderValue($options['effort']);
-                if (is_int($mapped)) {
-                    $budgetTokens = $mapped;
-                }
-            }
-        }
-
-        if ($budgetTokens !== null && $aiModel !== null && $aiModel->supportsReasoningEffort()) {
-            $body['thinking'] = [
-                'type' => 'enabled',
-                'budget_tokens' => $budgetTokens,
-            ];
-            // Extended thinking wymaga max_tokens > budget_tokens.
-            $body['max_tokens'] = max($effectiveMax, $budgetTokens + 4096);
-            // Z thinking nie wysyłamy temperature.
-        } elseif ($aiModel !== null && $aiModel->supportsTemperature() && isset($options['temperature'])) {
-            $body['temperature'] = (float) $options['temperature'];
-        }
-
-        // System prompt z cache_control → prompt caching Anthropic.
-        $systemBlocks = $this->buildSystemBlocks($systemParts);
-        if ($systemBlocks !== []) {
-            $body['system'] = $systemBlocks;
-        }
-
-        if (!empty($tools)) {
-            $body['tools'] = $this->formatTools($tools);
-        }
+        $body = $this->buildRequestBody(
+            $model,
+            $aiModel,
+            $effectiveMax,
+            $claudeMessages,
+            $systemParts,
+            $tools,
+            $options,
+        );
 
         $requestOptions = [
             'headers' => [
@@ -131,6 +105,110 @@ final class ClaudeProvider implements AIProviderInterface
 
         $data = json_decode($response->getBody()->getContents(), true);
         return $this->parseResponse($data);
+    }
+
+    /**
+     * Składa ciało żądania `POST /v1/messages`.
+     *
+     * Wydzielone z chat(), żeby dało się asertować kształt żądania bez sieci
+     * (patrz tests/AI/ThinkingRequestTest.php) — to jedyne miejsce, w którym
+     * decyduje się, czy model dostanie adaptive thinking, budget_tokens czy
+     * temperaturę, a pomyłka tutaj oznacza HTTP 400 na każdym żądaniu.
+     *
+     * @param list<array<string, mixed>> $claudeMessages
+     * @param list<array{text: string, cacheable: bool}> $systemParts
+     * @param list<array<string, mixed>> $tools
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function buildRequestBody(
+        string $model,
+        ?AIModel $aiModel,
+        int $effectiveMax,
+        array $claudeMessages,
+        array $systemParts,
+        array $tools,
+        array $options,
+    ): array {
+        $body = [
+            'model' => $model,
+            'max_tokens' => $effectiveMax,
+            'messages' => $claudeMessages,
+        ];
+
+        // CHAT-T-177 (ADR-139): dwa rozłączne tryby myślenia.
+        //  - modele adaptive (Sonnet 5+): thinking {type: adaptive} + output_config.effort,
+        //    BEZ budget_tokens (odrzucane błędem 400),
+        //  - modele sprzed adaptive (Sonnet 4.6, Opus 4.7, Haiku 4.5): jak dotąd
+        //    thinking {type: enabled} + budget_tokens.
+        // options['effort'] przychodzi z ChatService jako string (minimal/low/medium/high)
+        // albo int (legacy budget_tokens) — rozpoznajemy oba.
+        $adaptive = $aiModel !== null
+            && $aiModel->supportsReasoningEffort()
+            && $aiModel->supportsAdaptiveThinking();
+
+        $budgetTokens = null;    // tylko modele sprzed adaptive
+        $adaptiveEffort = null;  // tylko modele adaptive
+        $thinkingHeadroom = 0;   // rezerwa tokenów myślenia w max_tokens
+
+        if (!empty($options['effort']) && $aiModel !== null && $aiModel->supportsReasoningEffort()) {
+            if (is_int($options['effort'])) {
+                $thinkingHeadroom = $options['effort'];
+                if (!$adaptive) {
+                    $budgetTokens = $options['effort'];
+                }
+            } elseif (is_string($options['effort'])) {
+                $thinkingHeadroom = $aiModel->thinkingHeadroomTokens($options['effort']);
+                $mapped = $aiModel->mapEffortToProviderValue($options['effort']);
+                if ($adaptive && is_string($mapped)) {
+                    $adaptiveEffort = $mapped;
+                } elseif (!$adaptive && is_int($mapped)) {
+                    $budgetTokens = $mapped;
+                }
+            }
+        }
+
+        if ($adaptive) {
+            // display: "omitted" — nic w systemie nie czyta bloków thinking
+            // (parseResponse je pomija, panel recenzji ich nie pokazuje), a omitted
+            // daje szybszy time-to-first-token.
+            $body['thinking'] = ['type' => 'adaptive', 'display' => 'omitted'];
+            // Effort ZAWSZE jawnie: pominięcie output_config to na Sonnet 5 domyślne
+            // `high`, czyli droższe i wolniejsze niż dzisiejszy stan (decyzja Q32a).
+            $body['output_config'] = ['effort' => $adaptiveEffort ?? self::DEFAULT_ADAPTIVE_EFFORT];
+            // max_tokens obejmuje myślenie ORAZ odpowiedź — trzymamy tę samą rezerwę
+            // co przy budget_tokens, żeby migracja nie ucięła odpowiedzi.
+            $body['max_tokens'] = max(
+                $effectiveMax,
+                ($thinkingHeadroom > 0 ? $thinkingHeadroom : $aiModel->thinkingHeadroomTokens(self::DEFAULT_ADAPTIVE_EFFORT)) + 4096,
+            );
+        } elseif ($budgetTokens !== null) {
+            $body['thinking'] = [
+                'type' => 'enabled',
+                'budget_tokens' => $budgetTokens,
+            ];
+            // Extended thinking wymaga max_tokens > budget_tokens.
+            $body['max_tokens'] = max($effectiveMax, $budgetTokens + 4096);
+            // Z thinking nie wysyłamy temperature.
+        } elseif ($aiModel !== null
+            && $aiModel->supportsTemperature()
+            && !$aiModel->rejectsNonDefaultTemperature()
+            && isset($options['temperature'])
+        ) {
+            $body['temperature'] = (float) $options['temperature'];
+        }
+
+        // System prompt z cache_control → prompt caching Anthropic.
+        $systemBlocks = $this->buildSystemBlocks($systemParts);
+        if ($systemBlocks !== []) {
+            $body['system'] = $systemBlocks;
+        }
+
+        if (!empty($tools)) {
+            $body['tools'] = $this->formatTools($tools);
+        }
+
+        return $body;
     }
 
     /**

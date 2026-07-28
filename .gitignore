@@ -140,3 +140,6 @@ modules/*.zip
 
 # Backupy plików PROD przed deployem (ADR-089) — lokalne, nie do gita
 _deploy_bak/
+
+# Token tracking per sesja CC — prywatne (globalne CLAUDE.md sekcja 10)
+usage_log.csv

@@ -3,6 +3,13 @@
 ## Opis projektu
 Czat AI ze wyszukiwaniem semantycznym dla sklepu nurkowego divezone.pl (PrestaShop 1.7.6, prefix tabel: pr_). Wykorzystuje pgvector, function calling (Claude/OpenAI API), bazę wiedzy ekspercką. Architektura hybrydowa: moduł PS (widget + panel admina) + standalone API na chat.divezone.pl (PHP 8.4).
 
+## ⚠️ FORMAT KAŻDEGO RAPORTU (obowiązkowo, wszystkie instancje)
+Każdy raport z pracy MUSI mieć na SAMEJ GÓRZE i na SAMYM DOLE ramkę z numerem taska i instancją, w formacie:
+```
+═══ CHAT-T-NNN · INSTANCJA · [KROK X / DEPLOYED / STOP] ═══
+```
+Powód: operator prowadzi kilka wątków równolegle i wkleja raporty między sesjami. Bez numeru taska u góry i u dołu raport trafia pod niewłaściwą rozmowę i powstają kosztowne pomyłki (zdarzyło się 2026-07-27). Numer taska w środku raportu NIE wystarcza — musi być pierwszą i ostatnią linią.
+
 ## ⚠️ MAPA INFRASTRUKTURY I WDROŻEŃ — dla architekta (czytaj PRZED pisaniem tasków i deployem)
 
 **DWA OSOBNE ŚWIATY WDROŻENIOWE — nie mylić, każdy to inny rsync w inne miejsce:**
@@ -130,6 +137,29 @@ zawodzi przy zapisie.
 **Gdy TMPDIR nie wystarcza (2026-07-26):** trzymaj CAŁY indeks na dysku lokalnym na czas
 operacji: `cp .git/index /tmp/idx && GIT_INDEX_FILE=/tmp/idx TMPDIR=/tmp git add ... && GIT_INDEX_FILE=/tmp/idx git commit -m "..." && cp /tmp/idx .git/index`, potem `git push`.
 Git w ogóle nie dotyka indeksu na SMB podczas add/commit.
+
+**⚠️ ŚMIERTELNA PUŁAPKA TEGO OBEJŚCIA — indeks trzeba ZASIAĆ (2026-07-27, CHAT-T-177).**
+`GIT_INDEX_FILE` wskazujący na plik, którego NIE MA (np. `/tmp/gitidx_$$`), tworzy indeks
+**PUSTY**. `git add` dokłada do niego tylko Twoje pliki, a `git commit` zapisuje drzewo
+złożone **wyłącznie z nich** — czyli kasuje z repozytorium wszystko, czego nie dodałeś.
+Pliki na dysku zostają nietknięte, więc `ls` niczego nie pokazuje; dopiero
+`git ls-tree -r HEAD --name-only | wc -l` ujawnia drzewo z 1 plikiem zamiast 786.
+Zdarzyło się DWA razy w ciągu godziny (`98fe358` i `01e212e`, dwie różne instancje CC),
+za każdym razem przy commicie dokumentacji.
+**Zawsze zasiej indeks przed `git add`:**
+```
+export TMPDIR=/tmp GIT_INDEX_FILE=/tmp/gitidx_$$
+git read-tree HEAD          # ← BEZ TEGO COMMIT KASUJE REPO
+git add <tylko swoje ścieżki>
+git commit -m "..."
+rm -f "$GIT_INDEX_FILE"
+```
+Wariant `cp .git/index /tmp/idx` jest bezpieczny z natury (kopiuje pełny indeks) — psuje
+się dopiero skrót „użyję GIT_INDEX_FILE ze świeżą nazwą". **Bramka po każdym commicie:**
+`git ls-tree -r HEAD --name-only | wc -l` musi być rzędu setek, nie jedności.
+**Naprawa, gdy już się stało** (forward-only, bez rewrite — historia bywa już wypchnięta):
+`git read-tree <ostatni_dobry_commit>` → `git add` pliki z zepsutych commitów → `git commit`.
+
 Najpierw jednak sprawdź prostsze przyczyny (Ockham): `df -h` (miejsce),
 `ls .git/index.lock` (lock po ubitym procesie CC). Dopiero gdy to czyste — TMPDIR.
 
