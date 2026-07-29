@@ -213,6 +213,16 @@ final class ProductDetails implements ToolInterface
             ];
         }
 
+        // CHAT-T-179 (ADR-123 nota nr 2): ta sama para flag co w ProductSearch — bot musi
+        // wiedziec o wycofaniu/niewidocznosci TAKZE gdy dotarl do produktu przez
+        // get_product_details, nie tylko przez search_products. $enrich ma tu dokladnie
+        // ten sam ksztalt (ten sam serwis); statyki przyjmuja ?array. Zero nowego SQL.
+        if (ProductSearch::isDiscontinued($enrich)) {
+            $result['available_for_order'] = false;
+        } elseif (ProductSearch::isLegacyHidden($enrich)) {
+            $result['no_longer_manufactured'] = true;
+        }
+
         return $result;
     }
 }

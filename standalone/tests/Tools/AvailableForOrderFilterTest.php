@@ -161,5 +161,36 @@ assertBool('E2E REGRESJA: normalny produkt zostaje przy exploratory', $keep($ord
 assertBool('E2E REGRESJA: normalny produkt BEZ zadnej flagi', $flag($orderable) === null);
 assertBool('E2E REGRESJA: brak danych MySQL zostaje i bez flagi', $keep(null, false) === true && $flag(null) === null);
 
+// ====================================================================
+// CHAT-T-179 (ADR-123 nota nr 2): find_wetsuits_by_measurements — hard skip
+// BEZ carve-outu nawigacyjnego. To narzedzie tylko POLECA, wiec pomija
+// KAZDY z: unavailable, afo=0, vis=none+afo=1 (inaczej niz ProductSearch,
+// ktore vis=none+afo=1 przepuszcza z flaga przy include_discontinued).
+// Replika warunku z FindWetsuitsByMeasurements::rank() KROK 4 (linia ~217).
+// ====================================================================
+$keepWetsuit = static function (?array $e): bool {
+    $availability = $e['availability'] ?? 'unavailable';
+    if ($availability === 'unavailable') {
+        return false; // decyzja 18a + kryterium 6
+    }
+    if (ProductSearch::isDiscontinued($e) || ProductSearch::isLegacyHidden($e)) {
+        return false; // CHAT-T-179 — bez carve-outu, to narzedzie tylko poleca
+    }
+    return true;
+};
+
+assertBool('WETSUITS: normalny in_stock (vis=both+afo=1) → polecany', $keepWetsuit($orderable) === true);
+assertBool('WETSUITS: unavailable → pominiety', $keepWetsuit($discontinued) === false); // afo=0 i tak unavailable
+assertBool('WETSUITS: vis=none+afo=1 (legacyHidden, in_stock) → POMINIETY (brak carve-outu)', $keepWetsuit($legacyHidden) === false);
+assertBool('WETSUITS: vis=none+afo=0 → pominiety', $keepWetsuit($hiddenAndDiscontinued) === false);
+assertBool('WETSUITS: brak danych MySQL (null) → pominiety (availability=unavailable fallback)', $keepWetsuit(null) === false);
+// afo=1 + available_to_order (na zamowienie) — musi wejsc mimo braku stanu
+$orderableToOrder = ['availability' => 'available_to_order', 'visible' => true, 'available_for_order' => true];
+assertBool('WETSUITS: available_to_order (vis=both+afo=1) → polecany', $keepWetsuit($orderableToOrder) === true);
+// KONTRAST z ProductSearch: ten sam legacyHidden przy include_discontinued=true tam WCHODZI,
+// tu ZAWSZE wypada (dowod na rozjazd polityk narzedzi — swiadomy, ADR-123 nota nr 2).
+assertBool('WETSUITS vs SEARCH: legacyHidden wchodzi do search z flaga, ale NIGDY do wetsuits',
+    $keep($legacyHidden, true) === true && $keepWetsuit($legacyHidden) === false);
+
 echo "\n=== {$passed} passed, {$failed} failed ===\n";
 exit($failed > 0 ? 1 : 0);

@@ -217,6 +217,12 @@ final class FindWetsuitsByMeasurements implements ToolInterface
             if ($availability === 'unavailable') {
                 continue; // decyzja 18a + kryterium 6
             }
+            // CHAT-T-179 (ADR-123 nota nr 2): hard skip takze dla afo=0 (wycofany) i
+            // visibility=none (nieprodukowany). To narzedzie tylko POLECA — bez carve-outu
+            // nawigacyjnego (wzorem CuratedRecommendations/PopularProducts, NIE ProductSearch).
+            if (ProductSearch::isDiscontinued($e) || ProductSearch::isLegacyHidden($e)) {
+                continue;
+            }
             $sizeLabel = implode(', ', array_keys($c['sizes']));
 
             if ($refId !== null && $pid === $refId) {

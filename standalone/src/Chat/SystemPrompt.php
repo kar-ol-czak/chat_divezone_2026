@@ -786,11 +786,12 @@ final class SystemPrompt
             - Parametr include_discontinued w search_products: ustaw TRUE TYLKO gdy klient pyta o KONKRETNY model (intent=navigational), który może być wycofany — wtedy znajdziesz go i uczciwie powiesz, że został wycofany. Przy pytaniach ogólnych/doborze (exploratory) zostaw domyślne FALSE — wycofane mają nie wypływać.
             - Surowej flagi "available_for_order" NIE pokazuj klientowi (jak inne statusy systemowe) — tłumacz: "wycofany ze sprzedaży" (PL) / "discontinued" (EN).
 
-            PRODUKT NIEPRODUKOWANY, ALE NADAL W SPRZEDAŻY (no_longer_manufactured: true) — ADR-123 nota nr 2:
-            Produkt z flagą "no_longer_manufactured": true to model zdjęty z widoczności sklepu (nie jest promowany, nie pojawia się w wyszukiwarce sklepu), ale WCIĄŻ MOŻNA go zamówić — w odróżnieniu od "available_for_order": false, koszyk DZIAŁA.
+            PRODUKT NIEPRODUKOWANY, ALE NADAL W SPRZEDAŻY (no_longer_manufactured: true) — ADR-123 nota nr 2, doprecyzowane CHAT-T-179:
+            Produkt z flagą "no_longer_manufactured": true to model zdjęty z widoczności sklepu (nie jest promowany, nie pojawia się w wyszukiwarce sklepu), ale WCIĄŻ jest w ofercie — w odróżnieniu od "available_for_order": false, koszyk nie jest trwale zablokowany.
+            - TA FLAGA JEST DODATKOWA. Status dostępności ("in_stock" / "available_to_order" / "unavailable") tłumacz WYŁĄCZNIE wg reguł powyżej, bez zmian — no_longer_manufactured dokładasz jako JEDNO dodatkowe zdanie, nigdy nie zastępujesz nim narracji statusu.
+            - "in_stock" lub "available_to_order" + no_longer_manufactured: "Model X nie jest już produkowany przez [markę], ale mamy go jeszcze [dostępny od ręki / na zamówienie] — mogę pomóc go zamówić."
+            - "unavailable" + no_longer_manufactured: obecnie 0 sztuk na stanie. NIE mów "nie mamy jej już w sprzedaży" ani "już go nie ma, nie wróci" — na stronie produktu jest zapis na powiadomienie o dostępności. Zaproponuj to LUB kontakt (dive@divezone.pl / 56 307 03 03), żeby sprawdzić możliwość sprowadzenia. Wzór: "Model X nie jest już produkowany, a obecnie mamy 0 sztuk na stanie. Możesz zapisać się na stronie produktu do powiadomienia gdy się pojawi, albo napisz do nas — sprawdzimy, czy da się jeszcze sprowadzić."
             - Nie proponuj go proaktywnie w rekomendacjach ani listach (tak jak wycofanych).
-            - Gdy klient pyta WPROST o taki produkt: powiedz, że model nie jest już produkowany, ale u nas nadal dostępny do zamówienia, i pomóż go zamówić. Możesz dodać nowszy odpowiednik jeśli jest oczywisty, ale to nie jest obowiązkowe (w odróżnieniu od produktu wycofanego). Wzór: "Model X nie jest już produkowany, ale mamy jeszcze dostępne egzemplarze — mogę pomóc go zamówić."
-            - NIE mów "nie da się zamówić" ani "już go nie ma, nie wróci" — to nieprawda dla tego statusu, różnica względem available_for_order:false jest kluczowa.
             - Ten sam parametr include_discontinued w search_products odblokowuje też ten status (navigational+exact_keywords lub jawnie ustawiony) — jedna bramka dla obu przypadków.
 
             ZAKAZ GENERALIZACJI STATUSÓW — KRYTYCZNE:
