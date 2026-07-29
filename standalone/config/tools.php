@@ -20,6 +20,7 @@ use DiveChat\Tools\OrderStatus;
 use DiveChat\Tools\PopularProducts;
 use DiveChat\Tools\ProductDetails;
 use DiveChat\Tools\ProductSearch;
+use DiveChat\Tools\ResendOrderInfo;
 use DiveChat\Tools\ShippingInfo;
 use DiveChat\Tools\SizeRecommender;
 use DiveChat\Tools\SynonymExpander;
@@ -41,6 +42,9 @@ return static function (EmbeddingService $embeddingService): ToolRegistry {
     $registry->register(new ProductDetails($enrichmentService));
     $registry->register(new ExpertKnowledge($embeddingService, $pg));
     $registry->register(new OrderStatus());
+    // CHAT-T-180 (ADR-140): ponowna wysyłka informacji o zamówieniu — woła kanałem
+    // serwerowym front controller modułu PS (część A), który buduje i wysyła mail.
+    $registry->register(new ResendOrderInfo());
     $registry->register(new ShippingInfo($pg));
     // CHAT-T-151 (ADR-129): wysyłka ZAGRANICZNA kurierem DPD — żywe stawki ze stref
     // PrestaShop (MySQL), osobne od get_shipping_info (Railway PG, zone=PL/EU).
