@@ -387,7 +387,9 @@ final class ProductSearch implements ToolInterface
                 'price_eur' => $mysqlData[$id]['price_eur'] ?? null, // CHAT-T-115: dla rozmow EN
                 'in_stock' => $mysqlData[$id]['in_stock'],
                 'availability' => $mysqlData[$id]['availability'],
-                'url' => $row['product_url'],
+                // CHAT-T-160 (decyzja 197a): URL KANONICZNY z enrichmentu (zywy PS,
+                // prefiks kategorii) — fallback na product_url z PG gdy enrich go nie ma.
+                'url' => $mysqlData[$id]['url'] ?? $row['product_url'],
                 'url_en' => $mysqlData[$id]['url_en'] ?? null, // CHAT-T-115: link /en/ (null gdy brak slugu EN)
                 'image_url' => $row['image_url'],
             ];
@@ -1044,7 +1046,8 @@ final class ProductSearch implements ToolInterface
                 'price_eur' => $mysqlData[$id]['price_eur'] ?? null, // CHAT-T-115: dla rozmow EN
                 'in_stock' => $mysqlData[$id]['in_stock'] ?? (bool) $row['in_stock'],
                 'availability' => $mysqlData[$id]['availability'] ?? ((bool) $row['in_stock'] ? 'in_stock' : 'unavailable'),
-                'url' => $row['product_url'],
+                // CHAT-T-160 (decyzja 197a): URL KANONICZNY z enrichmentu, fallback na PG.
+                'url' => $mysqlData[$id]['url'] ?? $row['product_url'],
                 'url_en' => $mysqlData[$id]['url_en'] ?? null, // CHAT-T-115: link /en/ (null gdy brak slugu EN)
                 'image_url' => $row['image_url'],
                 'similarity' => round($rrfScore, 4),

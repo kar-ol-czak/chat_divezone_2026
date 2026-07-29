@@ -189,7 +189,9 @@ final class ProductDetails implements ToolInterface
             'price_eur' => $enrich['price_eur'] ?? null, // CHAT-T-115: dla rozmow EN
             'availability' => $availability,
             'quantity' => $quantity,
-            'url' => $productUrl,
+            // CHAT-T-160 (decyzja 197a): URL KANONICZNY z enrichmentu (prefiks kategorii,
+            // preselekcja wariantu dziala), fallback na lokalny gdy enrichment padl.
+            'url' => $enrich !== null ? ($enrich['url'] ?? $productUrl) : $productUrl,
             'url_en' => $enrich['url_en'] ?? null, // CHAT-T-115: link /en/ (null gdy brak slugu EN)
             'image_url' => $imageUrl,
             'features' => array_map(fn(array $f) => [

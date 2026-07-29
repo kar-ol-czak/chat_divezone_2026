@@ -92,7 +92,9 @@ final class MysqlProductEnrichmentService
                 ps.available_for_order,
                 plen.link_rewrite AS link_rewrite_en,
                 plpl.name AS name_pl,
-                plpl.link_rewrite AS link_rewrite_pl
+                plpl.link_rewrite AS link_rewrite_pl,
+                catpl.link_rewrite AS cat_link_rewrite_pl,
+                caten.link_rewrite AS cat_link_rewrite_en
             FROM pr_product p
             JOIN pr_product_shop ps ON p.id_product = ps.id_product AND ps.id_shop = 1
             LEFT JOIN (
@@ -109,6 +111,10 @@ final class MysqlProductEnrichmentService
                 AND plen.id_lang = 3 AND plen.id_shop = 1
             LEFT JOIN pr_product_lang plpl ON p.id_product = plpl.id_product
                 AND plpl.id_lang = 1 AND plpl.id_shop = 1
+            LEFT JOIN pr_category_lang catpl ON catpl.id_category = p.id_category_default
+                AND catpl.id_lang = 1 AND catpl.id_shop = 1
+            LEFT JOIN pr_category_lang caten ON caten.id_category = p.id_category_default
+                AND caten.id_lang = 3 AND caten.id_shop = 1
             WHERE p.id_product IN ({$placeholders})",
             array_merge([$globalAllowOos], $productIds),
         );
@@ -131,10 +137,11 @@ final class MysqlProductEnrichmentService
 
             // CHAT-T-115: link EN z pr_product_lang id_lang=3. Brak slugu -> null
             // (NIE budujemy martwego /en/ z PL slugu — slug EN jest INNY niz PL).
+            // CHAT-T-160 (decyzja 197a): URL KANONICZNY z prefiksem kategorii
+            // (id_category_default) — bez prefiksu PS robi 301 gubiacy
+            // ?id_product_attribute=NNN, wiec preselekcja wariantu nie dziala.
             $slugEn = $row['link_rewrite_en'] ?? null;
-            $urlEn = ($slugEn !== null && $slugEn !== '')
-                ? 'https://divezone.pl/en/' . $slugEn . '.html'
-                : null;
+            $urlEn = self::buildProductUrlEn($slugEn, $row['cat_link_rewrite_en'] ?? null);
 
             // CHAT-T-139 (ADR-121): nazwa + URL PL z pr_product_lang id_lang=1.
             // Pusty/NULL slug -> url=null (guard jak w PopularProducts) — bot ma
@@ -154,7 +161,7 @@ final class MysqlProductEnrichmentService
                 // przycisk koszyka). NIE mylic z quantity=0 (brak stanu, "zamowimy").
                 'available_for_order' => (bool) $row['available_for_order'],
                 'name' => ($namePl !== null && $namePl !== '') ? (string) $namePl : null,
-                'url' => self::buildProductUrl($row['link_rewrite_pl'] ?? null),
+                'url' => self::buildProductUrl($row['link_rewrite_pl'] ?? null, $row['cat_link_rewrite_pl'] ?? null),
                 'url_en' => $urlEn,
             ];
 
@@ -176,12 +183,38 @@ final class MysqlProductEnrichmentService
      * NIGDY gola domena, NIGDY divezone.pl/.html — brak danych ma byc jawny (null),
      * bo link "prawie poprawny" bot dopelni zmysleniem. Public static jak
      * computeBruttoPrice — testowalna bez MySQL (tests/Shop/ProductUrlTest.php).
+     *
+     * CHAT-T-160 (decyzja 197a): drugi argument = slug kategorii domyslnej
+     * (pr_category_lang.link_rewrite dla id_category_default). Z prefiksem powstaje
+     * URL KANONICZNY `divezone.pl/{kategoria}/{produkt}.html`, na ktorym
+     * `?id_product_attribute=NNN` przezywa (brak 301). Bez prefiksu (pusty/NULL slug
+     * kategorii — 28 produktow PL / 43 z root-default na PROD) fallback do formy
+     * `divezone.pl/{produkt}.html` jak dotad — poprawny link, ale param preselekcji
+     * PS zgubi. Prefiks to POJEDYNCZY segment (default category), bez zagniezdzenia
+     * i bez numeru id — wzorzec zmierzony `curl` na 3 kategoriach (KROK 0).
      */
-    public static function buildProductUrl(?string $slug): ?string
+    public static function buildProductUrl(?string $slug, ?string $categorySlug = null): ?string
     {
-        return ($slug !== null && $slug !== '')
-            ? "https://divezone.pl/{$slug}.html"
-            : null;
+        if ($slug === null || $slug === '') {
+            return null;
+        }
+        $prefix = ($categorySlug !== null && $categorySlug !== '') ? "{$categorySlug}/" : '';
+        return "https://divezone.pl/{$prefix}{$slug}.html";
+    }
+
+    /**
+     * URL produktu EN (CHAT-T-115) — analogicznie do buildProductUrl, z segmentem `/en/`.
+     * Slug EN i slug kategorii EN sa INNE niz PL (pr_product_lang / pr_category_lang
+     * id_lang=3). Brak slugu produktu -> null (nie budujemy martwego /en/ z PL slugu).
+     * CHAT-T-160: prefiks kategorii EN dla kanonicznego `divezone.pl/en/{kat}/{produkt}.html`.
+     */
+    public static function buildProductUrlEn(?string $slug, ?string $categorySlug = null): ?string
+    {
+        if ($slug === null || $slug === '') {
+            return null;
+        }
+        $prefix = ($categorySlug !== null && $categorySlug !== '') ? "{$categorySlug}/" : '';
+        return "https://divezone.pl/en/{$prefix}{$slug}.html";
     }
 
     /**

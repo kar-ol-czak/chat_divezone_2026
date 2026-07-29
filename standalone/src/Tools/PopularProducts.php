@@ -290,7 +290,9 @@ final class PopularProducts implements ToolInterface
             'price_eur' => $data['price_eur'] ?? null,
             'price_before_discount' => $data['price_before_discount'] ?? null,
             'availability' => $data['availability'],
-            'url' => $slug !== '' ? "https://divezone.pl/{$slug}.html" : null,
+            // CHAT-T-160 (decyzja 197a): URL KANONICZNY z enrichmentu (prefiks kategorii),
+            // fallback na lokalna forme bez prefiksu gdy enrich go nie ma.
+            'url' => $data['url'] ?? ($slug !== '' ? "https://divezone.pl/{$slug}.html" : null),
             'url_en' => $data['url_en'] ?? null,
         ];
     }
