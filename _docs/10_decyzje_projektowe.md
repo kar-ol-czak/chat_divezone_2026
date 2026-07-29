@@ -4361,6 +4361,8 @@ wymiarów, z wymiarami czytanymi DYNAMICZNIE z bazy, nie ze stałej listy w kodz
 Współpracuje z ADR-099 (zero ekstrapolacji) i ADR-132 (przeliczanie między markami).
 Realizacja: CHAT-T-165.
 
+**DŁUG (2026-07-29, bez osobnej karty — decyzja Karola: dołączyć do najbliższego tasku dotykającego SizeRecommender.php).** Chart 8 (Tecline, but) i inne mają wymiar `shoe_eu` OBOK `foot_length`; chart 52 (Aqualung, but) ma WYŁĄCZNIE `shoe_eu` — zero `foot_length`. Silnik dopasowania jest w pełni gotowy (dynamiczne wymiary, zweryfikowane bezpośrednim wywołaniem na serwerze: `execute(['brand'=>'Aqualung','category'=>'but','gender'=>'M','shoe_eu'=>42])` → poprawny wynik `multiple[41,42]` z `size_full` EU/US/UK), ale `getParametersSchema()` deklaruje TYLKO `foot_length` — model nigdy nie wyśle `shoe_eu`, bo nie wie że istnieje. Skutek: marka Aqualung (i klienci znający tylko rozmiar UE, nie długość stopy w cm) dziś nieosiągalni. Naprawa: dopisać blok parametru `shoe_eu` (kopia wzorca `foot_length`, `type: number`, opis „Rozmiar buta UE — wymiar dla butów, alternatywa dla foot_length"), zero zmian w logice dopasowania. Ten sam temat w kolejce projektu Atrybuty (`_docs/50_backlog_toru_rozmiarow.md`, pozycja 4, „Instancja: chat, CHAT-T-161").
+
 
 ---
 
