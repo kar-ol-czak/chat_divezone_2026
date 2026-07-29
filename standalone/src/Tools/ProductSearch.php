@@ -315,8 +315,9 @@ final class ProductSearch implements ToolInterface
         // Filtr active (jak w mergeRRF). Produkty bez danych MySQL —
         // skip (sortowanie po cenie wymaga znanej ceny, fallback na pgvector
         // jest nieaktualny i bilbym tu maskowal problem).
-        // CHAT-T-143 (ADR-123 nota 93a): visibility NIE jest kryterium — Luigi's Box
-        // pokazuje produkty vis='none' klientom; filtr afo ponizej ZASTEPUJE visibility.
+        // CHAT-T-178 (ADR-123 nota nr 2): REWIZJA noty 93a — visibility WRACA jako
+        // kryterium, zlozone z afo. Pomiar 2026-07-28 obalil przeslanke "Luigi's Box
+        // pokazuje vis='none'" (4/4 produkty NIE zwracane). vis='none' = "nieprodukowany".
         $eligible = [];
         $filteredOut = [];
         foreach ($candidateIds as $id) {
@@ -331,8 +332,12 @@ final class ProductSearch implements ToolInterface
             }
             // CHAT-T-143 (ADR-123): wycofane ze sprzedazy wypadaja, chyba ze
             // include_discontinued=true (navigational — klient pyta o konkret).
-            if (!$includeDiscontinued && self::isDiscontinued($data)) {
-                $filteredOut[] = ['id' => $id, 'reason' => 'available_for_order=0, discontinued'];
+            // CHAT-T-178 (nota nr 2): ta sama bramka obejmuje vis='none'+afo=1
+            // (nieprodukowany, ale zamawialny) — jeden parametr dla obu statusow.
+            if (!$includeDiscontinued && (self::isDiscontinued($data) || self::isLegacyHidden($data))) {
+                $filteredOut[] = ['id' => $id, 'reason' => self::isDiscontinued($data)
+                    ? 'available_for_order=0, discontinued'
+                    : 'visibility=none, legacy_hidden'];
                 continue;
             }
             if ($inStockOnly && !$data['in_stock']) {
@@ -393,8 +398,12 @@ final class ProductSearch implements ToolInterface
             // CHAT-T-143 (ADR-123): wycofany przepuszczony przy include_discontinued=true
             // MUSI niesc flage — bez niej bot nie wie, ze ma mowic "byl, juz go nie ma".
             // Klucz dokladany TYLKO dla afo=0 (afo=1 zwraca dokladnie to co przed zmiana).
+            // CHAT-T-178 (nota nr 2): vis='none'+afo=1 dostaje INNA flage —
+            // koszyk dziala, wiec narracja "nieprodukowany, ale nadal do zamowienia".
             if (self::isDiscontinued($mysqlData[$id])) {
                 $product['available_for_order'] = false;
+            } elseif (self::isLegacyHidden($mysqlData[$id])) {
+                $product['no_longer_manufactured'] = true;
             }
             $products[] = $product;
 
@@ -477,6 +486,22 @@ final class ProductSearch implements ToolInterface
     public static function isDiscontinued(?array $data): bool
     {
         return $data !== null && ($data['available_for_order'] ?? true) === false;
+    }
+
+    /**
+     * CHAT-T-178 (ADR-123 nota nr 2): czy produkt jest ukryty (visibility='none') ale
+     * WCIAZ zamawialny (afo=1) — "nieprodukowany, ale w sprzedazy". Gdy afo=0
+     * JEDNOCZESNIE, uzywaj isDiscontinued() zamiast tego (narracja "byl, juz go nie ma"
+     * ma pierwszenstwo). Brak danych MySQL lub brak klucza = traktuj jak widoczny
+     * (identyczny fallback jak isDiscontinued — nie karzemy za brak danych).
+     *
+     * @param array<string, mixed>|null $data wpis z MysqlProductEnrichmentService::enrich()
+     */
+    public static function isLegacyHidden(?array $data): bool
+    {
+        return $data !== null
+            && ($data['visible'] ?? true) === false
+            && !self::isDiscontinued($data);
     }
 
     /**
@@ -895,8 +920,8 @@ final class ProductSearch implements ToolInterface
         }
 
         // Filtruj nieaktywne produkty (MySQL real-time) + loguj odfiltrowane.
-        // CHAT-T-143 (ADR-123 nota 93a): visibility NIE jest kryterium — Luigi's Box
-        // pokazuje produkty vis='none' klientom; filtr afo ponizej ZASTEPUJE visibility.
+        // CHAT-T-178 (ADR-123 nota nr 2): REWIZJA noty 93a — visibility WRACA jako
+        // kryterium, zlozone z afo (filtr nizej). vis='none' = "nieprodukowany".
         $filteredOut = [];
         $filteredIds = array_filter(array_keys($scores), function (int $id) use ($mysqlData, &$filteredOut, $namesById) {
             $data = $mysqlData[$id] ?? null;
@@ -943,15 +968,20 @@ final class ProductSearch implements ToolInterface
         // Decyzja 92a: Editorial Picks NIE bypassuja tego filtra (celowo BEZ
         // sprawdzania $editorialBoosts, w odroznieniu od in_stock_only wyzej) —
         // bypass ma sens dla braku stanu ("sprowadzimy"), nie dla wycofania.
+        // CHAT-T-178 (nota nr 2): ta sama bramka obejmuje vis='none'+afo=1
+        // (nieprodukowany, ale zamawialny) — jeden parametr dla obu statusow.
         if (!$includeDiscontinued) {
             $filteredIds = array_filter($filteredIds, function (int $id) use ($mysqlData, &$filteredOut, $namesById) {
-                if (!self::isDiscontinued($mysqlData[$id] ?? null)) {
+                $data = $mysqlData[$id] ?? null;
+                if (!self::isDiscontinued($data) && !self::isLegacyHidden($data)) {
                     return true;
                 }
                 $filteredOut[] = [
                     'id' => $id,
                     'name' => $namesById[$id] ?? 'unknown',
-                    'reason' => 'available_for_order=0, discontinued',
+                    'reason' => self::isDiscontinued($data)
+                        ? 'available_for_order=0, discontinued'
+                        : 'visibility=none, legacy_hidden',
                 ];
                 return false;
             });
@@ -1029,8 +1059,12 @@ final class ProductSearch implements ToolInterface
             // CHAT-T-143 (ADR-123): wycofany przepuszczony przy include_discontinued=true
             // MUSI niesc flage — bez niej bot nie wie, ze ma mowic "byl, juz go nie ma".
             // Klucz dokladany TYLKO dla afo=0 (afo=1 zwraca dokladnie to co przed zmiana).
+            // CHAT-T-178 (nota nr 2): vis='none'+afo=1 dostaje INNA flage —
+            // koszyk dziala, wiec narracja "nieprodukowany, ale nadal do zamowienia".
             if (self::isDiscontinued($mysqlData[$id] ?? null)) {
                 $product['available_for_order'] = false;
+            } elseif (self::isLegacyHidden($mysqlData[$id] ?? null)) {
+                $product['no_longer_manufactured'] = true;
             }
 
             $products[] = $product;

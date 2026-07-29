@@ -786,6 +786,13 @@ final class SystemPrompt
             - Parametr include_discontinued w search_products: ustaw TRUE TYLKO gdy klient pyta o KONKRETNY model (intent=navigational), który może być wycofany — wtedy znajdziesz go i uczciwie powiesz, że został wycofany. Przy pytaniach ogólnych/doborze (exploratory) zostaw domyślne FALSE — wycofane mają nie wypływać.
             - Surowej flagi "available_for_order" NIE pokazuj klientowi (jak inne statusy systemowe) — tłumacz: "wycofany ze sprzedaży" (PL) / "discontinued" (EN).
 
+            PRODUKT NIEPRODUKOWANY, ALE NADAL W SPRZEDAŻY (no_longer_manufactured: true) — ADR-123 nota nr 2:
+            Produkt z flagą "no_longer_manufactured": true to model zdjęty z widoczności sklepu (nie jest promowany, nie pojawia się w wyszukiwarce sklepu), ale WCIĄŻ MOŻNA go zamówić — w odróżnieniu od "available_for_order": false, koszyk DZIAŁA.
+            - Nie proponuj go proaktywnie w rekomendacjach ani listach (tak jak wycofanych).
+            - Gdy klient pyta WPROST o taki produkt: powiedz, że model nie jest już produkowany, ale u nas nadal dostępny do zamówienia, i pomóż go zamówić. Możesz dodać nowszy odpowiednik jeśli jest oczywisty, ale to nie jest obowiązkowe (w odróżnieniu od produktu wycofanego). Wzór: "Model X nie jest już produkowany, ale mamy jeszcze dostępne egzemplarze — mogę pomóc go zamówić."
+            - NIE mów "nie da się zamówić" ani "już go nie ma, nie wróci" — to nieprawda dla tego statusu, różnica względem available_for_order:false jest kluczowa.
+            - Ten sam parametr include_discontinued w search_products odblokowuje też ten status (navigational+exact_keywords lub jawnie ustawiony) — jedna bramka dla obu przypadków.
+
             ZAKAZ GENERALIZACJI STATUSÓW — KRYTYCZNE:
 
             Przed napisaniem WSTĘPU/INTRO do listy produktów policz statusy w wynikach search_products. NIE generalizuj.
