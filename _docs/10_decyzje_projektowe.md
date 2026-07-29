@@ -3768,6 +3768,14 @@ Przy weryfikacji implementacji CHAT-T-143 (KROK 7, przed deployem) architekt zna
 
 **Implementacja:** CHAT-T-178 (instancja backend). Zmiana wyłącznie w `standalone/src/Tools/ProductSearch.php` (`mergeRRF` + `searchByPrice`, bliźniacze bloki) i `standalone/src/Chat/SystemPrompt.php` (nowy akapit obok bloku PRODUKT WYCOFANY). Zero zmian w `MysqlProductEnrichmentService::enrich()` — `visible` już tam jest. Zero re-embeddingu, zero migracji PG. `CuratedRecommendations.php`/`PopularProducts.php` (R-3, `_docs/44`) **bez zmian** — już filtrują po `visible`, teraz `ProductSearch` się z nimi zrównuje, nie odwrotnie.
 
+**NOTA NR 3 (2026-07-29) — audyt pozostałych narzędzi + trzy realne stany przycisku koszyka, karta Chat-80.** Po wdrożeniu CHAT-T-178 Karol: „musimy zrobić porządek w regułach dostępności" — nie ufać, że jeden naprawiony plik wystarczy. Audyt architekta: `FindWetsuitsByMeasurements.php` filtrował WYŁĄCZNIE `availability!='unavailable'`, nigdy `visible`/`available_for_order` — realny wyciek (5256 SANTI, `vis='none'`+`afo=1`, mógł wypłynąć jako alternatywa). `ProductDetails.php` już wołał `enrichment->enrich()`, ale nie czytał pól `visible`/`available_for_order` z wyniku — bot bez sygnału przy pytaniu wprost tą ścieżką. `CuratedRecommendations`/`PopularProducts` — bez zmian, już poprawne.
+
+Weryfikacja na żywej stronie (nie tylko w bazie) ujawniła **trzy stany przycisku „Dodaj do koszyka"**, nie dwa: (1) `afo=0` — przycisk wyłączony, BRAK „Powiadom mnie", tekst „wycofany" na stronie; (2) `afo=1`+stan=0+polityka deny — przycisk wyłączony, ale aktywne „Powiadom mnie kiedy będzie dostępny" (natywny PrestaShop), strona NIE mówi „wycofany"; (3) `afo=1`+stan>0 — przycisk włączony. Flaga `no_longer_manufactured` z T-178 kolidowała ze stanem (2), produkując „nie mamy jej już w sprzedaży" (test PROD conv 909) — sprzeczne z realną opcją zapisu na powiadomienie.
+
+**Decyzja:** `no_longer_manufactured` to informacja DODATKOWA do istniejących reguł statusu (`in_stock`/`available_to_order`/`unavailable`), nigdy ich zastępstwo. Dla stanu (2): wzmianka o zapisie na powiadomienie / kontakcie, nigdy „nie mamy w sprzedaży". `FindWetsuitsByMeasurements` dostaje twardy filtr kompozytowy BEZ carve-outu nawigacyjnego (to narzędzie tylko poleca, nie ma pojęcia „klient pyta wprost o nazwę") — wzorem `CuratedRecommendations`/`PopularProducts`. `ProductDetails` dostaje te same dwie flagi co `ProductSearch`, reużywając `ProductSearch::isDiscontinued()`/`isLegacyHidden()` (publiczne statyki, ten sam kształt `enrich()`) — zero nowego zapytania SQL.
+
+**Implementacja:** CHAT-T-179 (instancja backend), karta Chat-80.
+
 ---
 
 ### ADR-124: Widok atrybucji czatu w panelu PS — sprzedaż z rozmów widoczna bez SSH
