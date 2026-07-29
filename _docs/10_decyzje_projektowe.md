@@ -4616,3 +4616,53 @@ Niezależne od T-176 (naprawa A, fundament cache), które wdrażane osobno.
 - **Timing = migracja teraz** (Q34c). Intro $2/$10 do 31.08.2026 vs $3/$15 na 4.6 = taniej mimo tokenizera (+~30%, potwierdzone docs Anthropic). Stawka niższa o 33% równoważy wzrost tokenów. Pomiar tokenizera OBOWIĄZKOWY, ale nie blokuje migracji — MUSI trafić do decyzji przed 31.08, bo po tej dacie stawka wraca do $3/$15 i równanie się zmienia.
 
 Weryfikacja faktów bazowych (architekt, web_search 2026-07-27, docs Anthropic): `budget_tokens`+`type:enabled` → 400 na Sonnet 5 (jak Opus 4.8/4.7); sampling params niedomyślne → 400; nowy tokenizer ~30% więcej tokenów. Wszystkie trzy przesłanki tasku potwierdzone niezależnie.
+
+---
+
+### ADR-140: Ponowna wysyłka informacji o zamówieniu — nowy prosty mail, nie replika `order_conf`
+
+**Data:** 2026-07-29 | **Autor:** architekt | **Status:** przyjęte
+**Kontekst:** karta Chat-68, realizacja CHAT-T-180. Klient pisze „nie dostałem maila z zamówieniem" — bot ma umieć wysłać ponownie informację o zamówieniu.
+
+**Problem.** Oryginalny mail `order_conf` jest budowany i wysyłany z wnętrza
+`PaymentModule::validateOrder()` (`~PaymentModule.php:654`) — tej samej metody, która
+waliduje płatność i zmienia stan zamówienia. Odtworzenie identycznego maila wymagałoby
+albo wyciągnięcia logiki szablonu z tej wrażliwej metody (ryzyko regresji blisko realnych
+płatności), albo osobnego, kruchego reimplementowania budowy zmiennych Smarty dla
+historycznego zamówienia.
+
+**Decyzja Karola (2026-07-29):** klient nie potrzebuje dokładnej kopii oryginału — potrzebuje
+maila z tymi samymi INFORMACJAMI. Budujemy NOWY, prosty mail HTML (pogrubienia, czytelna
+czcionka), zawierający wszystkie pola z `order_conf` (zamówienie+data, płatność, tabela
+produktów, 6 pozycji podsumowania łącznie z „zapłacono w sumie", przewoźnik+śledzenie,
+adres dostawy, adres faktury) plus baner na górze („mail wysłany na Twoje życzenie") i
+obowiązkowa stopka firmowa (dane potwierdzone: DIVEZONE.PL Sp. z o.o., ul. Storczykowa 5,
+87-100 Toruń, NIP 9562346671, tel. 56 307 03 03, dive@divezone.pl — zweryfikowane KRS,
+rozbieżność adresu między wpisami KRS rozstrzygnięta na korzyść najnowszego wpisu nr 21).
+Wysyłka przez `Mail::Send()` z zupełnie nowej, izolowanej metody — **zero dotknięcia
+`PaymentModule.php`**.
+
+**Uzasadnienie:** niższe ryzyko (kod płatności nietknięty), szybsze do zbudowania, i
+klient dostaje realnie to czego potrzebuje. Estetyczne dopracowanie (identyczny wygląd co
+reszta maili sklepu) należy do szerszego wątku **Sklep - 81** (redesign wszystkich maili
+transakcyjnych, zgłoszony przy okazji tej karty) — robienie tego teraz osobno byłoby
+podwójną robotą.
+
+**Architektura — dwa światy.** Weryfikacja tożsamości (`order_reference`+`email`, wzorem
+`OrderStatus.php`/T-172) i wysyłka maila MUSZĄ żyć w module (`newtmp2`, żywy kontekst
+PrestaShop, `Mail::Send()` już działający kanał — zero nowej infrastruktury SPF/DKIM).
+Backend (`chat.divezone.pl`) trzyma tylko narzędzie dla modelu (`resend_order_info`,
+schemat identyczny z `check_order_status`) i woła moduł przez nowy front controller,
+autoryzowany TYM SAMYM HMAC/sekretem serwerowym co istniejący kanał admina
+(`KEY_SERVER_SECRET`) — pierwszy przypadek użycia tego kanału w kierunku backend→moduł
+zamiast moduł→backend, ale mechanizm bez zmian.
+
+**Bezpieczeństwo.** Parametr `email` w narzędziu botowym pełni PODWÓJNĄ rolę: weryfikacja
+tożsamości ORAZ cel wysyłki — nie istnieje osobne pole „wyślij na", więc nie da się
+przypadkiem (ani celowo przez klienta) wysłać na inny adres niż ten z zamówienia. Rate
+limit 1 wysyłka / zamówienie / 10 minut (nowa mała tabela `pr_divechat_resend_log`,
+wzorem `pr_divechat_order_attribution` z ADR-119). Bot w CZACIE nie ujawnia kwoty
+zamówienia (ADR-137 zostaje w mocy — inny kanał, ta sama zasada), mail do klienta kwotę
+zawiera (to jego własne zamówienie, weryfikowany adres).
+
+**Realizacja:** CHAT-T-180 (część A moduł, część B backend).
