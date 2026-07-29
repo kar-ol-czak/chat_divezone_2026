@@ -69,6 +69,9 @@ class Divezone_Chat extends Module
     // czyta cookie z $_COOKIE (raw JS cookie, NIE szyfrowane PS Cookie) i zapisuje
     // pare id_order <-> chat_session_id.
     const ATTRIBUTION_TABLE  = 'divechat_order_attribution';
+    // CHAT-T-180: rate-limit ponownej wysylki informacji o zamowieniu (front
+    // controller resend_order_info). Tabela w MySQL PS (prefix pr_).
+    const RESEND_LOG_TABLE   = 'divechat_resend_log';
     const COOKIE_SESSION_ID  = 'divechat_session_id';
     const COOKIE_LAST_AT     = 'divechat_last_at';
     const COOKIE_VISIT       = 'divechat_visit';
@@ -129,6 +132,11 @@ class Divezone_Chat extends Module
             error_log(self::LOG_PREFIX . ' install: createAttributionTable() failed');
             return false;
         }
+        // CHAT-T-180: tabela rate-limit ponownej wysylki. Idempotentne (IF NOT EXISTS).
+        if (!$this->createResendLogTable()) {
+            error_log(self::LOG_PREFIX . ' install: createResendLogTable() failed');
+            return false;
+        }
         if (!$this->registerHook('actionValidateOrder')) {
             error_log(self::LOG_PREFIX . ' install: registerHook(actionValidateOrder) failed');
             return false;
@@ -163,6 +171,28 @@ class Divezone_Chat extends Module
             return (bool)Db::getInstance()->execute($sql);
         } catch (Exception $e) {
             error_log(self::LOG_PREFIX . ' createAttributionTable: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * CHAT-T-180: tabela rate-limit ponownej wysylki informacji o zamowieniu.
+     * Idempotentna (IF NOT EXISTS). Bliznaczy plik do recznego uruchomienia na
+     * juz-zainstalowanym module (bez upgrade):
+     * modules/divezone_chat/sql/pr_divechat_resend_log.sql
+     */
+    private function createResendLogTable()
+    {
+        $sql = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . self::RESEND_LOG_TABLE . '` (
+            `id_order` INT(11) NOT NULL,
+            `date_add` DATETIME NOT NULL,
+            PRIMARY KEY (`id_order`)
+        ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
+
+        try {
+            return (bool)Db::getInstance()->execute($sql);
+        } catch (Exception $e) {
+            error_log(self::LOG_PREFIX . ' createResendLogTable: ' . $e->getMessage());
             return false;
         }
     }
