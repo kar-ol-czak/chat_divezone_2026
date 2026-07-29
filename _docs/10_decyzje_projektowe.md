@@ -3776,6 +3776,8 @@ Weryfikacja na żywej stronie (nie tylko w bazie) ujawniła **trzy stany przycis
 
 **Implementacja:** CHAT-T-179 (instancja backend), karta Chat-80.
 
+**DŁUG (2026-07-29, bez osobnej karty — decyzja Karola: dołączyć do najbliższego tasku dotykającego `SystemPrompt.php`, nie mnożyć kart).** Test PROD T-179 (conv 915, `[test CHAT-T-179, nie klient]`) złapał, że bot napisał klientowi surową flagę wprost: „produkt wycofany ze sprzedaży (available_for_order: false)". Łamie regułę już istniejącą od T-143 (`SystemPrompt.php` ~linia 787: „Surowej flagi 'available_for_order' NIE pokazuj klientowi"). NIE regresja T-179 (blok nietknięty w tym tasku) — pojedyncze wystąpienie, prawdopodobnie sąsiedztwo nowego akapitu `no_longer_manufactured` (linie 789+) zwiększyło szansę pomieszania wzorców przez model. Naprawa analogiczna do T-173→T-174 (wzmocnienie reguły bestsellerów): dopisać w tym samym miejscu twardszy zakaz + few-shot bug-case conv 915, zweryfikować replayem tego samego zapytania („czy macie automat Poseidon Xstream Duration90?").
+
 ---
 
 ### ADR-124: Widok atrybucji czatu w panelu PS — sprzedaż z rozmów widoczna bez SSH
