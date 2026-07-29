@@ -4666,3 +4666,5 @@ zamówienia (ADR-137 zostaje w mocy — inny kanał, ta sama zasada), mail do kl
 zawiera (to jego własne zamówienie, weryfikowany adres).
 
 **Realizacja:** CHAT-T-180 (część A moduł, część B backend).
+
+**NOTA NR 2 (2026-07-29) — wzorzec generalizowany: KAŻDA wysyłka maila inicjowana przez bota idzie przez moduł, nigdy z backendu.** Zweryfikowane na PROD (2 realne rozmowy, conv 923/924): kanał backend→moduł (HMAC sekretem serwerowym, `DIVECHAT_SERVER_SECRET`, nowy front controller w module wołający `Mail::Send()`) działa niezawodnie i nie wymaga ŻADNEJ nowej konfiguracji SPF/DKIM — moduł żyje w `newtmp2` i wysyła przez już skonfigurowany, działający kanał pocztowy sklepu (`PS_SHOP_EMAIL`). To odpowiada na pytanie, które blokowało kartę Chat-46 od dawna („czy chat.divezone.pl może wysyłać mail niezawodnie" — KROK 0 tamtej karty planował osobny rekonesans SPF/DKIM z backendu). Odpowiedź: nie próbuj wysyłać z backendu w ogóle. Ten sam wzorzec (nowy front controller w module + nowe narzędzie w backendzie wołające go przez HMAC) obowiązuje dla `send_support_email` (Chat-46/CHAT-T-181) i każdej przyszłej wysyłki mailowej z czatu.
