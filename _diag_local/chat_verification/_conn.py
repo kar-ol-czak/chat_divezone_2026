@@ -8,7 +8,6 @@ Uzycie:
     conn = connect(); cur = conn.cursor()
 """
 import os
-import psycopg2
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 ENV_PATH = os.path.join(PROJECT_ROOT, ".env")
@@ -20,6 +19,7 @@ ENV_PATH = os.path.join(PROJECT_ROOT, ".env")
 GLOBAL_ENV_CANDIDATES = [
     "/Volumes/karol/Documents/3_DIVEZONE/.divezone_secrets/secrets.env",   # maszyna wirtualna (SMB mount)
     "/Users/karol/Documents/3_DIVEZONE/.divezone_secrets/secrets.env",     # komputer glowny (dysk lokalny)
+    r"Z:\Documents\3_DIVEZONE\.divezone_secrets\secrets.env",              # VM Windows (dysk sieciowy Z:)
     os.path.expanduser("~/.config/divezone/secrets.env"),                  # zapas zgodnosci (per-maszyna)
 ]
 
@@ -57,6 +57,11 @@ def load_env(path=ENV_PATH):
 
 
 def connect(timeout=15):
+    # Import leniwy: cztery z pieciu narzedzi katalogu (trello.py, check_deploy.py,
+    # sql.py, replay.py) nie dotykaja Postgresa. Import na poziomie modulu wywracal
+    # je na maszynie bez sterownika (VM Windows, 2026-07-30).
+    import psycopg2
+
     env = load_env()
     conn = psycopg2.connect(env["DATABASE_URL"], connect_timeout=timeout)
     conn.autocommit = True
