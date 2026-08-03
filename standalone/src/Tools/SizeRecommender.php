@@ -17,7 +17,7 @@ use DiveChat\Database\MysqlConnection;
  *  - chart `progowy` (dorośli, min≠max): przecięcie wymiarów — wszystkie podane wymiary
  *    równocenne, wynik to rozmiary mieszczące każdy z nich; im więcej podanych, tym węziej;
  *    wymiary czytane DYNAMICZNIE z charta (§3.1) — skafander chest/height/hip/waist/weight,
- *    rękawica hand_circ/palm_length, kaptur head_circ/neck/forehead, but foot_length;
+ *    rękawica hand_circ/palm_length, kaptur head_circ/neck, but foot_length/shoe_eu;
  *  - chart punktowy (dzieci Rebel, gender='DZIECI', height min==max): dobór po wzroście;
  *  - chart `tresciowy` (buty suche, buty Scubapro, pierścienie VDS): brak wierszy wymiarowych —
  *    zwraca surową tabelę HTML (decision=content_table), model ją cytuje bez interpolacji (ADR-133).
