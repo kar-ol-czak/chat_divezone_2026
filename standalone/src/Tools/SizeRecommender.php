@@ -45,8 +45,9 @@ final class SizeRecommender implements ToolInterface
              . 'WYMAGA płci — ZAWSZE zapytaj klienta "dla kobiety czy mężczyzny?", nie zgaduj. '
              . 'Pytaj o wymiary właściwe dla kategorii: skafander — obwód klatki/talii/bioder, wzrost, waga; '
              . 'rękawica — obwód dłoni (hand_circ), długość dłoni (palm_length); '
-             . 'kaptur — obwód głowy (head_circ), obwód szyi (neck), obwód czoła (forehead); '
-             . 'but — długość stopy (foot_length). Każdy podany wymiar zawęża wynik. '
+             . 'kaptur — obwód głowy (head_circ), obwód szyi (neck); '
+             . 'but — rozmiar buta EU (shoe_eu, numerówka, np. 42) i/lub długość stopy (foot_length). '
+             . 'Każdy podany wymiar zawęża wynik. '
              . 'Dla dzieci (pianki Rebel) wiodący jest wzrost (height). '
              . 'Dla butów suchych, butów Scubapro i pierścieni narzędzie zwraca gotową tabelę przeliczeń '
              . '(decision=content_table, pole content_html) — NIE wymaga wtedy wymiarów; przedstaw ją, '
@@ -109,6 +110,11 @@ final class SizeRecommender implements ToolInterface
                     'type' => 'number',
                     'description' => 'Długość stopy [cm] — wymiar dla butów.',
                 ],
+                'shoe_eu' => [
+                    'type' => 'number',
+                    'description' => 'Rozmiar buta EU (numerówka), np. 42 — wymiar dla butów. '
+                        . 'To NUMERACJA, nie centymetry: nie przeliczaj na długość stopy.',
+                ],
                 'hand_circ' => [
                     'type' => 'number',
                     'description' => 'Obwód dłoni [cm] — wymiar dla rękawic.',
@@ -124,10 +130,6 @@ final class SizeRecommender implements ToolInterface
                 'neck' => [
                     'type' => 'number',
                     'description' => 'Obwód szyi [cm] — wymiar dla kapturów.',
-                ],
-                'forehead' => [
-                    'type' => 'number',
-                    'description' => 'Obwód czoła [cm] — wymiar dla kapturów.',
                 ],
             ],
             // chest/height/inne walidowane w execute() zależnie od typu charta (dorosły vs dziecięcy vs tresciowy).
@@ -199,6 +201,12 @@ final class SizeRecommender implements ToolInterface
 
         // Chart dziecięcy / punktowy → dobór po wzroście (NIE klatce).
         $pointwise = $chart['gender'] === 'DZIECI' || $this->isPointwise($sizes, 'height');
+
+        // ADR-034 (D2): półotwartość warunkowa liczona RAZ, przed pierwszym dopasowaniem.
+        // Charty punktowe pomijamy jak moduł (matchPointwise nie czyta granic zakresu).
+        if (!$pointwise) {
+            $this->normalizeSizes($sizes);
+        }
 
         if ($pointwise) {
             $height = $dims['height'] ?? null;
@@ -336,7 +344,7 @@ final class SizeRecommender implements ToolInterface
      * unia `dimension` po wszystkich rozmiarach, minus wymiary wyłączone (EXCLUDED_DIMS, m.in. `leg`).
      * Źródło prawdy w danych — nowy wymiar (foot_length, hand_circ, ...) działa bez zmiany kodu.
      *
-     * @param list<array{label: string, full: string, sort: int, dims: array<string, array{0: float, 1: float}>}> $sizes
+     * @param list<array{label: string, full: string, sort: int, dims: array<string, array{0: ?float, 1: ?float, 2?: bool}>}> $sizes
      * @return list<string>
      */
     private function matchableDimensions(array $sizes): array
@@ -358,8 +366,12 @@ final class SizeRecommender implements ToolInterface
      * Z wierszy (size_label, dimension, min_val, max_val, sort_order) buduje listę rozmiarów
      * [{label, full, sort, dims:{dim:[min,max]}}], posortowaną po sort_order. (build_sizes z PY).
      *
+     * ATTR-T-073 (D1, ADR-036/037): NULL z bazy ZOSTAJE NULL-em — otwarty kraniec, NIE 0.0.
+     * `null` na pozycji 0 = „otwarty w dół", na pozycji 1 = „otwarty w górę". Trzeci element
+     * (flaga wyłączania górnej granicy) dokłada normalizeSizes() PRZED pierwszym dopasowaniem.
+     *
      * @param list<array<string, mixed>> $rows
-     * @return list<array{label: string, full: string, sort: int, dims: array<string, array{0: float, 1: float}>}>
+     * @return list<array{label: string, full: string, sort: int, dims: array<string, array{0: ?float, 1: ?float, 2?: bool}>}>
      */
     private function buildSizes(array $rows): array
     {
@@ -376,12 +388,58 @@ final class SizeRecommender implements ToolInterface
                     'dims' => [],
                 ];
             }
-            $byLabel[$lbl]['dims'][(string) $r['dimension']] = [(float) $r['min_val'], (float) $r['max_val']];
+            $byLabel[$lbl]['dims'][(string) $r['dimension']] = [
+                $r['min_val'] !== null ? (float) $r['min_val'] : null,
+                $r['max_val'] !== null ? (float) $r['max_val'] : null,
+            ];
         }
         $sizes = array_values($byLabel);
         usort($sizes, static fn(array $a, array $b): int => $a['sort'] <=> $b['sort']);
 
         return $sizes;
+    }
+
+    /**
+     * Półotwartość WARUNKOWA (ADR-034) — wierny port `normalizeChart` przebieg 2 z
+     * front-sizechart.js. Dla każdego wymiaru charta zbiera `min` (początki) wszystkich jego
+     * wierszy, a następnie oznacza górną granicę wiersza jako WYŁĄCZAJĄCĄ (v < max) wtedy
+     * i tylko wtedy, gdy równa się któremuś z tych początków:
+     *   - zakresy stykające się (91–96 | 96–101) → 96 należy do WIĘKSZEGO rozmiaru,
+     *   - zakresy z luką (92–96 | 97–101, chart 19 Tecline) → pasmo domknięte, 96 zostaje w mniejszym.
+     * Porównanie DOKŁADNE, bez tolerancji (in_array strict): wartości pochodzą z decimal(6,2),
+     * nie liczy się na nich. Zbiór początków budowany PER WYMIAR W TYM SAMYM CHARCIE (R1) —
+     * policzenie go szerzej otworzyłoby granice, których producent nie otwierał.
+     *
+     * Wykonać RAZ, przed pierwszym dopasowaniem. Charty punktowe (DZIECI) pomijamy tak jak moduł
+     * (`chart.pointwise` guard) — matchPointwise nie czyta granic zakresu, a wiersz punktowy
+     * min===max zderzyłby się tu z własnym początkiem (R2, ten sam efekt strukturalny co w module).
+     *
+     * @param list<array{label: string, full: string, sort: int, dims: array<string, array{0: ?float, 1: ?float, 2?: bool}>}> $sizes
+     */
+    private function normalizeSizes(array &$sizes): void
+    {
+        // Unia wymiarów charta (nie ze stałej listy — jak matchableDimensions, §3.1).
+        $dims = [];
+        foreach ($sizes as $s) {
+            foreach (array_keys($s['dims']) as $d) {
+                $dims[$d] = true;
+            }
+        }
+        foreach (array_keys($dims) as $d) {
+            $starts = [];
+            foreach ($sizes as $s) {
+                if (isset($s['dims'][$d]) && $s['dims'][$d][0] !== null) {
+                    $starts[] = $s['dims'][$d][0];
+                }
+            }
+            foreach ($sizes as $i => $s) {
+                if (!isset($s['dims'][$d])) {
+                    continue;
+                }
+                $max = $s['dims'][$d][1];
+                $sizes[$i]['dims'][$d][2] = ($max !== null && in_array($max, $starts, true));
+            }
+        }
     }
 
     /** Chart punktowy na wymiarze $dim (min==max we wszystkich wierszach). (is_pointwise z PY). */
@@ -407,7 +465,7 @@ final class SizeRecommender implements ToolInterface
      * Im więcej podanych wymiarów, tym węższy wynik. Wymiar niepodany nie liczy się jako
      * niezgodność (nie ma go w $dims). ZERO ekstrapolacji poza skalę.
      *
-     * @param list<array{label: string, full: string, sort: int, dims: array<string, array{0: float, 1: float}>}> $sizes
+     * @param list<array{label: string, full: string, sort: int, dims: array<string, array{0: ?float, 1: ?float, 2?: bool}>}> $sizes
      * @param array<string, float> $dims  podane wymiary (bez null), co najmniej jeden
      */
     private function matchSize(array $sizes, array $dims): array
@@ -638,17 +696,40 @@ final class SizeRecommender implements ToolInterface
         return $aliases[$normalized] ?? ($aliases[$label] ?? $normalized);
     }
 
+    /**
+     * Czy wartość mieści się w zakresie [min, max, wyłączająca?]. Wierny port `inRange`
+     * z front-sizechart.js (ATTR-T-058/073, D3):
+     *   - min === null → dolny warunek spełniony (otwarty w dół),
+     *   - max === null → górny warunek spełniony (otwarty w górę),
+     *   - flaga [2] true (górna granica wyłączająca, ustawiana przez normalizeSizes) → v < max,
+     *   - flaga [2] false/brak (domykająca) → v <= max.
+     *
+     * @param array{0: ?float, 1: ?float, 2?: bool} $rng
+     */
     private function inRange(float $val, array $rng): bool
     {
-        return $rng[0] <= $val && $val <= $rng[1];
+        if ($rng[0] !== null && $val < $rng[0]) {
+            return false;
+        }
+        if ($rng[1] !== null && (($rng[2] ?? false) ? $val >= $rng[1] : $val > $rng[1])) {
+            return false;
+        }
+        return true;
     }
 
+    /**
+     * Odległość wartości od zakresu (0 gdy wewnątrz). Ta sama ścieżka co inRange (D7):
+     * NULL na krańcu = zakres sięga w tę stronę bez końca (odległość 0), flaga wyłączająca
+     * traktuje v == max jak poza zakresem. Port `distToRange` z front-sizechart.js.
+     *
+     * @param array{0: ?float, 1: ?float, 2?: bool} $rng
+     */
     private function distToRange(float $val, array $rng): float
     {
-        if ($val < $rng[0]) {
+        if ($rng[0] !== null && $val < $rng[0]) {
             return $rng[0] - $val;
         }
-        if ($val > $rng[1]) {
+        if ($rng[1] !== null && (($rng[2] ?? false) ? $val >= $rng[1] : $val > $rng[1])) {
             return $val - $rng[1];
         }
         return 0.0;
