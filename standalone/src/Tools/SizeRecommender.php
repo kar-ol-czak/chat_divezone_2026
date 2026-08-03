@@ -410,9 +410,15 @@ final class SizeRecommender implements ToolInterface
      * nie liczy się na nich. Zbiór początków budowany PER WYMIAR W TYM SAMYM CHARCIE (R1) —
      * policzenie go szerzej otworzyłoby granice, których producent nie otwierał.
      *
-     * Wykonać RAZ, przed pierwszym dopasowaniem. Charty punktowe (DZIECI) pomijamy tak jak moduł
-     * (`chart.pointwise` guard) — matchPointwise nie czyta granic zakresu, a wiersz punktowy
-     * min===max zderzyłby się tu z własnym początkiem (R2, ten sam efekt strukturalny co w module).
+     * ADR-034 ANEKS 1 (ATTR-T-074b): wiersz PUNKTOWY (min === max) NIE podlega półotwartości.
+     * Jest zawsze własnym początkiem, więc bez tego wyjątku flaga zapalałaby się na nim zawsze,
+     * a `v < max` przy min === max nie dałoby się spełnić — wiersz znikałby z doboru (np. ch6
+     * Mares foot_length, ch4 waist 4T, ch40 neck LG). Punkt dopasowuje się przez równość; człon
+     * `$min !== $max` w warunku flagi zamyka okno rozjazdu bota z panelem (moduł: ten sam człon
+     * `r[0] !== r[1]` w normalizeChart od etapu A).
+     *
+     * Wykonać RAZ, przed pierwszym dopasowaniem. Charty punktowe (DZIECI) i tak pomijamy jak moduł
+     * (`chart.pointwise` guard) — matchPointwise nie czyta granic zakresu.
      *
      * @param list<array{label: string, full: string, sort: int, dims: array<string, array{0: ?float, 1: ?float, 2?: bool}>}> $sizes
      */
@@ -436,8 +442,11 @@ final class SizeRecommender implements ToolInterface
                 if (!isset($s['dims'][$d])) {
                     continue;
                 }
+                $min = $s['dims'][$d][0];
                 $max = $s['dims'][$d][1];
-                $sizes[$i]['dims'][$d][2] = ($max !== null && in_array($max, $starts, true));
+                // ADR-034 aneks 1: wiersz PUNKTOWY (min === max) NIE podlega półotwartości —
+                // dopasowuje się przez równość, flaga wyłączająca zapala się tylko dla pasm.
+                $sizes[$i]['dims'][$d][2] = ($max !== null && $min !== $max && in_array($max, $starts, true));
             }
         }
     }
