@@ -20,7 +20,11 @@ use DiveChat\Database\MysqlConnection;
  *    rękawica hand_circ/palm_length, kaptur head_circ/neck, but foot_length/shoe_eu;
  *  - chart punktowy (dzieci Rebel, gender='DZIECI', height min==max): dobór po wzroście;
  *  - chart `tresciowy` (buty suche, buty Scubapro, pierścienie VDS): brak wierszy wymiarowych —
- *    zwraca surową tabelę HTML (decision=content_table), model ją cytuje bez interpolacji (ADR-133).
+ *    zwraca surową tabelę HTML (decision=content_table), model ją cytuje bez interpolacji (ADR-133);
+ *  - chart progowy BEZ osi doboru (ATTR-T-076 / ADR-039): wszystkie wymiary to wymiary produktu
+ *    `g_*` spoza schematu narzędzia (przecięcie ze SCHEMA_DIMS puste, 9 chartów odzieży Santi/Mola
+ *    Mola) — zwraca listę rozmiarów z size_full (decision=size_list_only), NIE prosi o wymiary,
+ *    odsyła do tabeli na karcie produktu.
  *
  * Suche skafandry (drysuit) POZA zakresem (reguła SystemPrompt: konsultacja, narzędzie NIE wołane).
  */
@@ -28,6 +32,17 @@ final class SizeRecommender implements ToolInterface
 {
     /** Wymiary wyłączone z doboru mimo obecności w charcie (klient ich nie podaje). `leg` — ADR-032 aneks 1. */
     private const EXCLUDED_DIMS = ['leg'];
+
+    /**
+     * Wymiary przyjmowane przez schemat narzędzia (getParametersSchema properties minus klucze
+     * sterujące product_id/brand/category/gender), w kolejności ze schematu. Źródło prawdy dla
+     * strażnika ADR-039: chart, którego wymiary NIE przecinają się z tym zbiorem, nie jest chartem
+     * doboru. Rozjazd tej stałej ze schematem wychodzi w teście K7, nie u klienta (ADR-039 D5).
+     */
+    private const SCHEMA_DIMS = [
+        'chest', 'waist', 'hip', 'height', 'weight',
+        'foot_length', 'shoe_eu', 'hand_circ', 'palm_length', 'head_circ', 'neck',
+    ];
 
     public function __construct(
         private readonly MysqlConnection $db,
@@ -191,6 +206,34 @@ final class SizeRecommender implements ToolInterface
         // §3.1: wymiary dopasowujące czytane DYNAMICZNIE z charta (nie ze stałej listy) — nowy wymiar
         // w danych działa bez zmiany kodu. `leg` wyłączony z doboru (ADR-032 aneks 1, EXCLUDED_DIMS).
         $allowedDims = $this->matchableDimensions($sizes);
+
+        // ADR-039: chart progowy, którego wymiary NIE przecinają się ze schematem narzędzia,
+        // nie jest chartem doboru — wszystkie jego osie to wymiary produktu (g_*), których schemat
+        // nie przyjmuje, więc $dims wyszłoby puste i narzędzie prosiłoby o wymiary, których samo nie
+        // umie przyjąć. Zwracamy listę rozmiarów z size_full i odsyłamy do tabeli na karcie produktu.
+        // Kryterium to WYŁĄCZNIE przecięcie ze SCHEMA_DIMS, NIGDY test punktowości Z6 z modułu:
+        // ch6 Mares i ch74 Mola Mola mają foot_length w wierszach punktowych, a schemat go przyjmuje,
+        // więc przeniesienie Z6 tutaj skasowałoby dobór po foot_length i cofnęło ATTR-T-074b.
+        $schemaDims = array_intersect($allowedDims, self::SCHEMA_DIMS);
+        if ($schemaDims === []) {
+            $payload = [
+                'decision' => 'size_list_only',
+                'sizes' => array_map(static fn(array $s): string => $s['label'], $sizes),
+                'size_full' => array_map(static fn(array $s): string => $s['full'], $sizes),
+                'reason' => 'tabela producenta dla tego produktu podaje wymiary odzieży (na płasko), '
+                    . 'nie wymiary ciała, więc dobór po wymiarach klienta nie jest możliwy; '
+                    . 'pełna tabela jest na karcie produktu',
+                'brand' => $chart['brand'],
+                'category' => $chart['category_hint'] ?? null,
+                'gender' => $chart['gender'],
+            ];
+            $aliases = $this->loadAliases($chart['id']);
+            if ($aliases !== []) {
+                $payload['aliases'] = $aliases;
+            }
+            return $payload;
+        }
+
         // Wszystkie podane wymiary są równocenne (przecięcie). Niepodane pomijamy — nie liczą się jako niezgodność.
         $dims = [];
         foreach ($allowedDims as $d) {
