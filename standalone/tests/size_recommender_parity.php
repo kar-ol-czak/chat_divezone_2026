@@ -47,34 +47,44 @@ $check = function (string $desc, array $params, string $expDecision, ?array $exp
 echo "PARYTET SizeRecommender (PHP) vs size_matcher.py — żywe dane MySQL (divezone_attr_*):\n";
 
 // Dorośli (przedziałowy). Parytet z self-test PY + acceptance z handoffu.
+// ATTR-T-080 G1 (CHAT-T-165 §3.3): fallback po marce wymaga OBOWIĄZKOWO `category`, inaczej
+// resolveChart() zwraca error (marka ma tabele w wielu kategoriach). Dodano category='skafander';
+// oczekiwane wyniki BEZ zmian — to te same charty (Scubapro/Bare skafander), które test celował.
 $check('Scubapro M chest 104 h182 w88 -> L',
-    ['brand' => 'Scubapro', 'gender' => 'M', 'chest' => 104, 'height' => 182, 'weight' => 88], 'match', ['L']);
+    ['brand' => 'Scubapro', 'gender' => 'M', 'category' => 'skafander', 'chest' => 104, 'height' => 182, 'weight' => 88], 'match', ['L']);
 $check('Scubapro M chest 200 -> out_of_scale',
-    ['brand' => 'Scubapro', 'gender' => 'M', 'chest' => 200], 'out_of_scale', null);
+    ['brand' => 'Scubapro', 'gender' => 'M', 'category' => 'skafander', 'chest' => 200], 'out_of_scale', null);
 $check('Scubapro M chest 88 -> out_of_scale (poniżej skali)',
-    ['brand' => 'Scubapro', 'gender' => 'M', 'chest' => 88], 'out_of_scale', null);
+    ['brand' => 'Scubapro', 'gender' => 'M', 'category' => 'skafander', 'chest' => 88], 'out_of_scale', null);
 $check('Bare K chest 88 h165 -> 6',
-    ['brand' => 'Bare', 'gender' => 'K', 'chest' => 88, 'height' => 165], 'match', ['6']);
+    ['brand' => 'Bare', 'gender' => 'K', 'category' => 'skafander', 'chest' => 88, 'height' => 165], 'match', ['6']);
 
-// Dziecięcy (punktowy, height wiodący).
+// Dziecięcy (punktowy, height wiodący). category='skafander' jw. (CHAT-T-165 §3.3), wyniki bez zmian.
 $check('DZIECI height 134 -> [S,M] graniczny',
-    ['brand' => 'Scubapro', 'gender' => 'DZIECI', 'height' => 134], 'boundary', ['S', 'M'], true);
+    ['brand' => 'Scubapro', 'gender' => 'DZIECI', 'category' => 'skafander', 'height' => 134], 'boundary', ['S', 'M'], true);
 $check('DZIECI height 140 -> M',
-    ['brand' => 'Scubapro', 'gender' => 'DZIECI', 'height' => 140], 'match', ['M'], false);
+    ['brand' => 'Scubapro', 'gender' => 'DZIECI', 'category' => 'skafander', 'height' => 140], 'match', ['M'], false);
 $check('DZIECI height 170 -> out_of_scale (>XL)',
-    ['brand' => 'Scubapro', 'gender' => 'DZIECI', 'height' => 170], 'out_of_scale', null, false);
+    ['brand' => 'Scubapro', 'gender' => 'DZIECI', 'category' => 'skafander', 'height' => 170], 'out_of_scale', null, false);
 $check('DZIECI height 100 -> out_of_scale (<XXS)',
-    ['brand' => 'Scubapro', 'gender' => 'DZIECI', 'height' => 100], 'out_of_scale', null, false);
+    ['brand' => 'Scubapro', 'gender' => 'DZIECI', 'category' => 'skafander', 'height' => 100], 'out_of_scale', null, false);
 
 // CHAT-T-103: wybór charta przez product_id (mapowanie divezone_attr_product_chart).
 // Produkty 4243/4244/6681 = bi-gender (mapowane do chartu Scubapro M + K) — płeć klienta wybiera.
 // Wartości oczekiwane = baseline PG (parytet danych 100%).
 $check('product 4243 + M chest 104 h182 w88 -> L (chart Scubapro M)',
     ['product_id' => 4243, 'gender' => 'M', 'chest' => 104, 'height' => 182, 'weight' => 88], 'match', ['L']);
-$check('product 4243 + K chest 88 h165 -> ambiguous [S,ST] (chart Scubapro K)',
-    ['product_id' => 4243, 'gender' => 'K', 'chest' => 88, 'height' => 165], 'ambiguous', ['S', 'ST']);
-$check('product 6681 + M chest 104 (bez weryfikatorów) -> ambiguous [LS,L,LT]',
-    ['product_id' => 6681, 'gender' => 'M', 'chest' => 104], 'ambiguous', ['LS', 'L', 'LT']);
+// ATTR-T-080 G3 (ADR-034 aneks 1, półotwartość [min,max)): 4243/K chart 2, chest=88 -> {S,ST}
+// (S[86,91], ST[86,91]), ale height=165 -> {ST}: S kończy [160,165) i 165 należy do ST[165,170)
+// (165 jest początkiem ST/M/LS, więc górna granica S wyłączająca). Przecięcie = {ST}, JEDEN
+// rozmiar => decision 'match' (nie 'multiple'). Stare [S,ST]/'ambiguous' sprzed wdrożenia półotwartości.
+$check('product 4243 + K chest 88 h165 -> match [ST] (chart Scubapro K, ADR-034)',
+    ['product_id' => 4243, 'gender' => 'K', 'chest' => 88, 'height' => 165], 'match', ['ST']);
+// ATTR-T-080 G2: kod zwraca 'multiple' (grep -c ambiguous = 0, SizeRecommender.php). 6681/M chart 1,
+// chest=104 mieści się w LS/L/LT [101,107] (zmierzone na PROD), trzy trafienia => 'multiple' [LS,L,LT].
+// Zestaw rozmiarów BEZ zmian wobec starej asercji; zmieniona wyłącznie nazwa decyzji (ambiguous->multiple).
+$check('product 6681 + M chest 104 (bez weryfikatorów) -> multiple [LS,L,LT]',
+    ['product_id' => 6681, 'gender' => 'M', 'chest' => 104], 'multiple', ['LS', 'L', 'LT']);
 
 // CHAT-T-103: warstwa aliasów etykiet (divezone_attr_size_label_alias).
 $aliasRes = $tool->execute(['product_id' => 4243, 'gender' => 'K', 'chest' => 88, 'height' => 165]);
