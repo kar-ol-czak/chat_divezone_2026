@@ -94,6 +94,37 @@ $g2 = isset($noChest['error']);
 $ok = $ok && $g2;
 echo '  [' . ($g2 ? 'OK ' : 'FAIL') . '] brak klatki -> error/dopytanie: ' . ($noChest['error'] ?? $noChest['decision'] ?? '?') . "\n";
 
+// ATTR-T-076 (ADR-039): chart progowy BEZ osi doboru -> size_list_only.
+// Wszystkie wymiary charta to wymiary produktu (g_*) spoza schematu; narzędzie zwraca listę
+// rozmiarów z size_full zamiast prosić o wymiary, których nie przyjmuje. Dowód wdrożenia ADR-039.
+$check('T-076 chart 55 Santi koszulki (product 7006, M) -> size_list_only [S,M,L,XL,XXL]',
+    ['product_id' => 7006, 'gender' => 'M'], 'size_list_only', ['S', 'M', 'L', 'XL', 'XXL']);
+
+// Gałąź size_list_only NIE jest sytuacją błędną — brak klucza error (kontrakt §3 specu).
+$ch55 = $tool->execute(['product_id' => 7006, 'gender' => 'M']);
+$e55 = !array_key_exists('error', $ch55);
+$ok = $ok && $e55;
+echo '  [' . ($e55 ? 'OK ' : 'FAIL') . "] T-076 chart 55: brak klucza 'error' w payload size_list_only\n";
+
+// Chart 72 (Mola Mola spodnie) -> size_list_only oraz obecny klucz aliases (jeden wpis, zmierzone).
+$check('T-076 chart 72 Mola Mola spodnie (product 6967, M) -> size_list_only',
+    ['product_id' => 6967, 'gender' => 'M'], 'size_list_only', null);
+$ch72 = $tool->execute(['product_id' => 6967, 'gender' => 'M']);
+$a72 = isset($ch72['aliases']) && count($ch72['aliases']) === 1;
+$ok = $ok && $a72;
+echo '  [' . ($a72 ? 'OK ' : 'FAIL') . "] T-076 chart 72: klucz 'aliases' obecny (1 wpis, jak w gałęzi głównej): "
+    . json_encode($ch72['aliases'] ?? null, JSON_UNESCAPED_UNICODE) . "\n";
+
+// Kontrola PRZECIWNA: chart 6 Mares ma oś doboru (shoe_eu w schemacie), strażnik NIE może się
+// na niego rozlać. shoe_eu=42 dalej daje normalny wynik doboru, nie size_list_only (D2, K3).
+$ch6 = $tool->execute(['product_id' => 5368, 'gender' => 'M', 'shoe_eu' => 42]);
+$c6dec = $ch6['decision'] ?? null;
+$c6 = ($c6dec !== null) && ($c6dec !== 'size_list_only');
+$ok = $ok && $c6;
+echo '  [' . ($c6 ? 'OK ' : 'FAIL') . "] T-076 kontrola przeciwna: chart 6 Mares shoe_eu=42 -> "
+    . ($c6dec ?? ('ERROR:' . ($ch6['error'] ?? '?'))) . ' '
+    . json_encode($ch6['sizes'] ?? [], JSON_UNESCAPED_UNICODE) . " (NIE size_list_only)\n";
+
 // Normalizacja etykiet (KROK 4).
 $n1 = SizeRecommender::normalizeLabel('6 Plus') === '6+';
 $n2 = SizeRecommender::normalizeLabel('10 Plus') === '10+';
