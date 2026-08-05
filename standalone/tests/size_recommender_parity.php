@@ -143,5 +143,39 @@ $nOk = $n1 && $n2 && $n3;
 $ok = $ok && $nOk;
 echo '  [' . ($nOk ? 'OK ' : 'FAIL') . "] normalizeLabel: '6 Plus'->'6+', '10 Plus'->'10+', 'L'->'L'\n";
 
+// ATTR-T-079B (ADR-042, ANEKS 1 Q148b) — walidacje kolizji aliasów wymiarów, live-DB.
+// Dług A1.2 z etapu A: przeniesione z jednorazowych zapytań architekta do testu chodzącego
+// przy KAŻDYM uruchomieniu. K6: obie asercje mają zaświecić na czerwono na sztucznie zepsutych
+// danych DEV (V1: wiersz `chest` dołożony do Kwark/K; V2: alias równy nazwie kanonicznej),
+// a na prawdziwych danych na zielono.
+
+// V2 — żaden alias_dimension w bazie nie jest jedną z 11 nazw kanonicznych (SCHEMA_DIMS).
+// Lista kanoniczna czytana Z KODU (reflection), nie skopiowana do testu — rozjazd bazy z kodem
+// wychodzi tutaj, nie u klienta (wzorzec K7 z ATTR-T-076 / schema_dims.php).
+$schemaDims = (new ReflectionClass(SizeRecommender::class))->getConstant('SCHEMA_DIMS');
+$aliasRows = $db->fetchAll('SELECT alias_dimension FROM divezone_attr_dimension_alias');
+$aliasDims = array_map(static fn(array $r): string => (string) $r['alias_dimension'], $aliasRows);
+$v2Collisions = array_values(array_intersect($aliasDims, $schemaDims));
+$v2 = ($v2Collisions === []);
+$ok = $ok && $v2;
+echo '  [' . ($v2 ? 'OK ' : 'FAIL') . '] V2: żaden alias_dimension nie jest nazwą kanoniczną (SCHEMA_DIMS z kodu): kolizje='
+    . json_encode($v2Collisions, JSON_UNESCAPED_UNICODE) . "\n";
+
+// V1 — żaden chart nie ma jednocześnie wymiaru będącego aliasem i jego celu kanonicznego.
+// JOIN po tabeli aliasów (NIE literały hips/bust): chart z wierszem o dimension=alias ORAZ
+// wierszem o dimension=canonical. Taka kolizja złamałaby K2 przez ciche nadpisanie klucza
+// w buildSizes():434 (jeden filtr znika z przecięcia → wynik szerszy).
+$v1Rows = $db->fetchAll(
+    'SELECT DISTINCT r.id_chart, a.alias_dimension, a.canonical_dimension
+     FROM divezone_attr_size_chart_rows r
+     JOIN divezone_attr_dimension_alias a ON a.alias_dimension = r.dimension
+     JOIN divezone_attr_size_chart_rows r2
+          ON r2.id_chart = r.id_chart AND r2.dimension = a.canonical_dimension'
+);
+$v1 = ($v1Rows === []);
+$ok = $ok && $v1;
+echo '  [' . ($v1 ? 'OK ' : 'FAIL') . '] V1: żaden chart nie ma jednocześnie aliasu i jego celu: kolizje='
+    . json_encode($v1Rows, JSON_UNESCAPED_UNICODE) . "\n";
+
 echo 'WYNIK: ' . ($ok ? 'wszystkie OK' : 'SĄ BŁĘDY') . "\n";
 exit($ok ? 0 : 1);

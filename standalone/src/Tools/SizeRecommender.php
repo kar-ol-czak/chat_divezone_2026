@@ -354,12 +354,24 @@ final class SizeRecommender implements ToolInterface
         return null;
     }
 
-    /** @return list<array<string, mixed>> */
+    /**
+     * ATTR-T-079B (ADR-042): wymiar tłumaczony na nazwę kanoniczną przy ODCZYCIE przez
+     * LEFT JOIN divezone_attr_dimension_alias (`hips`→`hip`, `bust`→`chest`). Nazwa źródłowa
+     * zostaje wierna w tabeli (ATTR-T-013); podmiana żyje tylko w wyniku tego zapytania, więc
+     * cała logika niżej (buildSizes, matchableDimensions, matchSize, strażnik size_list_only)
+     * widzi już nazwy kanoniczne bez zmiany. COALESCE: chart bez aliasu → NULL → r.dimension
+     * bez zmiany. UNIQUE(alias_dimension) gwarantuje ≤1 dopasowanie (brak fan-outu wierszy).
+     *
+     * @return list<array<string, mixed>>
+     */
     private function loadChartRows(int|string $chartId): array
     {
         return $this->db->fetchAll(
-            'SELECT r.size_label, r.size_full, r.dimension, r.min_val, r.max_val, r.sort_order
+            'SELECT r.size_label, r.size_full,
+                    COALESCE(a.canonical_dimension, r.dimension) AS dimension,
+                    r.min_val, r.max_val, r.sort_order
              FROM divezone_attr_size_chart_rows r
+             LEFT JOIN divezone_attr_dimension_alias a ON a.alias_dimension = r.dimension
              WHERE r.id_chart = ?
              ORDER BY r.sort_order',
             [$chartId],
