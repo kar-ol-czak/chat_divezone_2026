@@ -157,16 +157,29 @@ final class ProductDetails implements ToolInterface
                     }
                     $chartIds[] = (int) $c['id_chart'];
                 }
-                // DISTINCT wymiary z wierszy chartów; placeholdery pozycyjne per id_chart.
+                // ATTR-T-082 (Z2): wymiary KANONICZNE (LEFT JOIN aliasów + COALESCE, ta sama
+                // podmiana co SizeRecommender::loadChartRows — hips->hip), przefiltrowane do
+                // nazw, o które model MOŻE poprosić (przecięcie ze SizeRecommender::SCHEMA_DIMS,
+                // jedno źródło prawdy). Odpada g_*, leg, bicep, bust itd. — model ich nie przekaże.
+                // Placeholdery pozycyjne per id_chart.
                 $placeholders = implode(',', array_fill(0, count($chartIds), '?'));
                 $dimRows = $db->fetchAll(
-                    "SELECT DISTINCT dimension FROM divezone_attr_size_chart_rows WHERE id_chart IN ($placeholders)",
+                    "SELECT DISTINCT COALESCE(a.canonical_dimension, r.dimension) AS dimension
+                     FROM divezone_attr_size_chart_rows r
+                     LEFT JOIN divezone_attr_dimension_alias a ON a.alias_dimension = r.dimension
+                     WHERE r.id_chart IN ($placeholders)",
                     $chartIds,
                 );
+                $canonDims = array_map(static fn(array $r): string => (string) $r['dimension'], $dimRows);
+                $matchDims = array_values(array_intersect($canonDims, SizeRecommender::SCHEMA_DIMS));
+                // ATTR-T-082 (Z3): matchable = zostaje >=1 oś doboru po filtrze. available bez
+                // zmian znaczenia (chart istnieje). Model wie ZANIM zapyta, czy dobór po wymiarach
+                // ciała jest w ogóle możliwy (czat 791, trzeci stan reguły "SPRAWDŹ ZANIM ZAPYTASZ").
                 $sizeChart = [
                     'available' => true,
+                    'matchable' => $matchDims !== [],
                     'gender_variants' => $genderVariants,
-                    'dimensions' => array_map(static fn(array $r): string => (string) $r['dimension'], $dimRows),
+                    'dimensions' => $matchDims,
                 ];
             }
         } catch (\Throwable $e) {
@@ -198,7 +211,7 @@ final class ProductDetails implements ToolInterface
                 'name' => $f['feature_name'],
                 'value' => $f['feature_value'],
             ], $features),
-            'size_chart' => $sizeChart, // CHAT-T-162: available + gender_variants + dimensions
+            'size_chart' => $sizeChart, // CHAT-T-162 + ATTR-T-082: available + matchable + gender_variants + dimensions
         ];
 
         // Cena przed rabatem — model moze powiedziec "przeceniony z X na Y".

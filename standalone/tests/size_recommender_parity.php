@@ -16,6 +16,8 @@ require_once dirname(__DIR__) . '/vendor/autoload.php';
 use DiveChat\Config;
 use DiveChat\Database\MysqlConnection;
 use DiveChat\Tools\SizeRecommender;
+use DiveChat\Tools\ProductDetails;                 // ATTR-T-082 (Z5)
+use DiveChat\Shop\MysqlProductEnrichmentService;   // ATTR-T-082 (Z5)
 
 // Na serwerze Config::load czyta .env (DB_HOST/PORT/NAME_PROD/USER/PASSWORD = reader).
 Config::load(dirname(__DIR__));
@@ -176,6 +178,47 @@ $v1 = ($v1Rows === []);
 $ok = $ok && $v1;
 echo '  [' . ($v1 ? 'OK ' : 'FAIL') . '] V1: żaden chart nie ma jednocześnie aliasu i jego celu: kolizje='
     . json_encode($v1Rows, JSON_UNESCAPED_UNICODE) . "\n";
+
+// ================= ATTR-T-082 (Z5): trzy stany size_chart w get_product_details =================
+// Klucz = id_product (stabilny, w przeciwieństwie do id_chart). available/matchable to kontrakt
+// dla MODELU (SystemPrompt "SPRAWDŹ ZANIM ZAPYTASZ"), liczony w ProductDetails, nie w SizeRecommender
+// — stąd osobna instancja. Enrichment realny (localhost MySQL). Filtr = SizeRecommender::SCHEMA_DIMS.
+$pd = new ProductDetails(new MysqlProductEnrichmentService());
+$sizeChartOf = static function (int $pid) use ($pd): array {
+    $r = $pd->execute(['product_id' => $pid]);
+    return is_array($r['size_chart'] ?? null) ? $r['size_chart'] : ['available' => 'BRAK_size_chart'];
+};
+
+// Stan 1 — available=false: produkt bez tabeli (maska 300, unisex, brak wiersza w product_chart).
+$s1 = $sizeChartOf(300);
+$t1 = (($s1['available'] ?? null) === false);
+$ok = $ok && $t1;
+echo '  [' . ($t1 ? 'OK ' : 'FAIL') . '] Z5 stan1 available=false (product 300, brak charta): '
+    . json_encode($s1, JSON_UNESCAPED_UNICODE) . "\n";
+
+// Stan 2 — available=true, matchable=false, dimensions=[]: chart bez osi doboru (7006, K1).
+$s2 = $sizeChartOf(7006);
+$t2 = (($s2['available'] ?? null) === true) && (($s2['matchable'] ?? null) === false) && (($s2['dimensions'] ?? null) === []);
+$ok = $ok && $t2;
+echo '  [' . ($t2 ? 'OK ' : 'FAIL') . '] Z5 stan2 available=true matchable=false dims=[] (product 7006, K1): '
+    . json_encode($s2, JSON_UNESCAPED_UNICODE) . "\n";
+
+// Stan 3a — available=true, matchable=true; hip (nie hips), bez bust: Kwark/K (3904, K2/ADR-044).
+$s3 = $sizeChartOf(3904);
+$d3 = $s3['dimensions'] ?? [];
+$t3 = (($s3['available'] ?? null) === true) && (($s3['matchable'] ?? null) === true)
+    && in_array('hip', $d3, true) && !in_array('hips', $d3, true) && !in_array('bust', $d3, true);
+$ok = $ok && $t3;
+echo '  [' . ($t3 ? 'OK ' : 'FAIL') . '] Z5 stan3 matchable=true, hip (nie hips), bez bust (product 3904, K2): '
+    . json_encode($s3, JSON_UNESCAPED_UNICODE) . "\n";
+
+// Stan 3b — chart Bare z osią doboru + 'leg': dimensions bez leg, matchable=true (1890, K3/ADR-032 aneks 1).
+$s3b = $sizeChartOf(1890);
+$d3b = $s3b['dimensions'] ?? [];
+$t3b = (($s3b['matchable'] ?? null) === true) && !in_array('leg', $d3b, true) && in_array('hip', $d3b, true);
+$ok = $ok && $t3b;
+echo '  [' . ($t3b ? 'OK ' : 'FAIL') . '] Z5 stan3b Bare chart bez leg, matchable=true (product 1890, K3): '
+    . json_encode($s3b, JSON_UNESCAPED_UNICODE) . "\n";
 
 echo 'WYNIK: ' . ($ok ? 'wszystkie OK' : 'SĄ BŁĘDY') . "\n";
 exit($ok ? 0 : 1);

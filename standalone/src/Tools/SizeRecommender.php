@@ -39,7 +39,9 @@ final class SizeRecommender implements ToolInterface
      * strażnika ADR-039: chart, którego wymiary NIE przecinają się z tym zbiorem, nie jest chartem
      * doboru. Rozjazd tej stałej ze schematem wychodzi w teście K7, nie u klienta (ADR-039 D5).
      */
-    private const SCHEMA_DIMS = [
+    // ATTR-T-082 (Z1): public, aby ProductDetails czytał listę ze źródła, nie z kopii.
+    // Kopia byłaby trzecim miejscem z tą samą listą (po stałej i po zapytaniu walidacyjnym V2).
+    public const SCHEMA_DIMS = [
         'chest', 'waist', 'hip', 'height', 'weight',
         'foot_length', 'shoe_eu', 'hand_circ', 'palm_length', 'head_circ', 'neck',
     ];
