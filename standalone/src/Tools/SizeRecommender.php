@@ -60,7 +60,8 @@ final class SizeRecommender implements ToolInterface
         return 'Dobiera rozmiar deterministycznie na podstawie wymiarów ciała — obsługuje skafandry MOKRE, '
              . 'rękawice, kaptury, buty i pierścienie suchego skafandra. '
              . 'WYMAGA płci — ZAWSZE zapytaj klienta "dla kobiety czy mężczyzny?", nie zgaduj. '
-             . 'Pytaj o wymiary właściwe dla kategorii: skafander — obwód klatki/talii/bioder, wzrost, waga; '
+             . 'Pytaj o wymiary właściwe dla kategorii: skafander (pianki 5 mm i grubsze oraz standardowe) '
+             . 'i skafander_3mm (cienkie pianki do 3 mm) — obwód klatki/talii/bioder, wzrost, waga; '
              . 'rękawica — obwód dłoni (hand_circ), długość dłoni (palm_length); '
              . 'kaptur — obwód głowy (head_circ), obwód szyi (neck); '
              . 'but — rozmiar buta EU (shoe_eu, numerówka, np. 42) i/lub długość stopy (foot_length). '
@@ -93,9 +94,14 @@ final class SizeRecommender implements ToolInterface
                 ],
                 'category' => [
                     'type' => 'string',
-                    'enum' => ['skafander', 'rekawica', 'kaptur', 'but', 'but_suchy', 'pierscienie'],
+                    // ATTR-T-087 (Z1): skafander_3mm dochodzi jako osobna kategoria (charty Mares ≤3 mm).
+                    'enum' => ['skafander', 'skafander_3mm', 'rekawica', 'kaptur', 'but', 'but_suchy', 'pierscienie'],
+                    // ATTR-T-087 (Z1, finding c): obie kategorie skafandrowe opisane jako para wzajemnie
+                    // wykluczająca — definicja jednej wartości enuma zmienia znaczenie drugiej, więc idą razem.
                     'description' => 'Kategoria produktu — WYMAGANA przy fallbacku po marce (brand bez product_id). '
-                        . 'Gdy podano product_id, kategoria jest wyprowadzana z produktu (tego pola nie podawaj).',
+                        . 'Gdy podano product_id, kategoria jest wyprowadzana z produktu (tego pola nie podawaj). '
+                        . 'Skafandry mokre mają dwie osobne tabele: skafander_3mm dla cienkich pianek (do 3 mm), '
+                        . 'skafander dla pianek 5 mm i grubszych oraz standardowych skafandrów mokrych.',
                 ],
                 'gender' => [
                     'type' => 'string',
@@ -173,7 +179,8 @@ final class SizeRecommender implements ToolInterface
             return [
                 'error' => 'Nie znaleziono tabeli rozmiarów dla podanych danych. '
                     . 'Podaj product_id zmapowanego produktu LUB brand + category '
-                    . '(skafander/rękawica/kaptur/but/but suchy/pierścienie) + gender.',
+                    . '(skafander = pianki 5 mm i grubsze; skafander_3mm = cienkie do 3 mm; '
+                    . 'rękawica/kaptur/but/but suchy/pierścienie) + gender.',
             ];
         }
         if (isset($chart['error'])) {
@@ -324,7 +331,8 @@ final class SizeRecommender implements ToolInterface
             // §3.3: kategoria OBOWIĄZKOWA — bez niej marka trafia w kilka kategorii naraz. Nie zgadujemy.
             if ($category === null || $category === '') {
                 return ['error' => 'Marka "' . $brand . '" ma tabele rozmiarów w kilku kategoriach '
-                    . '(skafander, rękawica, kaptur, but, but suchy, pierścienie). '
+                    . '(skafander = pianki 5 mm i grubsze, skafander_3mm = cienkie do 3 mm, '
+                    . 'rękawica, kaptur, but, but suchy, pierścienie). '
                     . 'Zapytaj klienta, o którą kategorię chodzi, albo podaj product_id — nie zgaduję.'];
             }
             // Filtry chart_type='progowy' + category_hint (parametr) + gender OBOWIĄZKOWE (CHAT-T-161 §2.4).

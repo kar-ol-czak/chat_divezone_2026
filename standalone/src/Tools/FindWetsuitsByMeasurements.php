@@ -31,7 +31,11 @@ final class FindWetsuitsByMeasurements implements ToolInterface
 
     private const ID_LANG = 1;
     private const GROUP_SIZE = 27; // pr_attribute_group „Rozmiar" (jak w GetProductCombinations)
-    private const CATEGORIES = [337, 367]; // kategorie skafandrów mokrych
+    private const CATEGORIES = [337, 367]; // kategorie skafandrów mokrych (id_category PrestaShop)
+    // ATTR-T-087 (Z3): category_hint chartów rozmiarowych zaliczane do doboru pianek. JAWNA lista,
+    // NIE `LIKE 'skafander%'` — sufiks-konwencja jest w użyciu (but_suchy), a przyszły skafander_suchy
+    // (suchy skafander) świadomie NIE jest dobierany automatycznie; LIKE wciągnąłby go po cichu.
+    private const WETSUIT_CATEGORIES = ['skafander', 'skafander_3mm'];
     private const MAX_ALTERNATIVES = 8;
 
     private const F_THICKNESS = 'Grubość neoprenu';
@@ -127,6 +131,10 @@ final class FindWetsuitsByMeasurements implements ToolInterface
             $refId = null;
         }
 
+        // ATTR-T-087 (Z3): oba filtry po category_hint obejmują obie kategorie skafandrowe
+        // (skafander + skafander_3mm) przez jawną stałą, nie LIKE. Placeholdery pozycyjne z listy.
+        $catPlaceholders = implode(',', array_fill(0, count(self::WETSUIT_CATEGORIES), '?'));
+
         // Marka produktu referencyjnego (do wykluczenia z „inne marki").
         $refBrand = null;
         if ($refId !== null) {
@@ -134,9 +142,9 @@ final class FindWetsuitsByMeasurements implements ToolInterface
                 "SELECT c.brand
                  FROM divezone_attr_product_chart pc
                  JOIN divezone_attr_size_charts c ON c.id_chart = pc.id_chart
-                 WHERE pc.id_product = ? AND c.category_hint = 'skafander' AND c.chart_type = 'progowy'
+                 WHERE pc.id_product = ? AND c.category_hint IN ($catPlaceholders) AND c.chart_type = 'progowy'
                  LIMIT 1",
-                [$refId],
+                array_merge([$refId], self::WETSUIT_CATEGORIES),
             );
             $refBrand = $rc['brand'] ?? null;
         }
@@ -145,8 +153,8 @@ final class FindWetsuitsByMeasurements implements ToolInterface
         $charts = $this->db->fetchAll(
             "SELECT id_chart, brand, gender
              FROM divezone_attr_size_charts
-             WHERE chart_type = 'progowy' AND category_hint = 'skafander' AND gender IN (?, 'UNISEX')",
-            [$gender],
+             WHERE chart_type = 'progowy' AND category_hint IN ($catPlaceholders) AND gender IN (?, 'UNISEX')",
+            array_merge(self::WETSUIT_CATEGORIES, [$gender]),
         );
 
         // Dla każdej marki: przelicz rozmiar (KROK 1) i znajdź produkty oferujące go jako wariant (KROK 2).
