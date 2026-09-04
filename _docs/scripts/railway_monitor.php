@@ -72,11 +72,16 @@ $COOLDOWN_S = 15 * 60;    // min odstep miedzy alertami
 $HEARTBEAT_EVERY = 100;
 $PG_METRICS = ['pg_select1', 'pg_settings', 'pg_chiptree', 'pg_upsert'];
 
-function logPath(string $diag, DateTimeZone $waw): string {
-    return $diag . '/railway_monitor_' . (new DateTime('now', $waw))->format('Ymd') . '.log';
+// CHAT-T-183: $atW = znacznik WAW, ktory JUZ trafil w tresc linii. Bez niego nazwa pliku
+// brala sie z chwili ZAPISU (po sondach), wiec cykl zaczety przed polnoca ladowal w logu doby
+// D+1 z godzina 23:59:xx z doby D — raport doby D gubil probke, D+1 dostawala obca.
+// Domyslne null = zachowanie jak dotad (naglowki startowe poza petla).
+function logPath(string $diag, DateTimeZone $waw, ?DateTime $atW = null): string {
+    $t = $atW ?? new DateTime('now', $waw);
+    return $diag . '/railway_monitor_' . $t->format('Ymd') . '.log';
 }
-function wlog(string $diag, DateTimeZone $waw, string $line): void {
-    file_put_contents(logPath($diag, $waw), $line, FILE_APPEND);
+function wlog(string $diag, DateTimeZone $waw, string $line, ?DateTime $atW = null): void {
+    file_put_contents(logPath($diag, $waw, $atW), $line, FILE_APPEND);
 }
 
 function tcp(string $host, int $port, int $tmo): array {
@@ -261,7 +266,8 @@ while (true) {
         $rtok ? 'OK' : 'FAIL', $rtms,
         $cell('pg_select1'), $cell('pg_settings'), $cell('pg_chiptree'), $cell('pg_upsert'),
         $ghok ? 'OK' : 'FAIL', $ghms, $errno);
-    wlog($DIAG, $WAW, $line);
+    // CHAT-T-183: plik wybierany po $nowW — tym samym znaczniku, ktory jest w polu WAW linii.
+    wlog($DIAG, $WAW, $line, $nowW);
 
     // --- alert / recovery ---
     $allPgOk = true; $worst = null;
@@ -285,9 +291,9 @@ while (true) {
             $subj = "[DIVECHAT MONITOR] Railway degradacja: {$worst} FAIL x{$streak[$worst]} od {$ts}";
             $body = "TRASA PRODUKCYJNA serwer->Railway.\n"
                   . "Metryka {$worst}: {$streak[$worst]} FAIL z rzedu, od {$ts}.\n"
-                  . "Host: {$RHOST}:{$RPORT}\nLog: " . logPath($DIAG, $WAW) . "\n";
+                  . "Host: {$RHOST}:{$RPORT}\nLog: " . logPath($DIAG, $WAW, $nowW) . "\n";
             $ok = sendAlertMail($MAIL_TO, $subj, $body);
-            wlog($DIAG, $WAW, "### ALERT {$ts} | {$episodeInfo} | mail=" . ($ok ? 'sent' : 'FAILED') . "\n");
+            wlog($DIAG, $WAW, "### ALERT {$ts} | {$episodeInfo} | mail=" . ($ok ? 'sent' : 'FAILED') . "\n", $nowW);
             $alertActive = true; $lastAlertTs = $nowTs;
 
             // CHAT-T-119 — zamroz start okna, zaloz plik incydentu, odpal diag w tle (start epizodu)
@@ -297,7 +303,7 @@ while (true) {
                 "### EPIZOD START (1. FAIL): %s WAW | metryka %s FAIL x%d | prog alertu osiagniety %s\n",
                 $episodeStartW->format('Y-m-d H:i:s'), $worst, $streak[$worst], $nowW->format('H:i:s')), FILE_APPEND);
             captureNetworkDiag($incidentFile, "epizod-start {$worst}", $WAW, $UTC);
-            wlog($DIAG, $WAW, "### DIAG zapisano: " . basename($incidentFile) . " (epizod-start {$worst})\n");
+            wlog($DIAG, $WAW, "### DIAG zapisano: " . basename($incidentFile) . " (epizod-start {$worst})\n", $nowW);
         }
     }
     if ($alertActive && $okStreak >= $RECOVERY_OK) {
@@ -316,15 +322,15 @@ while (true) {
               . "Po epizodzie [{$episodeInfo}] wszystkie metryki PG OK przez {$okStreak} cykli.\nPowrot: {$ts}\n"
               . ($windowStr !== '' ? $windowStr : '');
         $ok = sendAlertMail($MAIL_TO, $subj, $body);
-        wlog($DIAG, $WAW, "### RECOVERY {$ts} | po [{$episodeInfo}] | mail=" . ($ok ? 'sent' : 'FAILED') . "\n");
-        if ($windowStr !== '') { wlog($DIAG, $WAW, $windowStr); }
+        wlog($DIAG, $WAW, "### RECOVERY {$ts} | po [{$episodeInfo}] | mail=" . ($ok ? 'sent' : 'FAILED') . "\n", $nowW);
+        if ($windowStr !== '') { wlog($DIAG, $WAW, $windowStr, $nowW); }
 
         // CHAT-T-119 — druga diag (trasa na koncu epizodu) do TEGO SAMEGO pliku incydentu.
         // Linia OKNA idzie jako $preface -> wypisana pod flock RAZEM z naglowkiem epizod-koniec,
         // wiec czeka az diag epizod-start zwolni blokade (brak przeplotu przy krotkim epizodzie).
         if ($incidentFile !== '') {
             captureNetworkDiag($incidentFile, 'epizod-koniec', $WAW, $UTC, ($windowStr !== '' ? "\n" . $windowStr : ''));
-            wlog($DIAG, $WAW, "### DIAG zapisano: " . basename($incidentFile) . " (epizod-koniec)\n");
+            wlog($DIAG, $WAW, "### DIAG zapisano: " . basename($incidentFile) . " (epizod-koniec)\n", $nowW);
         }
 
         $alertActive = false;
@@ -333,7 +339,7 @@ while (true) {
 
     if ($i % $HEARTBEAT_EVERY === 0) {
         wlog($DIAG, $WAW, sprintf("# alive %05d %s UTC | alert_active=%s ok_streak=%d\n",
-            $i, (new DateTime('now', $UTC))->format('H:i:s'), $alertActive ? '1' : '0', $okStreak));
+            $i, (new DateTime('now', $UTC))->format('H:i:s'), $alertActive ? '1' : '0', $okStreak), $nowW);
         cleanupProbe($DSN, $PROBE_KEY); // okresowe czyszczenie klucza probe
     }
 
