@@ -1,0 +1,114 @@
+CHAT-T-184 / FAZA A1 — looking glass i dane BGP dla obu kierunkow
+Zebrane: 2026-09-04, znaczniki UTC przy kazdej pozycji. Wszystko READ-ONLY, publiczne zrodla.
+
+===============================================================================
+1. LOOKING GLASS ARELION (AS1299) — PROBA, WYNIK: NIEDOSTEPNY PROGRAMOWO
+===============================================================================
+Czas proby: 2026-09-04 11:40-11:41 UTC
+
+Sprawdzone adresy:
+  https://lg.arelion.net/          -> DNS NXDOMAIN (host nie istnieje)
+  https://looking-glass.arelion.net/ -> DNS NXDOMAIN
+  https://lg.telia.net/            -> HTTP 200 (stara marka, strona informacyjna)
+  https://lg.twelve99.net/         -> HTTP 200 (dziala, to jest wlasciwy LG Arelion/Twelve99)
+  https://www.arelion.com/         -> HTTP 200
+
+Dlaczego nie ma tu wyniku zapytania:
+  LG na lg.twelve99.net wysyla zapytania POST-em na "query.php" i jest chroniony
+  przez Google reCAPTCHA v3:
+    <script src="https://www.recaptcha.net/recaptcha/api.js?render=6Le21HgaAAAAAL5446jcO8BlVJ6pxnj9h5pzHGO2&onload=LGQueryFormSubmit">
+  Zapytanie bez tokenu captcha nie przejdzie, a obchodzenie captchy jest poza zakresem
+  (zlecenie: "jezeli looking glass wymaga rejestracji albo nie odpowiada - zapisz ten fakt,
+  nie kombinuj"). Zapis faktu zamiast obejscia.
+
+DO WYKLIKANIA RECZNIE (3 zapytania, kazde ~30 s, wynik wklejamy do zgloszenia 167585):
+  Wejdz na https://lg.twelve99.net/ i wykonaj kolejno:
+    1) type: traceroute   address: 193.93.88.95   router: wybierz wezel w Amsterdamie
+    2) type: traceroute   address: 193.93.88.95   router: wybierz wezel we Frankfurcie
+    3) type: bgp          address: 193.93.88.0/22 (i osobno 66.33.22.0/23)
+  Zapytanie 1 i 2 to jest dokladnie trasa POWROTNA z sieci tranzytowej do nas.
+
+===============================================================================
+2. DANE BGP Z RIPE RIS (zrodlo otwarte, bez captchy) — TO ZASTEPUJE CZESC BGP Z LG
+===============================================================================
+Zrodlo: RIPEstat Data API (RIPE NCC, kolektory RIS)
+  https://stat.ripe.net/data/looking-glass/data.json?resource=193.93.88.0/22
+  https://stat.ripe.net/data/looking-glass/data.json?resource=66.33.22.0/23
+  https://stat.ripe.net/data/network-info/data.json?resource=<IP>
+Czas zapytania (pole query_time z API): 2026-09-04T11:41:50Z i 11:41:51Z
+
+Przypisanie adresow:
+  193.93.88.95  -> prefiks 193.93.88.0/22, AS39566  AS-SMARTHOST-PL Smarthost sp. z o.o.
+  66.33.22.230  -> prefiks 66.33.22.0/23,  AS400940 RAILWAY - Railway
+
+--- NASZ SERWER 193.93.88.0/22 (Smarthost) (origin AS39566) ---
+kolektory RIS: 23 | sciezek od peerow: 382 | unikalnych AS-path: 292
+sciezek zawierajacych AS1299 (Arelion): 21 (5.5%)
+upstream oddajacy ruch bezposrednio do origin (kto wpuszcza ruch do sieci docelowej):
+   199 ( 52.1%)  AS29535   przyklad sciezki: 36924 1299 29535 39566 39566 39566
+   176 ( 46.1%)  AS20804   przyklad sciezki: 8218 20804 39566 39566 39566
+     2 (  0.5%)  AS6204    przyklad sciezki: 34019 47160 62000 6204 39566
+     2 (  0.5%)  AS49544   przyklad sciezki: 49544 39566
+     1 (  0.3%)  AS24482   przyklad sciezki: 24482 39566
+     1 (  0.3%)  AS36236   przyklad sciezki: 36236 39566
+     1 (  0.3%)  AS28917   przyklad sciezki: 28917 39566
+10 najczestszych pelnych AS-path:
+    18 x  6939 29535 29535 29535 29535 39566 39566 39566
+     7 x  8218 20804 39566 39566 39566
+     7 x  24482 20804 39566 39566 39566
+     5 x  6461 29535 39566 39566 39566
+     4 x  13030 20804 39566 39566 39566
+     4 x  9002 6461 29535 39566 39566 39566
+     4 x  12779 20804 39566 39566 39566
+     4 x  14840 20804 39566 39566 39566
+     4 x  199524 1299 29535 39566 39566 39566
+     4 x  20804 39566 39566 39566
+
+--- RAILWAY 66.33.22.0/23 (origin AS400940) ---
+kolektory RIS: 23 | sciezek od peerow: 330 | unikalnych AS-path: 261
+sciezek zawierajacych AS1299 (Arelion): 126 (38.2%)
+upstream oddajacy ruch bezposrednio do origin (kto wpuszcza ruch do sieci docelowej):
+   126 ( 38.2%)  AS1299    przyklad sciezki: 36924 1299 400940
+   109 ( 33.0%)  AS3356    przyklad sciezki: 8218 6461 3356 400940
+    65 ( 19.7%)  AS2914    przyklad sciezki: 15692 2914 400940
+    12 (  3.6%)  AS3491    przyklad sciezki: 132825 174 3491 400940
+    11 (  3.3%)  AS24482   przyklad sciezki: 24482 400940 400940 400940 400940
+     2 (  0.6%)  AS9583    przyklad sciezki: 142289 9583 400940 400940 400940 400940
+     1 (  0.3%)  AS38001   przyklad sciezki: 38001 400940 400940 400940 400940
+     1 (  0.3%)  AS199524  przyklad sciezki: 199524 400940 400940 400940 400940
+10 najczestszych pelnych AS-path:
+    11 x  24482 400940 400940 400940 400940
+     7 x  199524 1299 400940
+     6 x  8218 6461 3356 400940
+     4 x  13030 2914 400940
+     4 x  12779 2914 400940
+     4 x  14840 3356 400940
+     4 x  47147 1299 400940
+     3 x  2914 400940
+     3 x  9002 2914 400940
+     3 x  34927 1299 400940
+
+Nazwy AS (RIPEstat as-overview, 2026-09-04 11:42 UTC):
+  AS39566  AS-SMARTHOST-PL Smarthost sp. z o.o.
+  AS29535  MIX2_OpenPeering Orange Polska Spolka Akcyjna
+  AS20804  ASN-TELENERGO Exatel S.A.
+  AS400940 RAILWAY - Railway
+  AS1299   TWELVE99 Arelion Sweden AB
+  AS3356   LEVEL3 - Level 3 Parent, LLC
+  AS2914   NTT-DATA-2914 - NTT America, Inc.
+
+===============================================================================
+3. WNIOSEK Z CZESCI BGP (do pisma dla smarthosta)
+===============================================================================
+Kierunek TAM (my -> Railway): nasze traceroute pokazuja tranzyt przez AS1299 (Arelion),
+i to sie zgadza z BGP: 38,2% sciezek RIS do prefiksu Railway ma AS1299 jako ostatni tranzyt.
+
+Kierunek POWROTNY (Railway -> my): do naszego prefiksu ruch wchodzi przez AS29535
+(Orange Polska, 52,1%) albo AS20804 (Exatel, 46,1%). AS1299 wystepuje w zaledwie 5,5%
+sciezek do nas i NIGDY jako bezposredni upstream AS39566.
+
+Czyli: trasowanie JEST asymetryczne i to widac w publicznym BGP, bez zadnego pomiaru
+z naszej strony. Wyjscie idzie przez Arelion, powrot wchodzi przez Orange albo Exatel.
+To nie rozstrzyga jeszcze, GDZIE gina pakiety - do tego sluzy Faza B (sonda z Railway).
+Rozstrzyga natomiast, ze rozmowa o asymetrii jest zasadna i ze druga strone trasy
+trzeba mierzyc osobno.

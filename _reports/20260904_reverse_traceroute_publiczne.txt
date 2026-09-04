@@ -1,0 +1,72 @@
+CHAT-T-184 / FAZA A2 — publiczne sondy W KIERUNKU naszego serwera (193.93.88.95)
+Zebrane 2026-09-04, znaczniki UTC przy kazdej pozycji. Wszystko publiczne, READ-ONLY.
+
+===============================================================================
+1. CZEGO NIE DALO SIE ZROBIC
+===============================================================================
+api.hackertarget.com/mtr (traceroute/MTR z ich wezla) — 2026-09-04 11:42 UTC:
+    zapytanie: https://api.hackertarget.com/mtr/?q=193.93.88.95
+    odpowiedz: "error valid key required"
+  Darmowy dostep bez klucza zostal wylaczony. Nie obchodzimy — zapis faktu.
+
+Looking glass Arelion (traceroute z ich wezlow w AMS/FRA) — patrz 20260904_lg_arelion.txt:
+    chroniony reCAPTCHA v3, do wykliknięcia recznie.
+
+Wniosek: pelnego traceroute Z Amsterdamu/Frankfurtu do nas NIE zdobylem narzedziem
+bezobslugowym. Ponizej jest to, co dalo sie zmierzyc: osiagalnosc i RTT z wezlow
+w Amsterdamie, Frankfurcie, Langen i Norymberdze, w obie strony (do nas i do Railway).
+
+===============================================================================
+2. check-host.net — wezly NL/DE, 2026-09-04 11:43:04-11:43:30 UTC
+===============================================================================
+Narzedzie: check-host.net (publiczne, bez rejestracji). Kazdy wynik ma trwaly link.
+Wezly: nl1 Amsterdam, de4 Frankfurt, de2 Langen, de1 Norymberga.
+
+--- ICMP ping -> 193.93.88.95 (NASZ SERWER) ---
+zapytanie: https://check-host.net/check-ping?host=193.93.88.95
+trwaly link z wynikiem: https://check-host.net/check-report/49fed24ak2e4
+  de1.node.check-host.net      4/4 pakietow OK, strat 0%, avg 19.2 ms
+  de2.node.check-host.net      3/4 pakietow OK, strat 25%, avg 27.1 ms
+  de4.node.check-host.net      4/4 pakietow OK, strat 0%, avg 15.8 ms
+  nl1.node.check-host.net      3/4 pakietow OK, strat 25%, avg 29.5 ms
+
+--- TCP connect -> 193.93.88.95:443 (HTTPS, ta sama usluga co czat) ---
+zapytanie: https://check-host.net/check-tcp?host=193.93.88.95:443
+trwaly link z wynikiem: https://check-host.net/check-report/49fed250k57c
+  de1.node.check-host.net      connect OK do 193.93.88.95, czas 20.8 ms
+  de2.node.check-host.net      connect OK do 193.93.88.95, czas 21.4 ms
+  de4.node.check-host.net      connect OK do 193.93.88.95, czas 24.0 ms
+  nl1.node.check-host.net      connect OK do 193.93.88.95, czas 26.4 ms
+
+--- TCP connect -> 193.93.88.95:5739 (SSH, druga usluga na tym samym IP) ---
+zapytanie: https://check-host.net/check-tcp?host=193.93.88.95:5739
+trwaly link z wynikiem: https://check-host.net/check-report/49fed258k480
+  de1.node.check-host.net      connect OK do 193.93.88.95, czas 19.5 ms
+  de2.node.check-host.net      connect OK do 193.93.88.95, czas 27.1 ms
+  de4.node.check-host.net      connect OK do 193.93.88.95, czas 16.1 ms
+  nl1.node.check-host.net      connect OK do 193.93.88.95, czas 29.7 ms
+
+--- TCP connect -> 66.33.22.230:14368 (RAILWAY PG, kierunek przeciwny, kontrola) ---
+zapytanie: https://check-host.net/check-tcp?host=66.33.22.230:14368
+trwaly link z wynikiem: https://check-host.net/check-report/49fed25ckae1
+  de1.node.check-host.net      connect OK do 66.33.22.230, czas 16.2 ms
+  de2.node.check-host.net      connect OK do 66.33.22.230, czas 8.5 ms
+  de4.node.check-host.net      connect OK do 66.33.22.230, czas 9.4 ms
+  nl1.node.check-host.net      connect OK do 66.33.22.230, czas 2.8 ms
+
+Wczesniejszy przebieg (szerszy zestaw wezlow), 2026-09-04 11:42:32 UTC,
+https://check-host.net/check-report/49fecf19k96e — ping do 193.93.88.95:
+  fi1 Helsinki 4/4 OK 45,6 ms | pl2 Warszawa 3/4 OK 8,1 ms | uk1 Londyn 2/4 OK 35,0 ms
+  ua1 2/4 | ua2 2/4 | ua3 0/4 | ru3 3/4 | il1 2/4 | il2 2/4 | ir5 2/4 | ir7 4/4 | ru1 brak
+
+===============================================================================
+3. JAK TO CZYTAC (i czego to NIE dowodzi)
+===============================================================================
+- Pomiar wykonany 11:43 UTC, czyli POZA oknem epizodow (te wypadaja 16-21 UTC).
+  W tym oknie TCP do nas dziala z kazdego wezla NL/DE, 16-30 ms.
+- Straty ICMP 25% na dwoch wezlach (de2, nl1) to POJEDYNCZY zgubiony pakiet z czterech.
+  Przy 4 pakietach to za malo, zeby cokolwiek orzekac; moze byc szumem wezla
+  albo ograniczaniem ICMP po drodze. NIE traktowac tego jako dowodu strat.
+- Wniosek uczciwy: w chwili pomiaru trasa powrotna z AMS/FRA do nas byla drozna na TCP.
+  Zeby powiedziec cokolwiek o oknie 16-21 UTC, trzeba pomiaru CIAGLEGO z drugiej strony,
+  czyli Fazy B (sonda na Railway).
