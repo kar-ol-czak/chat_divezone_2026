@@ -1,9 +1,10 @@
-═══ CHAT-T-183 · INTEGRATION · KROK 6 / STOP przed deployem ═══
+═══ CHAT-T-183 · INTEGRATION · DEPLOYED ═══
 
 # CHAT-T-183 — werdykt okna ze strat pingu, bramka kompletnosci doby, polnoc w monitorze
 
-**Stan:** kod gotowy, przetestowany na realnych logach i zrzutach z produkcji, zacommitowany i wypchniety.
-**Czeka na:** slowo „deployuj" od Karola (ADR-089). Na serwerze NIC nie zmienione — CHAT-T-182 dziala dalej (md5 `7df010f467be2e424f98154044cbb83c`).
+**Stan:** WDROZONE na produkcji 2026-09-04 10:22-10:24 CEST (autoryzacja Karola, ADR-089).
+Wdrozony DOKLADNIE commit `84dc597` — `git diff HEAD -- _docs/scripts/` pusty przed `scp`, zero poprawek przy okazji.
+**Dowody wdrozenia:** sekcja 8 na koncu dokumentu.
 **Commit:** `84dc597 fix(CHAT-T-183): werdykt okna ze strat pingu, bramka kompletnosci doby, polnoc w monitorze`
 **Recenzja krzyzowa:** `_docs/reviews/CODEX_REVIEW_20260904_CHAT-T-183_werdykt-okna-i-bramka-kompletnosci.md`
 **KROK 0:** `git pull --rebase` odmowil (niezacommitowane zmiany innych sesji: `purge_litespeed.php`, `routes.php` — nietkniete). `git fetch` + `git rev-list --left-right --count origin/main...HEAD` = `0 0`, wiec nie bylo czego przestawiac.
@@ -184,22 +185,132 @@ z szescioma**; poprawki sa w tym samym commicie.
 
 ---
 
-## 7. WDROZENIE — CZEKA NA AUTORYZACJE (KROK 7, ADR-089)
+## 7. WDROZENIE — WYKONANE 2026-09-04 (KROK 8)
 
-**DWA pliki**, oba do `/home/divezone/_diag/`, osobno przez `scp`, port 5739, bez rsync katalogu:
+**DWA pliki** do `/home/divezone/_diag/`, kazdy osobnym `scp` (port 5739), bez rsync katalogu.
 
-1. `railway_summary_mail.php` (md5 lokalny po zmianie: sprawdzic tuz przed wyslaniem)
-2. `railway_monitor.php`
+### a) Stan przed (serwer, 2026-09-04 10:22:05 CEST)
 
-Kroki: backup obu z sufiksem `.bak_YYYYMMDD` → `ea-php84 -l` na obu → md5 local == prod na obu →
-`pkill -9 -f "railway_monitor[.]php"` (restart konieczny **podwojnie**: zmienia sie sam monitor
-ORAZ jego `require` raportu w linii 50) → dowod restartu (guard.log, nowy `# metryki:`, rosnaca
-liczba linii w dwoch odczytach, zywy pid) → `--dry-run` na obu dobach z serwera → **sciezki bez
-`--dry-run` NIE uruchamiac**.
+```
+md5 PRZED  summary: 7df010f467be2e424f98154044cbb83c   (= CHAT-T-182, zgodne ze zleceniem)
+md5 PRZED  monitor: 4cccd9dbf659f0e1efa0c62d8dbc47d3   (zgodne ze zleceniem)
+monitor:            pid 1968513, log doby 6672 linie, 2 naglowki "# metryki:"
+BASELINE monitor_nohup.out: 715 linii | 130 x "Fatal error" | 0 x "Parse error" | mtime 07:00:02
+flagi mail_sent_*: 0
+```
 
-Rollback: `cp ~/_diag/<plik>.bak_YYYYMMDD ~/_diag/<plik>` dla obu + `pkill -9` monitora.
+Baseline `nohup.out` zdjety PRZED deployem swiadomie: plik JUZ zawieral bledy fatalne (patrz
+sekcja 9), wiec bez punktu odniesienia nie dalo by sie odroznic starego bledu od nowego.
 
-**Sentinel:** deklaracja nie jest potrzebna — `TREES_ROOT_RE="^$HOME/public_html[^/]*/[^/]+"`,
-a `/home/divezone/_diag/` lezy poza `public_html` (ustalone w CHAT-T-182 odczytem konfiguracji).
+### b) Backup obu plikow
 
-═══ CHAT-T-183 · INTEGRATION · KROK 6 / STOP przed deployem ═══
+```
+railway_summary_mail.php.bak_20260904   md5 7df010f467be2e424f98154044cbb83c
+railway_monitor.php.bak_20260904        md5 4cccd9dbf659f0e1efa0c62d8dbc47d3
+```
+Oba md5 zgodne z plikami produkcyjnymi przed zmiana.
+
+### c) Transfer, lint, md5
+
+```
+SCP 1/2 OK (summary)        SCP 2/2 OK (monitor)
+ea-php84 -l summary  -> No syntax errors detected
+ea-php84 -l monitor  -> No syntax errors detected
+
+md5 PO (prod) summary: df76ec6c3463dae365fb10d6a6bad2c8   == md5 lokalny  ZGODNE
+md5 PO (prod) monitor: f88ef04234b622bdc94275928fa207a6   == md5 lokalny  ZGODNE
+```
+
+### d) Restart monitora — CZTERY dowody
+
+```
+pkill -9 -f "railway_monitor[.]php"   -> exit 0, pgrep pusty
+MONITOR WSTAL po ~60 s, pid=2044435
+
+(a) guard.log:
+    [guard] 2026-09-04 10:24:01 proces martwy (log 63s) -> restart pid=2044435
+
+(b) naglowki "# metryki:" w logu doby: 2 -> 3
+    linia 6683: # START 2026-09-04 10:24:01 WAW | CIAGLY (bez stop) | interval 5s | ...
+
+(c) log ROSNIE:
+    pomiar 1: 6685 linii (10:24:04)
+    pomiar 2: 6691 linii (10:24:39)   -> +6 w 35 s (~5,8 s/probka)
+    kontrola po 5 min: 6697 linii, ostatnia probka #00013 z 10:25:09 WAW
+    licznik cyklu zresetowany (#00007, #00013) = nowy proces
+
+(d) monitor_nohup.out PO restarcie:
+    715 linii (baseline 715) | 130 x Fatal error (baseline 130) | 0 x Parse error (baseline 0)
+    => ZERO nowych bledow po restarcie. Rollback niepotrzebny.
+```
+
+Jeden proces monitora: `2044435 /usr/bin/ea-php84 .../railway_monitor.php`, zgodny z pidfile.
+
+### e) `--dry-run` na obu dobach Z SERWERA
+
+**20260902** — wszystkie liczby zgodne z wymaganymi:
+
+```
+Prob: 14331 | railway_tcp 84 | pg_select1 164 | pg_settings 168 | pg_chiptree 171
+pg_upsert 173 | github 42 | errno=110 84 | alertow 21 | zrzutow 21
+Liczba okien: 13 (17:04:33 - 18:46:44 WAW, najdluzsze 18m 30s)
+werdykty: 12 x TRASA DO RAILWAY (kontrole czyste), 1 x BRAK ZRZUTU
+          ZERO okien sugerujacych szersze lacze
+pokrycie doby 100.0% (probki 14331 wobec 14400 = 99.5%), najwieksza przerwa 7m 54s
+OCENA DOBY: EPIZODY
+```
+
+Przyklad werdyktu z produkcji (Railway i kontrola z TEGO SAMEGO bloku):
+```
+  18:25:59 - 18:44:27 WAW | 29 prob | 18m 30s | max przerwa 178s
+      werdykt: TRASA DO RAILWAY (kontrole czyste) | 6 blokow diagnostycznych;
+               incident_20260902_182408.txt: Railway 100% strat, kontrole 0% strat
+      github w oknie: 6 FAIL (przeslanka, nie dowod: koreluje z wlasnymi zrzutami diagnostycznymi)
+```
+
+**20260903** — zgodne z wymaganymi:
+
+```
+Prob: 15251 | railway_tcp 1 | pg_select1 1 | github 0 | errno=110 1 | alertow 0 | zrzutow 0
+pokrycie doby 100.0%, najwieksza przerwa 1m 3s
+OCENA DOBY: CZYSTA
+1 okno: 15:38:16 - 15:38:16 WAW -> werdykt BRAK ZRZUTU — bez werdyktu
+```
+
+Po obu uruchomieniach `mail_sent_*.flag`: **0** — dry-run nie tworzy flagi i nie wysyla maila.
+
+### f) Czego NIE uruchomiono
+
+Sciezki bez `--dry-run` celowo nie uruchamiano. Pierwszy prawdziwy mail: **2026-09-05 o 07:00**
+(monitor in-process) albo **07:05** (cron) za dobe **2026-09-04** — test koncowy T-182 + T-183.
+
+### g) Rollback (gdyby byl potrzebny)
+
+```
+cp ~/_diag/railway_summary_mail.php.bak_20260904 ~/_diag/railway_summary_mail.php
+cp ~/_diag/railway_monitor.php.bak_20260904      ~/_diag/railway_monitor.php
+pkill -9 -f "railway_monitor[.]php"     # guard wskrzesi w ~60 s
+```
+
+**Sentinel:** deklaracja niepotrzebna — `TREES_ROOT_RE="^$HOME/public_html[^/]*/[^/]+"`,
+a `/home/divezone/_diag/` lezy poza `public_html` (ustalone w CHAT-T-182).
+
+---
+
+## 8. ZNALEZISKA POBOCZNE — do osobnego zadania, NIE naprawiane tutaj
+
+1. **Monitor cyklicznie umiera na `max_execution_time`.** `monitor_nohup.out` zawiera **130**
+   wpisow `Fatal error: Maximum execution time of 30 seconds exceeded in railway_monitor.php`
+   (linie 158 i 84). Liczba ta jest IDENTYCZNA przed i po moim deployu, wiec to stan zastany,
+   nie regresja. Guard za kazdym razem wskrzesza monitor — i to tlumaczy 33 naglowki
+   `# metryki:` w logu doby 2026-09-02: to restarty po fatalu, nie zgony sieciowe.
+   Kandydat na osobne zadanie: `max_execution_time=0` dla tego procesu (php.ini CLI albo
+   `ini_set` na starcie monitora). Poza zakresem T-183.
+
+2. **Pulapka pomiarowa `pgrep`/`pkill`.** `pgrep -f "railway_monitor[.]php"` pokazal chwilowo
+   DWA pidy — drugi to byl moj wlasny proces SSH, bo komenda zawierala literal sciezki
+   `railway_monitor.php` (w `md5sum`). Wzorzec nawiasowy chroni tylko wtedy, gdy w calej
+   komendzie nie ma tego literalu. Przy `pkill` oznaczaloby to ubicie wlasnej sesji.
+   Komenda z `pkill` musi byc wolna od tego literalu — tak byla zbudowana.
+
+═══ CHAT-T-183 · INTEGRATION · DEPLOYED ═══
