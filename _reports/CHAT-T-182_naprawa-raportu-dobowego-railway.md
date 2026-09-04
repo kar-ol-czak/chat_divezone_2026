@@ -1,11 +1,12 @@
-═══ CHAT-T-182 · INTEGRATION · KROK 5 / STOP przed deployem ═══
+═══ CHAT-T-182 · INTEGRATION · DEPLOYED ═══
 
 # CHAT-T-182 — naprawa raportu dobowego monitora Railway
 
-**Stan:** kod gotowy, przetestowany na realnych logach z produkcji, zacommitowany i wypchniety.
-**Czeka na:** slowo „deployuj" od Karola (ADR-089). Na serwerze NIC nie zmienione.
+**Stan:** WDROZONE na produkcji 2026-09-04 08:47 CEST (autoryzacja Karola, ADR-089).
+Wdrozony DOKLADNIE kod zrecenzowany w `cb0a391` — zero poprawek przy okazji (`git diff HEAD` pusty przed `scp`).
 **Commit:** `cb0a391 fix(CHAT-T-182): raport dobowy Railway — nowy format metryk, okno poprzedniej doby`
 **Recenzja krzyzowa:** `_docs/reviews/CODEX_REVIEW_20260903_CHAT-T-182_raport-dobowy-railway.md`
+**Dowody wdrozenia:** sekcja 7 na koncu tego dokumentu.
 
 ---
 
@@ -192,19 +193,123 @@ Recenzent potwierdzil poprawnosc regexa, logiki poprzedniej doby, klucza flagi, 
 
 ---
 
-## 6. WDROZENIE — CZEKA NA AUTORYZACJE (KROK 6, ADR-089)
+## 6. UWAGA DO ZGLOSZENIA (punkt 6 zlecenia)
 
-Nie wykonane. Po slowie „deployuj":
+Po zmianie okna sciezka in-process (`railway_monitor.php:219`, 07:00 WAW) i sciezka cronowa (07:05 WAW) raportuja **te sama dobe** (D-1) i uzywaja **tej samej flagi** `mail_sent_<D-1>.flag`, wiec dedup dziala jak dotad. Zmiany w `railway_monitor.php` nie sa potrzebne.
 
-1. `cp ~/_diag/railway_summary_mail.php ~/_diag/railway_summary_mail.php.bak_20260903`
-2. `scp` JEDNEGO pliku (port 5739) → `/home/divezone/_diag/railway_summary_mail.php`
-3. `ea-php84 -l` na pliku docelowym
-4. md5 lokalne == md5 na produkcji
-5. `pkill -9 -f "railway_monitor\.php"` — monitor trzyma STARY kod w pamieci (`railway_monitor.php:50` robi `require` przy starcie). Guard wskrzesi w ciagu 60 s; dowod: wpis w `~/_diag/guard.log` + swiezy naglowek `# metryki:` w logu dnia
-6. Test recznego uruchomienia `ea-php84 /home/divezone/_diag/railway_summary_mail.php`, sprawdzenie `status=` (jesli flaga doby 2026-09-02 istnieje — usunac PRZED testem)
+---
 
-**Deklaracja Sentinela:** plik lezy w `/home/divezone/_diag/`, czyli poza drzewami `chat.divezone.pl` i `prod`. Jesli `_diag` nie jest monitorowanym drzewem, deklaracja nie jest potrzebna; blok do wklejenia dolacze do raportu po deployu, gdy potwierdze status tego katalogu.
+## 7. WDROZENIE — WYKONANE 2026-09-04 (KROK 7)
 
-**Uwaga do zgloszenia (punkt 6 zlecenia):** po zmianie okna sciezka in-process (`railway_monitor.php:219`, 07:00 WAW) i sciezka cronowa (07:05 WAW) raportuja **te sama dobe** (D-1) i uzywaja **tej samej flagi** `mail_sent_<D-1>.flag`, wiec dedup dziala jak dotad. Zmiany w `railway_monitor.php` nie sa potrzebne.
+Autoryzacja Karola. Wdrozony plik jest identyczny z zrecenzowanym commitem `cb0a391` (`git diff HEAD -- _docs/scripts/railway_summary_mail.php` pusty przed `scp`).
 
-═══ CHAT-T-182 · INTEGRATION · KROK 5 / STOP przed deployem ═══
+### a) Stan przed wdrozeniem (serwer, 2026-09-04 08:46:58 CEST)
+
+```
+md5 PRZED:  fbafb8bd0239dd5d59def6f5b27d5af7  /home/divezone/_diag/railway_summary_mail.php
+monitor:    1492872 /usr/bin/ea-php84 /home/divezone/_diag/railway_monitor.php
+log dnia:   railway_monitor_20260904.log, 5651 linii, 1 naglowek "# metryki:"
+cron:       [railway_summary_mail] 2026-09-02 07:05:01 status=noop:no-data
+            [railway_summary_mail] 2026-09-03 07:05:01 status=noop:no-data
+            [railway_summary_mail] 2026-09-04 07:05:01 status=noop:no-data   <- ostatnie uruchomienie STAREGO kodu
+flagi:      brak (zero plikow mail_sent_*.flag)
+```
+
+### b) Backup
+
+`cp -p ~/_diag/railway_summary_mail.php ~/_diag/railway_summary_mail.php.bak_20260903` — 5199 bajtow, md5 `fbafb8bd0239dd5d59def6f5b27d5af7` (zgodny z plikiem produkcyjnym przed zmiana). Nazwa pliku wg polecenia Karola (`.bak_20260903`); faktyczna data wdrozenia to **2026-09-04**.
+
+### c) Transfer, lint, md5
+
+`scp -P 5739` JEDNEGO pliku, bez synchronizacji katalogu.
+
+```
+ea-php84 -l /home/divezone/_diag/railway_summary_mail.php
+  -> No syntax errors detected
+
+md5 PO (prod):   7df010f467be2e424f98154044cbb83c
+md5 lokalny:     7df010f467be2e424f98154044cbb83c   <- ZGODNE, plik 20064 B
+```
+
+md5 zmienil sie z `fbafb8bd…` na `7df010f4…` — zgodnie z oczekiwaniem.
+
+### d) Restart monitora (stary kod byl w pamieci procesu)
+
+```
+pkill -9 -f "railway_monitor[.]php"      # wariant nawiasowy, nie self-matchuje wlasnej komendy SSH
+PO KILL: pgrep = []                      # PID 1492872 zniknal
+MONITOR WSTAL po ~40 s, pid=1968513
+
+guard.log:
+  [guard] 2026-09-04 08:48:01 proces martwy (log 34s) -> restart pid=1968513
+
+log dnia (railway_monitor_20260904.log):
+  naglowkow "# metryki:": 1 -> 2
+  linia 5658: # START 2026-09-04 08:48:01 WAW | CIAGLY (bez stop) | interval 5s | ...
+
+log rosnie:
+  pomiar 1: 5662 linii (08:48:18)
+  pomiar 2: 5668 linii (08:48:53)   -> +6 linii w 35 s (~5,8 s/probka)
+  ostatnia linia: #00009 2026-09-04 06:48:47 UTC | 08:48:47 WAW | railway_tcp OK 34ms | ... | errno=0
+```
+
+Licznik cyklu wrocil do `#00009` — potwierdza nowy proces (i potwierdza, dlaczego numer cyklu nie moze sluzyc do liczenia niczego).
+
+### e) Test na zywo: `--dry-run 20260902` na serwerze
+
+Wyjscie serwera porownane `diff`em z wyjsciem lokalnym (po odcieciu linii `[DRY-RUN]` i `Log:`, ktore roznia sie sciezka katalogu): **65 linii, diff pusty — wyjscia identyczne co do znaku**. Zadna flaga nie powstala (`ls mail_sent_*.flag` pusty po tescie).
+
+Liczby z produkcji, zgodne z sekcja 2 tego raportu:
+
+```
+[DRY-RUN] doba 2026-09-02 | katalog /home/divezone/_diag | status=ok (mail NIE wyslany, flaga NIE tworzona)
+Subject: [divezone] Nocny monitor Railway — podsumowanie 2026-09-02 (fallback)
+
+Doba raportowana: 2026-09-02 (WAW), dlugosc doby 24h.
+Okno logu: 00:00:03 - 23:59:58 WAW. Prob: 14331 (mediana odstepu probek 6s).
+Ciaglosc pomiaru: najwieksza przerwa miedzy probkami 7m 54s.
+OCENA DOBY: EPIZODY — 21 alertow, 21 zrzutow incydentow, 13 okien pg_select1 FAIL, najdluzsze 18m 30s.
+
+railway_tcp (connect TCP)        FAIL:     84/14331 (0.6%)
+pg_select1  (connect+SELECT 1)   FAIL:    164/14331 (1.1%)
+pg_settings (odczyt ustawien)    FAIL:    168/14331 (1.2%)
+pg_chiptree (odczyt chip_nodes)  FAIL:    171/14331 (1.2%)
+pg_upsert   (zapis probe)        FAIL:    173/14331 (1.2%)
+github      (api.github.com:443) FAIL:     42/14331 (0.3%)
+errno=110                            :     84/14331 (0.6%)
+
+pg_select1 FAIL przy github OK:      127/14331
+railway_tcp FAIL przy github OK:     61/14331
+dowolna metryka PG FAIL przy gh OK:  134/14331
+
+Liczba okien: 13 (wszystkie 17:04–18:46 WAW, najdluzsze 18:25:59-18:44:27 = 18m 30s, max przerwa w oknach 81–474 s)
+Alerty (linie ### ALERT w logu): 21, w tym mail=FAILED: 0
+Pliki incydentow: 21 (Railway 33,3–100% strat, Leaseweb 0% strat w KAZDYM z 21 zrzutow)
+```
+
+Wszystkie liczby wymagane w zleceniu zgadzaja sie z pomiarem lokalnym: 14331 / 84 / 164 / 168 / 171 / 173 / 42 / 84, 21 alertow, 21 zrzutow. Jedyna rozbieznosc wobec zlecenia (183 vs 164) opisana w sekcji 2 — pochodzi z metody pomiaru, nie z kodu.
+
+### f) Czego NIE uruchomiono
+
+Sciezka bez `--dry-run` **celowo nie zostala uruchomiona** (polecenie Karola). Pierwszy prawdziwy mail pojdzie **2026-09-05** — o 07:00 z monitora in-process albo o 07:05 z crona (kto pierwszy, ten zaklada flage `mail_sent_20260904.flag`) — za dobe **2026-09-04**. To jest test koncowy zadania.
+
+Uwaga do harmonogramu: zlecenie mowilo „za dobe 2026-09-03", ale wdrozenie odbylo sie 2026-09-04 (cron o 07:05 tego dnia zdazyl juz zadzialac na starym kodzie, `status=noop:no-data`). Raport za 2026-09-03 nie zostanie wyslany automatycznie; mozna go w kazdej chwili obejrzec komenda `ea-php84 /home/divezone/_diag/railway_summary_mail.php --dry-run 20260903`.
+
+### g) Sentinel — deklaracja NIE jest potrzebna
+
+Konfiguracja Sentinela (odczyt, bez modyfikacji czegokolwiek w `~/security/`) ogranicza monitorowane drzewa do:
+
+```
+TREES_ROOT_RE="^$HOME/public_html[^/]*/[^/]+"
+```
+
+`/home/divezone/_diag/` lezy **poza** `public_html`, wiec wgrany plik nie jest objety baseline'em i nie wygeneruje alertu `PHP_FILE_CHANGED`. Zaden blok deklaracji do wklejenia nie powstaje. Grep po konfiguracji na wzorzec `_diag` nie zwrocil zadnego pliku.
+
+### h) Rollback (gdyby byl potrzebny)
+
+```
+cp ~/_diag/railway_summary_mail.php.bak_20260903 ~/_diag/railway_summary_mail.php
+pkill -9 -f "railway_monitor[.]php"     # guard wskrzesi monitor w ciagu ~60 s
+```
+
+═══ CHAT-T-182 · INTEGRATION · DEPLOYED ═══
