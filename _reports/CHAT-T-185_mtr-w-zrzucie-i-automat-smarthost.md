@@ -1,4 +1,4 @@
-═══ CHAT-T-185 · INTEGRATION · KROK 5 / STOP przed deployem ═══
+═══ CHAT-T-185 · INTEGRATION · DEPLOYED ═══
 
 # CHAT-T-185 — mtr w zrzucie epizodu + automatyczne powiadomienie smarthosta
 
@@ -7,8 +7,8 @@
 > (`MTR_CYCLES_TCP`), tryb ICMP **zostaje na 20**. Szczegoly i nowy pomiar czasu: sekcja 8.
 
 
-**Stan:** kod gotowy, przetestowany NA PRODUKCJI (wyłącznie w `/tmp`, `~/_diag` nietknięty), zacommitowany.
-**Czeka na:** słowo „deployuj" (ADR-089). Na serwerze w `~/_diag/` NIC nie zmienione — md5 monitora wciąż `f88ef04234b622bdc94275928fa207a6`.
+**Stan:** WDROŻONE na produkcji 2026-09-09 18:08-18:09 CEST (autoryzacja Karola, ADR-089).
+Wdrożony commit `74eeeb4` — `git diff HEAD -- _docs/scripts/` pusty przed `scp`. Dowody: sekcja 9.
 **KROK 0:** `git pull --rebase` odmówił (niezacommitowane zmiany innych sesji: `purge_litespeed.php`, `routes.php` — nietknięte); `git fetch` + `git rev-list --left-right --count origin/main...HEAD` = `0 0`.
 
 ---
@@ -228,4 +228,84 @@ Sekcja ICMP (20 cykli, pelna sciezka do hopa 11) jest tym nietknieta i to ona ni
 mtr TCP, gdy pierwszy przebieg zwroci `Address in use`. Sam bym zostawil — powtorka wydluza zrzut,
 a dowodem glownym jest ICMP.
 
-═══ CHAT-T-185 · INTEGRATION · KROK 5 / STOP przed deployem ═══
+---
+
+## 9. WDROŻENIE — WYKONANE 2026-09-09 (KROK 9)
+
+Jeden plik do `/home/divezone/_diag/railway_monitor.php`, `scp`, port 5739, bez rsync katalogu.
+
+### Stan przed (serwer, 2026-09-09 16:08:23 UTC)
+
+```
+md5 PRZED:  f88ef04234b622bdc94275928fa207a6   (zgodne ze zleceniem)
+monitor:    pid 4139636, log doby 11652 linii, 2 naglowki "# metryki:"
+BASELINE monitor_nohup.out: 760 linii | 138 x "Fatal error" | 0 x "Parse error"
+SMARTHOST_TICKET_MAIL w .env: BRAK  ->  funkcja mailowa domyslnie WYLACZONA
+```
+
+Baseline `nohup.out` zdjety PRZED wgraniem — plik od dawna zawiera fatale
+`max_execution_time` (znalezisko z CHAT-T-183), wiec bez punktu odniesienia nie dalo by sie
+odroznic starego bledu od nowego.
+
+### Backup, transfer, weryfikacja
+
+```
+backup:  railway_monitor.php.bak_20260909   md5 f88ef04234b622bdc94275928fa207a6 (zgodny ze stanem prod)
+ea-php84 -l /home/divezone/_diag/railway_monitor.php  ->  No syntax errors detected
+md5 PO (prod):  0c778965584c0220b070d968414ce613
+md5 lokalny:    0c778965584c0220b070d968414ce613     ZGODNE
+```
+
+### Restart monitora — cztery dowody
+
+```
+(a) guard.log:
+    [guard] 2026-09-09 18:09:01 proces martwy (log 21s) -> restart pid=384859
+    monitor wstal po ~20 s
+
+(b) nowy naglowek w logu doby (naglowkow "# metryki:" 2 -> 3):
+    # START 2026-09-09 18:09:01 WAW | CIAGLY (bez stop) | interval 5s | ...
+    # CHAT-T-185: mtr 20 cykli do 66.33.22.230:14368 | baseline mtr @ 18:30 UTC
+                | mail do smarthosta: WYLACZONY (brak SMARTHOST_TICKET_MAIL w .env)
+
+(c) log ROSNIE:
+    11659 linii (18:09:03)  ->  11665 (18:09:38)  = +6 w 35 s
+    kontrola po minucie: 11669 linii, probka #00011 z 16:09:58 UTC
+    licznik cyklu zresetowany = nowy proces; jeden proces monitora (384859), zgodny z pidfile
+
+(d) monitor_nohup.out PO restarcie:
+    760 linii / 138 Fatal / 0 Parse  ==  baseline 760/138/0
+    => ZERO nowych bledow po restarcie. Rollback niepotrzebny.
+```
+
+Linia `(b)` jest jednoczesnie dowodem, ze **powiadomienie smarthosta wstalo w stanie WYLACZONYM** —
+tak jak mialo. Potwierdza to tez brak plikow stanu: `smarthost_mail_*.count`, `smarthost_sent_*.list`
+i `smarthost_pending.json` nie istnieja.
+
+### Co jeszcze sie wydarzy samo
+
+- **Dobowy mtr odniesienia o 18:30 UTC** (20:30 czasu warszawskiego) — pierwszy przebieg dzis.
+  Do sprawdzenia jutro: `ls -la ~/_diag/mtr_baseline_20260909.txt` (~38 linii, obie sekcje mtr)
+  oraz wpis `# MTR-BASELINE zlecony:` w logu doby.
+- **mtr w zrzucie epizodu** — uruchomi sie przy najblizszym epizodzie. Kod zweryfikowany
+  wymuszonym zrzutem w `/tmp` (100 s, obie sekcje), ale na realnym epizodzie jeszcze nie chodzil.
+
+### Zeby wlaczyc maile do smarthosta (decyzja Karola, nie moja)
+
+W `/home/divezone/public_html/chat.divezone.pl/.env` dopisac:
+```
+SMARTHOST_TICKET_MAIL=<adres kolejki zgloszen>
+SMARTHOST_TICKET_ID=167585        # opcjonalnie, taka jest wartosc domyslna
+```
+Monitor czyta `.env` przy starcie, wiec po dopisaniu trzeba go zrestartowac
+(`pkill -9 -f "railway_monitor[.]php"`, guard wskrzesi w ~60 s). Do czasu dopisania zmiennej
+monitor tylko odnotowuje w logu, ze pominal wysylke.
+
+### Rollback
+
+```
+cp ~/_diag/railway_monitor.php.bak_20260909 ~/_diag/railway_monitor.php
+pkill -9 -f "railway_monitor[.]php"     # guard wskrzesi w ~60 s
+```
+
+═══ CHAT-T-185 · INTEGRATION · DEPLOYED ═══
