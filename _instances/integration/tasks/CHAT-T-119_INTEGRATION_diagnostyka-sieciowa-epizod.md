@@ -20,6 +20,23 @@ Gdy monitor wykryje epizod (>=3 FAIL z rzędu = istniejący trigger alertu), aut
 - Kontrola europejska (ten sam region, inna trasa): `mirror.nl.leaseweb.net` (5.79.108.33, Amsterdam) — oczekiwane CZYSTO
 - Narzędzia na serwerze: `ping`, `traceroute`, `tracepath` (POTWIERDZONE dostępne). `mtr` BRAK — NIE używać.
 
+  > **NOTA KORYGUJĄCA (CHAT-T-185, 2026-09-09): zdanie o braku `mtr` jest NIEAKTUALNE.**
+  > Linii powyżej nie kasuję, bo przez dwa miesiące była podstawą decyzji — ale jest błędna.
+  > Pomiar na produkcji 2026-09-09 13:09 UTC:
+  > `/usr/sbin/mtr` istnieje (mtr 0.92), `/usr/sbin/mtr-packet` ma `cap_net_raw=ep`
+  > (`getcap /usr/sbin/mtr-packet` → `cap_net_raw=ep`), więc **mtr działa z konta `divezone`
+  > bez roota** — potwierdzone realnymi przebiegami, które dochodzą do hopa 11, czyli do samego
+  > `66.33.22.230` (traceroute nigdy tam nie docierał: Railway filtruje ICMP TTL-exceeded,
+  > ale odpowiada na echo i na TCP).
+  >
+  > **Zastrzeżenie do przyczyny pomyłki.** Zlecenie CHAT-T-185 podaje, że `command -v mtr`
+  > zwracało pusto, bo `/usr/sbin` nie jest w PATH użytkownika. **Tego nie udało się odtworzyć:**
+  > 2026-09-09 PATH konta `divezone` ORAZ PATH widziany przez `shell_exec()` w PHP (czyli
+  > środowisko, w którym leci zrzut) zawierają `/usr/sbin`, a `command -v mtr` zwraca
+  > `/usr/sbin/mtr`. Albo PATH zmienił się od lipca, albo pierwotne sprawdzenie poszło inną
+  > drogą. Fakt „mtr jest i działa" jest zmierzony; wyjaśnienie „bo PATH" — nie.
+  > W kodzie i tak wołamy pełną ścieżką `/usr/sbin/mtr` (cron i `at` bywają na minimalnym PATH).
+
 ---
 
 ## ZAKRES — ZMIANY W railway_monitor.php
