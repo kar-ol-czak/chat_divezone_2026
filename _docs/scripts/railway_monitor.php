@@ -72,6 +72,21 @@ $COOLDOWN_S = 15 * 60;    // min odstep miedzy alertami
 $HEARTBEAT_EVERY = 100;
 $PG_METRICS = ['pg_select1', 'pg_settings', 'pg_chiptree', 'pg_upsert'];
 
+// === CHAT-T-185 ===
+// 20 cykli, bo zmierzone 2026-09-09: mtr ICMP 25 s (tyle samo przy 100% strat), mtr TCP 11 s.
+// Caly zrzut z mtr miesci sie ponizej progu ~4 min ze zlecenia (pomiar w raporcie).
+define('MTR_CYCLES', 20);
+// IP proxy Railway. Zrzut CHAT-T-119 ma je wpisane na sztywno w komendach ping/traceroute;
+// tu trzymamy je raz, zeby mtr epizodowy i mtr odniesienia nigdy sie nie rozjechaly.
+define('MTR_TARGET_IP', '66.33.22.230');   // wartosc odniesienia; realny cel ustala $MTR_IP na starcie
+$MTR_BASELINE_AT_UTC = '18:30';   // srodek okna ryzyka; baseline bez maila i bez alertu
+// Powiadomienie smarthosta: BRAK zmiennej w .env = funkcja nieaktywna (stan domyslny po wdrozeniu).
+$SMARTHOST_MAIL   = trim((string)($_ENV['SMARTHOST_TICKET_MAIL'] ?? ''));
+$SMARTHOST_TICKET = trim((string)($_ENV['SMARTHOST_TICKET_ID'] ?? '167585'));
+$SMARTHOST_MAX_PER_DAY = 3;
+$SMARTHOST_WAIT_S = 180;    // ile czekamy po recovery, zeby zrzut w tle zdazyl dopisac oba mtr
+$SMARTHOST_DEADLINE_S = 600; // twardy limit czekania: po tym wysylamy to, co jest
+
 // CHAT-T-183: $atW = znacznik WAW, ktory JUZ trafil w tresc linii. Bez niego nazwa pliku
 // brala sie z chwili ZAPISU (po sondach), wiec cykl zaczety przed polnoca ladowal w logu doby
 // D+1 z godzina 23:59:xx z doby D — raport doby D gubil probke, D+1 dostawala obca.
@@ -108,7 +123,50 @@ function tcp(string $host, int $port, int $tmo): array {
  *   5.79.108.33   Leaseweb Amsterdam — kontrola EU, INNA trasa niz twelve99 (oczekiwane CZYSTO)
  *   1.1.1.1 / 8.8.8.8 — kontrola globalna (oczekiwane CZYSTO)
  */
-function captureNetworkDiag(string $incidentFile, string $reason, DateTimeZone $waw, DateTimeZone $utc, string $preface = ''): void {
+/**
+ * CHAT-T-185 — polecenia mtr do zrzutu. ZAWSZE pelna sciezka /usr/sbin/mtr.
+ *
+ * KOREKTA FAKTU: CHAT-T-119 zapisal "mtr BRAK — NIE uzywac". To bylo nieprawda.
+ * Pomiar 2026-09-09 na produkcji: /usr/sbin/mtr (0.92) istnieje, a /usr/sbin/mtr-packet ma
+ * cap_net_raw=ep, wiec dziala z konta divezone BEZ roota. Zweryfikowane takze przez PHP
+ * shell_exec (to samo srodowisko, w ktorym leci ten zrzut).
+ * mtr dochodzi do hopa 11, czyli do samego 66.33.22.230, ktorego traceroute nigdy nie
+ * pokazywal (Railway filtruje ICMP TTL-exceeded, ale odpowiada na echo i na TCP).
+ *
+ * Czasy zmierzone 2026-09-09: ICMP 20 cykli = 25 s (tyle samo przy 100% strat, do blackhole
+ * 26 s), TCP 20 cykli = 11 s. Dlatego 20 cykli zostaje — patrz komentarz przy MTR_CYCLES.
+ */
+function mtrCommands(string $target, int $port, int $cycles): string {
+    $mtr = '/usr/sbin/mtr';   // pelna sciezka: PATH bywa rozny w cronie, nohup i shell_exec
+    return 'echo "=== mtr ICMP ' . $target . ' (strata per hop) ==="; '
+         . 'timeout 90 ' . $mtr . ' --report --report-wide --report-cycles ' . $cycles . ' -n ' . $target . '; echo; '
+         . 'echo "=== mtr TCP ' . $target . ':' . $port . ' (ta sama sciezka na porcie, ktory realnie pada) ==="; '
+         . 'timeout 90 ' . $mtr . ' --report --report-wide --report-cycles ' . $cycles . ' -n -T -P ' . $port . ' ' . $target . '; echo; ';
+}
+
+/**
+ * CHAT-T-185 — dobowy mtr ODNIESIENIA (stan zdrowy), bez maila i bez alertu.
+ * Epizody sa rzadkie, wiec mtr z awarii nie ma z czym porownac. Leci w tle, pod wlasnym
+ * flockiem, dopisuje do ~/_diag/mtr_baseline_YYYYMMDD.txt.
+ */
+function captureMtrBaseline(string $diag, DateTimeZone $utc, string $target, int $port, int $cycles): string {
+    $file = $diag . '/mtr_baseline_' . (new DateTime('now', $utc))->format('Ymd') . '.txt';
+    $hdr = "\n############################################################\n"
+         . "### MTR BASELINE (stan odniesienia, brak epizodu)\n"
+         . "### czas: " . (new DateTime('now', $utc))->format('Y-m-d H:i:s') . " UTC\n"
+         . "### host: " . gethostname() . "\n"
+         . "############################################################\n";
+    $payload = 'printf %s ' . escapeshellarg($hdr) . '; '
+        . mtrCommands($target, $port, $cycles)
+        . 'echo "=== BASELINE koniec ($(date -u)) ===";';
+    $group = '( flock -x 9; { ' . $payload . ' } >> ' . escapeshellarg($file) . ' 2>&1 ) 9>'
+           . escapeshellarg($file . '.lock');
+    shell_exec('nohup bash -c ' . escapeshellarg($group) . ' >/dev/null 2>&1 &');
+    return $file;
+}
+
+function captureNetworkDiag(string $incidentFile, string $reason, DateTimeZone $waw, DateTimeZone $utc,
+                            string $preface = '', string $mtrIp = MTR_TARGET_IP, int $mtrPort = 14368): void {
     $hdr = "\n############################################################\n"
          . "### DIAG: {$reason}\n"
          . "### czas: " . (new DateTime('now', $utc))->format('Y-m-d H:i:s') . " UTC / "
@@ -130,11 +188,18 @@ function captureNetworkDiag(string $incidentFile, string $reason, DateTimeZone $
         . 'echo "=== ping Cloudflare 1.1.1.1 (kontrola globalna) ==="; timeout 40 ping -c 15 -W 2 1.1.1.1; echo; '
         . 'echo "=== ping Google 8.8.8.8 (kontrola globalna) ==="; timeout 40 ping -c 15 -W 2 8.8.8.8; echo; '
         . 'echo "=== traceroute Railway 66.33.22.230 (hop gdzie gina pakiety) ==="; timeout 50 traceroute -w 2 -m 20 66.33.22.230; echo; '
+        // CHAT-T-185: oba mtr pod TYM SAMYM flockiem co reszta zrzutu (smarthost prosil o mtr w chwili strat)
+        . mtrCommands($mtrIp, $mtrPort, MTR_CYCLES)
         . 'echo "=== DIAG koniec ($(date -u)) ===";';
     // Grupujemy w { ...; } i przekierowujemy CALOSC do pliku incydentu, potem calosc w tle (nohup &).
     // flock: gdy epizod-start (~90s w tle) jeszcze pisze, a nastapi recovery, epizod-koniec CZEKA na
     // zwolnienie blokady zamiast przeplatac wyjscie w tym samym pliku (proces w tle => blokowanie OK).
-    $group = '( flock -x 9; { ' . $payload . ' } >> ' . escapeshellarg($incidentFile) . ' 2>&1 ) 9>'
+    // CHAT-T-185: flock z limitem czekania. Rozne epizody maja ROZNE pliki (i rozne blokady),
+    // wiec czekanie dotyczy tylko pary epizod-start / epizod-koniec tego samego epizodu.
+    // Po dolozeniu mtr zrzut trwa ~100 s, wiec 600 s zapasu starcza z duzym marginesem,
+    // a zablokowany na stale holder nie zostawia wiszacego procesu w tle na zawsze.
+    $group = '( flock -x -w 600 9 || { echo "### DIAG POMINIETY: blokada zrzutu zajeta >600 s"; exit 0; }; { '
+           . $payload . ' } >> ' . escapeshellarg($incidentFile) . ' 2>&1 ) 9>'
            . escapeshellarg($incidentFile . '.lock');
     $cmd = 'nohup bash -c ' . escapeshellarg($group) . ' >/dev/null 2>&1 &';
     shell_exec($cmd);
@@ -214,9 +279,261 @@ function cleanupProbe(string $dsn, string $probeKey): void {
     } catch (\Throwable $e) { /* best-effort */ }
 }
 
+/**
+ * CHAT-T-185 — REZERWACJA slotu na mail do smarthosta. Jedna operacja pod JEDNA blokada:
+ * sprawdzenie limitu dobowego, sprawdzenie czy ten epizod juz nie poszedl, i zapis obu.
+ *
+ * Dlaczego rezerwacja, a nie "policz, wyslij, dolicz" (recenzja codex 2026-09-09): miedzy
+ * odczytem a dopisaniem miescila sie cala wysylka, wiec dwie instancje monitora (guard potrafi
+ * wskrzesic druga zanim pierwsza zniknie) mogly przeczytac ten sam stan i wyslac po mailu ponad limit.
+ * Klucz epizodu (nazwa pliku incydentu) daje dodatkowo idempotencje: ten sam epizod nie pojdzie dwa razy.
+ *
+ * FAIL CLOSED: czego nie umiemy policzyc, tego nie wysylamy. Do obcej skrzynki lepiej nie wyslac
+ * nic, niz wyslac bez kontroli limitu.
+ *
+ * @return array{ok:bool,reason:string,count:int}
+ */
+function smarthostReserve(string $diag, DateTimeZone $waw, string $episodeKey, int $max): array {
+    $day   = (new DateTime('now', $waw))->format('Ymd');
+    $cntF  = $diag . '/smarthost_mail_' . $day . '.count';     // nazwa wprost ze zlecenia
+    $sentF = $diag . '/smarthost_sent_' . $day . '.list';      // klucze epizodow, ktore juz poszly
+    $fh = @fopen($cntF, 'c+');
+    if ($fh === false) {
+        return ['ok' => false, 'reason' => 'nie moge otworzyc licznika (' . $cntF . ')', 'count' => -1];
+    }
+    try {
+        if (!flock($fh, LOCK_EX)) {
+            return ['ok' => false, 'reason' => 'nie moge zablokowac licznika', 'count' => -1];
+        }
+        $raw  = trim((string)stream_get_contents($fh));
+        $sent = file_exists($sentF) ? array_filter(array_map('trim', (array)@file($sentF))) : [];
+        // Uszkodzony/pusty licznik NIE otwiera furtki na nielimitowana wysylke: wtedy liczba
+        // faktycznie wyslanych maili bierze sie z listy kluczy epizodow, ktora jest zapisem
+        // tego, co naprawde poszlo (recenzja codex 2026-09-09 — fail open bylo bledem).
+        $cur  = ctype_digit($raw) ? max((int)$raw, count($sent)) : count($sent);
+        $note = ($raw !== '' && !ctype_digit($raw)) ? ' (licznik uszkodzony: ' . substr($raw, 0, 20) . ', licze z listy)' : '';
+        if (in_array($episodeKey, $sent, true)) {
+            return ['ok' => false, 'reason' => 'mail dla tego epizodu juz poszedl' . $note, 'count' => $cur];
+        }
+        if ($cur >= $max) {
+            return ['ok' => false, 'reason' => "limit dobowy {$cur}/{$max}" . $note, 'count' => $cur];
+        }
+        $cur++;
+        ftruncate($fh, 0); rewind($fh);
+        if (fwrite($fh, (string)$cur) === false) {
+            return ['ok' => false, 'reason' => 'nie moge zapisac licznika', 'count' => -1];
+        }
+        fflush($fh);
+        @file_put_contents($sentF, $episodeKey . "\n", FILE_APPEND);
+        return ['ok' => true, 'reason' => 'slot ' . $cur . '/' . $max . $note, 'count' => $cur];
+    } finally {
+        @flock($fh, LOCK_UN);
+        fclose($fh);
+    }
+}
+
+/** Zwrot rezerwacji, gdy mail() zawiodl — inaczej nieudana proba zjadalaby limit dobowy. */
+function smarthostRelease(string $diag, DateTimeZone $waw, string $episodeKey): void {
+    $day   = (new DateTime('now', $waw))->format('Ymd');
+    $cntF  = $diag . '/smarthost_mail_' . $day . '.count';
+    $sentF = $diag . '/smarthost_sent_' . $day . '.list';
+    $fh = @fopen($cntF, 'c+');
+    if ($fh === false) { return; }
+    try {
+        if (!flock($fh, LOCK_EX)) { return; }
+        $raw = trim((string)stream_get_contents($fh));
+        $cur = ctype_digit($raw) ? (int)$raw : 0;
+        $cur = max(0, $cur - 1);
+        ftruncate($fh, 0); rewind($fh); fwrite($fh, (string)$cur); fflush($fh);
+        if (file_exists($sentF)) {
+            $keep = array_values(array_filter(array_map('trim', (array)@file($sentF)),
+                fn($k) => $k !== '' && $k !== $episodeKey));
+            @file_put_contents($sentF, $keep ? implode("\n", $keep) . "\n" : '');
+        }
+    } finally {
+        @flock($fh, LOCK_UN);
+        fclose($fh);
+    }
+}
+
+/**
+ * CHAT-T-185 — trwala kolejka zaleglych maili. Monitor restartuje sie kilka razy na dobe
+ * (fatale max_execution_time + guard), a mail czeka ~180 s na domkniecie zrzutu — bez zapisu
+ * na dysk restart w tym oknie kasowalby powiadomienie bez sladu.
+ */
+function smarthostPendingFile(string $diag): string { return $diag . '/smarthost_pending.json'; }
+
+function smarthostSavePending(string $diag, array $pending): void {
+    @file_put_contents(smarthostPendingFile($diag), json_encode(array_values($pending)), LOCK_EX);
+}
+
+function smarthostLoadPending(string $diag): array {
+    $f = smarthostPendingFile($diag);
+    if (!file_exists($f)) { return []; }
+    $d = json_decode((string)@file_get_contents($f), true);
+    if (!is_array($d)) { return []; }
+    $out = [];
+    foreach ($d as $row) {
+        if (is_array($row) && isset($row['file'], $row['windowUtc'], $row['windowWaw'])) {
+            // Po restarcie nie czekamy juz drugi raz pelnego okna — zrzut i tak dawno leci.
+            $row['notBefore'] = microtime(true) + 30;
+            $row['deadline']  = microtime(true) + 300;
+            $out[] = $row;
+        }
+    }
+    return $out;
+}
+
+/**
+ * CHAT-T-185 — czyta zrzut incydentu BLOKAMI (`### DIAG:` + `### czas:`), a nie calym plikiem.
+ *
+ * Dlaczego blokami (recenzja codex 2026-09-09): plik zawiera zwykle DWA zrzuty — z chwili awarii
+ * (`epizod-start`) i z chwili powrotu (`epizod-koniec`), rozdzielone minutami. Branie maksimum
+ * strat z calego pliku mieszaloby pomiar Railway z jednej chwili z pomiarem kontroli z innej,
+ * czyli budowaloby tez dla obcej skrzynki wniosek z danych, ktore nigdy nie wystapily razem.
+ *
+ * @return array{blocks:array<int,array{label:string,ts:string,loss:array<string,?float>,mtr:string}>,
+ *               window:string,doneMarkers:int}
+ */
+function parseIncidentForTicket(string $incidentFile): array {
+    $ips = ['66.33.22.230', '5.79.108.33', '1.1.1.1', '8.8.8.8'];
+    $blocks = []; $window = ''; $done = 0;
+    $cur = null; $curIp = null; $inMtr = false;
+    $fh = @fopen($incidentFile, 'r');
+    if ($fh === false) { return ['blocks' => [], 'window' => '', 'doneMarkers' => 0]; }
+    $push = function () use (&$cur, &$blocks) { if ($cur !== null) { $cur['mtr'] = rtrim($cur['mtr']); $blocks[] = $cur; $cur = null; } };
+    while (($ln = fgets($fh)) !== false) {
+        if (strpos($ln, '### DIAG: ') === 0) {
+            $push();
+            $cur = ['label' => trim(substr($ln, 10)), 'ts' => '', 'loss' => array_fill_keys($ips, null), 'mtr' => ''];
+            $inMtr = false; $curIp = null;
+            continue;
+        }
+        if (strpos($ln, '### czas: ') === 0 && $cur !== null) { $cur['ts'] = trim(substr($ln, 10)); continue; }
+        if (strpos($ln, '### OKNO NIEDOSTEPNOSCI') === 0) { $window = trim($ln); continue; }
+        if (strpos($ln, '=== DIAG koniec') === 0) { $done++; $inMtr = false; continue; }
+        if (strpos($ln, '=== mtr ') === 0) { $inMtr = true; if ($cur !== null) { $cur['mtr'] .= $ln; } continue; }
+        if ($inMtr) {
+            if (strpos($ln, '===') === 0 || strpos($ln, '###') === 0) { $inMtr = false; }
+            else { if ($cur !== null) { $cur['mtr'] .= $ln; } continue; }
+        }
+        if (preg_match('/^--- (\d+\.\d+\.\d+\.\d+) ping statistics ---/', $ln, $m)) { $curIp = $m[1]; continue; }
+        if ($curIp !== null && $cur !== null && preg_match('/([\d.]+)% packet loss/', $ln, $m)) {
+            if (array_key_exists($curIp, $cur['loss'])) { $cur['loss'][$curIp] = (float)$m[1]; }
+            $curIp = null;
+        }
+    }
+    $push();
+    fclose($fh);
+    return ['blocks' => $blocks, 'window' => $window, 'doneMarkers' => $done];
+}
+
 function sendAlertMail(string $to, string $subject, string $body): bool {
     $headers = "From: noreply@divezone.pl\r\nContent-Type: text/plain; charset=UTF-8\r\n";
     return @mail($to, $subject, $body, $headers);
+}
+
+/**
+ * CHAT-T-185 — JEDEN mail do smarthosta na epizod, wysylany przy RECOVERY (nie przy starcie:
+ * 02.09 poszloby 21 maili w poltorej godziny, co u helpdesku konczy sie filtrem).
+ * Kopia zawsze do Karola. Zwraca linie do wpisania w log glowny.
+ *
+ * ZASADA TRESCI (po recenzji codex 2026-09-09): mail idzie do OBCEJ firmy pod nasza nazwa,
+ * wiec kazde zdanie musi wynikac z jednego, konkretnego pomiaru:
+ *   - straty pingu bierzemy z JEDNEGO bloku diagnostycznego (tego z chwili awarii), nie z maksimum
+ *     po calym pliku — inaczej zestawialibysmy Railway z jednej minuty z kontrolami z innej,
+ *   - "kontrole czyste" piszemy tylko wtedy, gdy WSZYSTKIE trzy kontrole sa zmierzone i maja 0%,
+ *   - temat mowi o utracie pakietow tylko wtedy, gdy pomiar te utrate pokazuje,
+ *   - brakujace dowody nazywamy po imieniu zamiast je przemilczec.
+ */
+function sendSmarthostTicket(array $pending, string $to, string $cc, string $ticket,
+                             DateTimeZone $waw, DateTimeZone $utc, string $diag, int $maxPerDay,
+                             int $intervalS): array {
+    $tsU = (new DateTime('now', $utc))->format('H:i:s');
+    $tsW = (new DateTime('now', $waw))->format('H:i:s');
+    $key = basename($pending['file']);
+
+    $res = smarthostReserve($diag, $waw, $key, $maxPerDay);
+    if (!$res['ok']) {
+        return [false, "### MAIL-SMARTHOST {$tsU} UTC / {$tsW} WAW | okno {$pending['windowUtc']} | NIE wyslano: {$res['reason']}\n"];
+    }
+
+    $d = parseIncidentForTicket($pending['file']);
+    $names = ['66.33.22.230' => 'Railway (66.33.22.230, cel)',
+              '5.79.108.33'  => 'Leaseweb Amsterdam (5.79.108.33, kontrola)',
+              '1.1.1.1'      => 'Cloudflare (1.1.1.1, kontrola)',
+              '8.8.8.8'      => 'Google (8.8.8.8, kontrola)'];
+
+    // Blok dowodowy = ten z chwili AWARII (epizod-start). Blok z powrotu pokazujemy osobno.
+    $fail = null; $rec = null;
+    foreach ($d['blocks'] as $b) {
+        if ($fail === null && stripos($b['label'], 'epizod-start') !== false) { $fail = $b; }
+        elseif (stripos($b['label'], 'epizod-koniec') !== false) { $rec = $b; }
+    }
+    if ($fail === null && $d['blocks']) { $fail = $d['blocks'][0]; }
+
+    $rows = ''; $rwLoss = null; $ctrlVals = [];
+    if ($fail !== null) {
+        foreach ($names as $ip => $label) {
+            $v = $fail['loss'][$ip] ?? null;
+            $rows .= sprintf("  %-46s %s\n", $label,
+                $v === null ? 'brak pomiaru w tym zrzucie' : rtrim(rtrim(number_format($v, 1, '.', ''), '0'), '.') . '% strat');
+            if ($ip === '66.33.22.230') { $rwLoss = $v; } elseif ($v !== null) { $ctrlVals[] = $v; }
+        }
+    }
+    $ctrlAllClean = (count($ctrlVals) === 3) && (max($ctrlVals) == 0.0);
+    $ctrlAnyLoss  = $ctrlVals && max($ctrlVals) > 0.0;
+
+    if ($fail === null) {
+        $sense = 'Zrzut diagnostyczny nie zawiera bloku z chwili awarii, wiec zalaczamy samo okno niedostepnosci.';
+    } elseif ($rwLoss === null) {
+        $sense = 'W tym zrzucie brakuje pomiaru strat do adresu Railway — zostaje samo okno niedostepnosci i mtr ponizej.';
+    } elseif ($rwLoss > 0.0 && $ctrlAllClean) {
+        $sense = 'W chwili awarii pakiety ginely na trasie do adresu Railway, a wszystkie trzy cele kontrolne mierzone w tej samej chwili byly czyste (0% strat).';
+    } elseif ($rwLoss > 0.0 && $ctrlAnyLoss) {
+        $sense = 'W chwili awarii tracil pakiety zarowno adres Railway, jak i cel kontrolny — problem nie ogranicza sie wiec do jednej trasy.';
+    } elseif ($rwLoss > 0.0) {
+        $sense = 'W chwili awarii pakiety ginely na trasie do adresu Railway; czesc pomiarow kontrolnych jest niepelna, wiec nie przesadzamy o reszcie sieci.';
+    } else {
+        $sense = 'Ping w chwili awarii nie pokazal strat — epizod dotyczyl polaczenia z usluga bazy danych, nie odpowiedzi ICMP.';
+    }
+
+    $mtrTxt = '';
+    foreach ([[$fail, 'Z CHWILI AWARII'], [$rec, 'Z CHWILI POWROTU (dla porownania)']] as [$b, $tag]) {
+        if ($b !== null && $b['mtr'] !== '') {
+            $mtrTxt .= "\nMTR {$tag} — {$b['label']}, {$b['ts']}\n" . $b['mtr'] . "\n";
+        }
+    }
+    if ($mtrTxt === '') {
+        $mtrTxt = "\nMTR: zrzut nie zawieral jeszcze wynikow mtr w chwili wysylki (diagnostyka w tle nie zdazyla sie domknac).\n";
+    }
+    $kompl = $d['doneMarkers'] >= 2
+        ? ''
+        : "\nUwaga: zrzut w chwili wysylki mial " . $d['doneMarkers'] . " z 2 domknietych blokow diagnostycznych — czesc pomiarow moze byc niepelna.\n";
+
+    $body = "Zgloszenie #{$ticket} — automatyczne powiadomienie z monitora divezone.pl.\n\n"
+          . "Monitor probkuje trase serwer -> Railway co ok. " . max(1, $intervalS + 1) . " s (interwal {$intervalS} s plus czas sond);\n"
+          . "alert powstaje po 3 kolejnych nieudanych probach na ktorejkolwiek metryce bazy.\n"
+          . "Ponizej dane z epizodu, ktory wlasnie sie zakonczyl.\n\n"
+          . "OKNO NIEDOSTEPNOSCI\n"
+          . "  {$pending['windowUtc']} UTC  ({$pending['windowWaw']} czasu warszawskiego)\n"
+          . ($d['window'] !== '' ? '  ' . $d['window'] . "\n" : '')
+          . ($fail !== null ? "\nSTRATY PAKIETOW Z CHWILI AWARII (ping -c 15, jeden pomiar, {$fail['ts']})\n" . $rows : "\n")
+          . "\n{$sense}\n"
+          . $kompl
+          . $mtrTxt
+          . "\nPelny zrzut pozostaje na naszym serwerze: " . $pending['file'] . "\n"
+          . "Dobowy mtr odniesienia (18:30 UTC, poza epizodem) mozemy dolaczyc na zyczenie.\n";
+
+    $subject = ($rwLoss !== null && $rwLoss > 0.0)
+        ? "[DIVEZONE #{$ticket}] Utrata pakietow serwer->Railway, okno {$pending['windowUtc']} UTC"
+        : "[DIVEZONE #{$ticket}] Epizod niedostepnosci bazy (ping bez strat), okno {$pending['windowUtc']} UTC";
+    $headers = "From: noreply@divezone.pl\r\nCc: {$cc}\r\nContent-Type: text/plain; charset=UTF-8\r\n";
+    $ok = @mail($to, $subject, $body, $headers);
+    if (!$ok) { smarthostRelease($diag, $waw, $key); }   // nieudana proba nie zjada limitu
+    // Temat w logu: po nim widac, KTORY blok dowodowy zdecydowal o tresci (i co poszlo do obcej firmy).
+    return [true, "### MAIL-SMARTHOST {$tsU} UTC / {$tsW} WAW | okno {$pending['windowUtc']} | do {$to} | {$res['reason']}"
+                  . " | temat: {$subject} | mail=" . ($ok ? 'sent' : 'FAILED') . "\n"];
 }
 
 $now = new DateTime('now', $WAW);
@@ -224,11 +541,33 @@ $now = new DateTime('now', $WAW);
 $mailAt = (clone $now)->setTime(7, 0, 0);
 if ($mailAt <= $now) { $mailAt->modify('+1 day'); }
 
+// CHAT-T-185 — dobowy mtr odniesienia o 18:30 UTC (bez maila, bez alertu)
+[$mbH, $mbM] = array_map('intval', explode(':', $MTR_BASELINE_AT_UTC));
+$mtrAt = (new DateTime('now', $UTC))->setTime($mbH, $mbM, 0);
+// Cel mtr bierzemy z REALNEGO hosta z DATABASE_URL, nie ze sztywnego IP: gdyby Railway zmienil
+// adres proxy, zrzut opisywalby nieistniejaca juz infrastrukture (recenzja codex 2026-09-09).
+$MTR_IP = gethostbyname($RHOST);
+if (!filter_var($MTR_IP, FILTER_VALIDATE_IP)) { $MTR_IP = MTR_TARGET_IP; }
+$mtrCatchUp = false;
+if ($mtrAt <= new DateTime('now', $UTC)) {
+    // Monitor restartuje sie kilka razy na dobe. Jezeli okno 18:30 minelo, a pliku baseline
+    // na dzis NIE MA, to znaczy, ze restart zjadl termin — nadrabiamy raz, po starcie.
+    $mtrCatchUp = !file_exists($DIAG . '/mtr_baseline_' . (new DateTime('now', $UTC))->format('Ymd') . '.txt');
+    $mtrAt->modify('+1 day');
+}
+
 cleanupProbe($DSN, $PROBE_KEY); // czysty start klucza probe
 
 wlog($DIAG, $WAW, sprintf("# START %s WAW | CIAGLY (bez stop) | interval %ds | host %s:%d | digest@ %s | TRASA: serwer->Railway\n",
     $now->format('Y-m-d H:i:s'), $INTERVAL, $RHOST, $RPORT, $mailAt->format('H:i')));
 wlog($DIAG, $WAW, "# metryki: railway_tcp, " . implode(', ', $PG_METRICS) . ", github | alert >= {$ALERT_STREAK} FAIL/rzad na metryce PG\n");
+if ($MTR_IP !== MTR_TARGET_IP) {
+    wlog($DIAG, $WAW, "# UWAGA CHAT-T-185: {$RHOST} wskazuje dzis na {$MTR_IP}, a stala MTR_TARGET_IP to " . MTR_TARGET_IP
+        . " — mtr mierzy ADRES BIEZACY, zaktualizuj stala i dokumenty\n");
+}
+wlog($DIAG, $WAW, sprintf("# CHAT-T-185: mtr %d cykli do %s:%d | baseline mtr @ %s UTC | mail do smarthosta: %s\n",
+    MTR_CYCLES, $MTR_IP, $RPORT, $MTR_BASELINE_AT_UTC,
+    $SMARTHOST_MAIL !== '' ? 'wlaczony (' . $SMARTHOST_MAIL . '), max ' . $SMARTHOST_MAX_PER_DAY . '/dobe' : 'WYLACZONY (brak SMARTHOST_TICKET_MAIL w .env)'));
 
 // --- alert state ---
 $streak = array_fill_keys($PG_METRICS, 0);
@@ -237,6 +576,9 @@ $okStreak = 0; $alertActive = false; $lastAlertTs = 0.0; $episodeInfo = '';
 $firstFailW = null;      // DateTime 1. FAIL biezacej serii (reset przy pelnym OK) — start okna niedostepnosci
 $episodeStartW = null;   // zamrozony start okna epizodu (kopia $firstFailW w chwili alertu)
 $incidentFile = '';      // ~/_diag/incident_YYYYMMDD_HHMMSS.txt biezacego epizodu
+// CHAT-T-185 — maile do smarthosta czekaja, az zrzut w tle dopisze oba mtr (wysylka opozniona).
+// KOLEJKA, nie pojedynczy slot: dwa epizody pod rzad nie moga sie nadpisac i zgubic maila.
+$pendingTickets = smarthostLoadPending($DIAG);   // przetrwaly restart monitora
 $i = 0;
 
 while (true) {
@@ -252,6 +594,41 @@ while (true) {
             error_log('[railway_monitor] digest failed: ' . $e->getMessage());
         }
         $mailAt->modify('+1 day');
+    }
+
+    // CHAT-T-185 — dobowy mtr odniesienia (w tle, bez maila, bez alertu)
+    if ($mtrCatchUp) {
+        $bf = captureMtrBaseline($DIAG, $UTC, $MTR_IP, $RPORT, MTR_CYCLES);
+        wlog($DIAG, $WAW, "# MTR-BASELINE nadrobiony po restarcie (termin " . $MTR_BASELINE_AT_UTC . " UTC juz minal): " . basename($bf) . "\n", $nowW);
+        $mtrCatchUp = false;
+    }
+    if (new DateTime('now', $UTC) >= $mtrAt) {
+        $bf = captureMtrBaseline($DIAG, $UTC, $MTR_IP, $RPORT, MTR_CYCLES);
+        wlog($DIAG, $WAW, "# MTR-BASELINE zlecony: " . basename($bf) . "\n", $nowW);
+        $mtrAt->modify('+1 day');
+    }
+
+    // CHAT-T-185 — zaległy mail do smarthosta: wysylamy dopiero, gdy zrzut w tle przestal rosnac
+    // (inaczej mail poszedlby bez sekcji mtr, o ktore smarthost prosil) albo minal twardy termin.
+    foreach ($pendingTickets as $k => $pt) {
+        if (microtime(true) < $pt['notBefore']) { continue; }
+        // Domkniecie zrzutu poznajemy po MARKERACH `=== DIAG koniec` (epizod-start + epizod-koniec),
+        // a nie po samym mtime: sekwencja ping/traceroute/mtr potrafi milczec dluzej niz 20 s
+        // i wygladac na skonczona, choc trwa (recenzja codex 2026-09-09).
+        clearstatcache(true, $pt['file']);
+        $txt = @file_get_contents($pt['file']);
+        $done = ($txt === false) ? 0 : substr_count($txt, '=== DIAG koniec');
+        $mtime = @filemtime($pt['file']);
+        $quiet = ($mtime !== false) && (time() - $mtime >= 60);
+        if ($done < 2 && !$quiet && microtime(true) < $pt['deadline']) { continue; }
+        // Log PRZED wysylka: mail() nie ma timeoutu, a guard patrzy na swiezosc logu (60 s).
+        wlog($DIAG, $WAW, "### MAIL-SMARTHOST wysylam | okno {$pt['windowUtc']} | blokow domknietych {$done}/2\n", $nowW);
+        [$consumed, $line] = sendSmarthostTicket($pt, $SMARTHOST_MAIL, $MAIL_TO, $SMARTHOST_TICKET,
+                                                 $WAW, $UTC, $DIAG, $SMARTHOST_MAX_PER_DAY, $INTERVAL);
+        wlog($DIAG, $WAW, $line, $nowW);
+        unset($pendingTickets[$k]);
+        smarthostSavePending($DIAG, $pendingTickets);
+        break;   // jeden mail na cykl petli — zeby wysylka nie zatrzymala pomiaru
     }
 
     [$rtok, $rtms, $errno] = tcp($RHOST, $RPORT, 5);   // connect TCP — limit 5s (CHAT-T-109)
@@ -302,7 +679,7 @@ while (true) {
             file_put_contents($incidentFile, sprintf(
                 "### EPIZOD START (1. FAIL): %s WAW | metryka %s FAIL x%d | prog alertu osiagniety %s\n",
                 $episodeStartW->format('Y-m-d H:i:s'), $worst, $streak[$worst], $nowW->format('H:i:s')), FILE_APPEND);
-            captureNetworkDiag($incidentFile, "epizod-start {$worst}", $WAW, $UTC);
+            captureNetworkDiag($incidentFile, "epizod-start {$worst}", $WAW, $UTC, '', $MTR_IP, $RPORT);
             wlog($DIAG, $WAW, "### DIAG zapisano: " . basename($incidentFile) . " (epizod-start {$worst})\n", $nowW);
         }
     }
@@ -329,8 +706,26 @@ while (true) {
         // Linia OKNA idzie jako $preface -> wypisana pod flock RAZEM z naglowkiem epizod-koniec,
         // wiec czeka az diag epizod-start zwolni blokade (brak przeplotu przy krotkim epizodzie).
         if ($incidentFile !== '') {
-            captureNetworkDiag($incidentFile, 'epizod-koniec', $WAW, $UTC, ($windowStr !== '' ? "\n" . $windowStr : ''));
+            captureNetworkDiag($incidentFile, 'epizod-koniec', $WAW, $UTC, ($windowStr !== '' ? "\n" . $windowStr : ''), $MTR_IP, $RPORT);
             wlog($DIAG, $WAW, "### DIAG zapisano: " . basename($incidentFile) . " (epizod-koniec)\n", $nowW);
+
+            // CHAT-T-185 — JEDEN mail do smarthosta na epizod, przy recovery. Nie wysylamy od razu:
+            // zrzut epizod-koniec dopiero wystartowal w tle, a mail ma zawierac oba mtr.
+            $winU = ($episodeStartW instanceof DateTime)
+                ? (clone $episodeStartW)->setTimezone($UTC)->format('H:i') . '-' . (new DateTime('now', $UTC))->format('H:i')
+                : (new DateTime('now', $UTC))->format('H:i');
+            $winW = ($episodeStartW instanceof DateTime)
+                ? $episodeStartW->format('H:i') . '-' . $nowW->format('H:i')
+                : $nowW->format('H:i');
+            if ($SMARTHOST_MAIL !== '') {
+                $pendingTickets[] = ['file' => $incidentFile, 'windowUtc' => $winU, 'windowWaw' => $winW,
+                                     'notBefore' => microtime(true) + $SMARTHOST_WAIT_S,
+                                     'deadline'  => microtime(true) + $SMARTHOST_DEADLINE_S];
+                smarthostSavePending($DIAG, $pendingTickets);   // przetrwa restart monitora
+                wlog($DIAG, $WAW, "### MAIL-SMARTHOST zakolejkowany | okno {$winU} UTC | wysylka za {$SMARTHOST_WAIT_S}s (czekam na mtr w zrzucie)\n", $nowW);
+            } else {
+                wlog($DIAG, $WAW, "### MAIL-SMARTHOST pominiety | okno {$winU} UTC | brak SMARTHOST_TICKET_MAIL w .env (funkcja wylaczona)\n", $nowW);
+            }
         }
 
         $alertActive = false;
