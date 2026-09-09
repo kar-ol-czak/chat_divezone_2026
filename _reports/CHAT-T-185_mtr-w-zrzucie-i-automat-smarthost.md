@@ -1,6 +1,11 @@
-═══ CHAT-T-185 · INTEGRATION · KROK 7 / STOP przed deployem ═══
+═══ CHAT-T-185 · INTEGRATION · KROK 5 / STOP przed deployem ═══
 
 # CHAT-T-185 — mtr w zrzucie epizodu + automatyczne powiadomienie smarthosta
+
+> **AKTUALIZACJA 2026-09-09 15:45 UTC — poprawka liczby cykli mtr TCP.**
+> Na podstawie pomiaru architekta (5 przebiegow) tryb TCP zszedl z 20 na **10 cykli**
+> (`MTR_CYCLES_TCP`), tryb ICMP **zostaje na 20**. Szczegoly i nowy pomiar czasu: sekcja 8.
+
 
 **Stan:** kod gotowy, przetestowany NA PRODUKCJI (wyłącznie w `/tmp`, `~/_diag` nietknięty), zacommitowany.
 **Czeka na:** słowo „deployuj" (ADR-089). Na serwerze w `~/_diag/` NIC nie zmienione — md5 monitora wciąż `f88ef04234b622bdc94275928fa207a6`.
@@ -63,7 +68,9 @@ Wszystko zmierzone na produkcji 2026-09-09:
 | zrzut BEZ mtr (4 pingi + traceroute), stan zdrowy | **60 s** |
 | **zrzut PO zmianie, wymuszony na żywo** | **100 s (1,7 min)** — i tak samo 100 s po wszystkich poprawkach z recenzji |
 
-100 s < ~4 min, więc **20 cykli zostaje** (nie schodzę do 10). Margines na epizod: pingi przy 100%
+100 s < ~4 min, więc **20 cykli zostaje** — ale UWAGA: dotyczy to już tylko wariantu ICMP.
+Wariant TCP zszedł na 10 cykli po weryfikacji architekta, patrz **sekcja 8** (czas zrzutu bez zmian, 100 s).
+Margines na epizod: pingi przy 100%
 strat kończą się po ~15 s każdy (dowód: `incident_20260902_172907.txt` — `time 14323ms` przy 100% strat),
 traceroute ma sufit 50 s, oba mtr są ograniczone `timeout 90`.
 
@@ -182,4 +189,43 @@ zdjętego PRZED wdrożeniem).
 do `.env` (`/home/divezone/public_html/chat.divezone.pl/.env`). Opcjonalnie `SMARTHOST_TICKET_ID`
 (domyślnie `167585`).
 
-═══ CHAT-T-185 · INTEGRATION · KROK 7 / STOP przed deployem ═══
+## 8. POPRAWKA PO WERYFIKACJI ARCHITEKTA — mtr TCP na 10 cykli (2026-09-09)
+
+**Zmiana:** w wariancie TCP `--report-cycles` z 20 na 10 (nowa stala `MTR_CYCLES_TCP`).
+Wariant ICMP **bez zmian, 20 cykli** — zweryfikowane: Snt=20 na kazdym hopie, zero bledow.
+Komunikatu bledu **nie filtruje**, idzie surowy do zrzutu i do maila, z komentarzem przy wywolaniu.
+
+**Nowy pomiar lacznego czasu zrzutu: 100 s (1,7 min)** — tyle samo co przy 20 cyklach TCP,
+bo tryb TCP i tak konczyl sie wczesniej niz zadano. Struktura zrzutu bez zmian, obie sekcje mtr obecne.
+
+**Co potwierdzilem wlasnym pomiarem (6 przebiegow po zmianie):**
+
+| przebieg | wynik |
+|---|---|
+| 4 przebiegi kontrolne (2 pod rzad + 2 w odstepie 100 s) | hopow 11, `Snt(hop 11)=10`, ogon `Unexpected mtr-packet error` |
+| w zrzucie epizodu | hopy posrednie `Snt=10`, hop koncowy `Snt=9` |
+
+Czyli przy 10 cyklach wynik jest powtarzalny i pelny na hopach posrednich, a hop koncowy
+bywa o jedna sonde krotszy (9 zamiast 10). Zapisalem to w komentarzu dokladnie tak — nie jako
+„Snt zawsze rowna sie zadanym cyklom".
+
+**ZNALEZISKO, KTORE MUSZE ZGLOSIC (nie wynika ze zmiany, ale dotyczy tej samej komendy).**
+Miedzy 15:30 a 15:33 UTC `mtr -T -P 14368` **czterokrotnie** (raz wewnatrz zrzutu, trzy razy
+samodzielnie) konczyl sie natychmiast bledem `/usr/sbin/mtr: Address in use`, dajac sekcje
+szczatkowa: `Snt=1`, sciezka urwana na 5 hopie, brak celu. W szesciu pozniejszych przebiegach
+(w tym dwoch pod rzad) blad **nie wystapil**. Sprawdzone i **odrzucone** jako wyjasnienie:
+liczba gniazd TIME-WAIT do `66.33.22.230:14368` (28 podczas awarii, **42** gdy komenda dziala).
+**Przyczyny nie ustalilem.**
+
+Przy okazji odrzucilem falszywy trop: `mtr --port 33434` „naprawialo" problem, ale `--port`
+to dluga forma `-P`, czyli **port DOCELOWY** — taki pomiar szedlby na inny port niz baza.
+`-L/--localport` dziala w mtr 0.92 tylko dla UDP. Zadnego obejscia po stronie flag nie ma.
+
+**Konsekwencja dla wdrozenia:** sekcja TCP w zrzucie moze sporadycznie wyjsc szczatkowa,
+i wtedy taka trafi do maila do smarthosta — widoczna po samym komunikacie bledu.
+Sekcja ICMP (20 cykli, pelna sciezka do hopa 11) jest tym nietknieta i to ona niesie glowny dowod.
+**Do decyzji architekta:** zostawic tak (surowe wyjscie, uczciwe) czy dolozyc jedno powtorzenie
+mtr TCP, gdy pierwszy przebieg zwroci `Address in use`. Sam bym zostawil — powtorka wydluza zrzut,
+a dowodem glownym jest ICMP.
+
+═══ CHAT-T-185 · INTEGRATION · KROK 5 / STOP przed deployem ═══

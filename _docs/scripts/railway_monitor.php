@@ -76,6 +76,10 @@ $PG_METRICS = ['pg_select1', 'pg_settings', 'pg_chiptree', 'pg_upsert'];
 // 20 cykli, bo zmierzone 2026-09-09: mtr ICMP 25 s (tyle samo przy 100% strat), mtr TCP 11 s.
 // Caly zrzut z mtr miesci sie ponizej progu ~4 min ze zlecenia (pomiar w raporcie).
 define('MTR_CYCLES', 20);
+// Tryb TCP dostaje 10 cykli, nie 20. Pomiar architekta 2026-09-09, 5 przebiegow:
+// --report-cycles 20 -> Snt 10/12/15 (wynik UCIETY, niedeterministycznie), 15 -> Snt 10 (uciety),
+// 10 -> Snt 10, czyli komplet. Przy 10 liczby w raporcie sa pelne i porownywalne miedzy zrzutami.
+define('MTR_CYCLES_TCP', 10);
 // IP proxy Railway. Zrzut CHAT-T-119 ma je wpisane na sztywno w komendach ping/traceroute;
 // tu trzymamy je raz, zeby mtr epizodowy i mtr odniesienia nigdy sie nie rozjechaly.
 define('MTR_TARGET_IP', '66.33.22.230');   // wartosc odniesienia; realny cel ustala $MTR_IP na starcie
@@ -141,7 +145,16 @@ function mtrCommands(string $target, int $port, int $cycles): string {
     return 'echo "=== mtr ICMP ' . $target . ' (strata per hop) ==="; '
          . 'timeout 90 ' . $mtr . ' --report --report-wide --report-cycles ' . $cycles . ' -n ' . $target . '; echo; '
          . 'echo "=== mtr TCP ' . $target . ':' . $port . ' (ta sama sciezka na porcie, ktory realnie pada) ==="; '
-         . 'timeout 90 ' . $mtr . ' --report --report-wide --report-cycles ' . $cycles . ' -n -T -P ' . $port . ' ' . $target . '; echo; ';
+         // MTR_CYCLES_TCP=10, bo powyzej tego mtr 0.92 ucina prob: przy 20 cyklach Snt wychodzilo
+         // 10/12/15, przy 15 tez 10 (pomiar architekta, 5 przebiegow, 2026-09-09). Przy 10 cyklach
+         // wynik jest powtarzalny: hopy posrednie Snt=10, hop koncowy 9-10 (moj pomiar, 5 przebiegow).
+         // Komunikat "Unexpected mtr-packet error" to znany ogon mtr 0.92 w trybie TCP na tym hoscie
+         // — NIE filtrujemy go, idzie surowy do zrzutu i do maila.
+         // Osobno zaobserwowane 2026-09-09 15:30-15:33 UTC: seria natychmiastowych bledow
+         // "Address in use" (Snt=1, sciezka urwana na 5 hopie), niepowtarzalna w 6 pozniejszych
+         // przebiegach. Przyczyny nie ustalono; sekcja TCP moze wiec sporadycznie wyjsc szczatkowa,
+         // co widac po samym komunikacie w zrzucie. Sekcja ICMP jest tym nietknieta.
+         . 'timeout 90 ' . $mtr . ' --report --report-wide --report-cycles ' . MTR_CYCLES_TCP . ' -n -T -P ' . $port . ' ' . $target . '; echo; ';
 }
 
 /**
