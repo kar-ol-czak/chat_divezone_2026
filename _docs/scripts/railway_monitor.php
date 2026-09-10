@@ -45,6 +45,32 @@ declare(strict_types=1);
  *   - FAZA 1: tylko plik + istniejacy mail do Karola. BEZ wysylki SMTP do Smarthost (faza 2 pozniej).
  */
 
+// === CHAT-T-189 — ZDJECIE LIMITU CZASU. Musi byc PRZED wszystkim innym. ===
+// Monitor to skrypt z nieskonczona petla, wiec limit czasu wykonania nie ma tu sensu,
+// a realnie zabijal proces 2-3 razy na dobe ("Fatal error: Maximum execution time of
+// 30 seconds exceeded", rozne numery linii — limit wyczerpuje sie stopniowo i zabija
+// w losowym miejscu). Kazdy taki zgon to do 60 s dziury w pomiarze, bo tyle trwa cykl
+// wskrzeszenia przez cron-guard, a od CHAT-T-183 pokrycie doby idzie do DOSTAWCY jako
+// material dowodowy — nie chcemy tlumaczyc, czemu nasz wlasny monitor pada trzy razy dziennie.
+//
+// SKAD SIE BRAL LIMIT (pomiar 2026-09-10, produkcja): guard wola `command -v ea-php84`,
+// a pod cronowym PATH=/usr/bin:/bin to jest /usr/bin/ea-php84, czyli binarka **CGI**
+// (/opt/cpanel/ea-php84/root/usr/bin/php-cgi, SAPI cgi-fcgi) z domyslnym
+// max_execution_time=30. W powloce interaktywnej ta sama nazwa wskazuje na
+// /usr/local/bin/ea-php84 (SAPI cli) z limitem 0 — dlatego problem byl niewidoczny
+// przy recznych probach. To ta sama rodzina pulapki co cronowy PATH z CHAT-T-186.
+//
+// Zasieg zmiany jest waski: dotyczy WYLACZNIE tego procesu PHP. Zrzuty diagnostyczne
+// i dobowy baseline leca przez `nohup bash -c ... &` jako OSOBNE procesy powloki,
+// wiec limit PHP nigdy ich nie obejmowal (dowod empiryczny: zrzut trwa ~100 s i domyka
+// sie poprawnie mimo limitu 30 s w procesie, ktory go zlecil).
+$MAX_EXEC_BEFORE = (string)ini_get('max_execution_time');
+$MAX_EXEC_CALL   = function_exists('set_time_limit') ? @set_time_limit(0) : false;
+$MAX_EXEC_AFTER  = (string)ini_get('max_execution_time');
+// Sukcesem jest ZMIERZONA wartosc 0, a nie sam zwrot funkcji (recenzja codex 2026-09-10):
+// set_time_limit potrafi zwrocic true i nic nie zmienic, np. przy restrykcyjnym hardeningu.
+$MAX_EXEC_SET_OK = ($MAX_EXEC_CALL !== false) && ($MAX_EXEC_AFTER === '0');
+
 $BASE = '/home/divezone/public_html/chat.divezone.pl';
 $DIAG = '/home/divezone/_diag';
 require $BASE . '/vendor/autoload.php';
@@ -188,7 +214,11 @@ function captureMtrBaseline(string $diag, DateTimeZone $utc, string $target, int
     $payload = 'printf %s ' . escapeshellarg($hdr) . '; '
         . mtrCommands($target, $port, $cycles)
         . 'echo "=== BASELINE koniec ($(date -u)) ===";';
-    $group = '( flock -x 9; { ' . $payload . ' } >> ' . escapeshellarg($file) . ' 2>&1 ) 9>'
+    // CHAT-T-189: limit czekania na blokade, tak samo jak w zrzucie epizodu (T-185). Bez tego
+    // zablokowany na stale holder zbieralby odczepione procesy baseline z kolejnych dob —
+    // ryzyko realne dopiero teraz, gdy monitor chodzi tygodniami zamiast godzin.
+    $group = '( flock -x -w 600 9 || { echo "### BASELINE POMINIETY: blokada zajeta >600 s"; exit 0; }; { '
+           . $payload . ' } >> ' . escapeshellarg($file) . ' 2>&1 ) 9>'
            . escapeshellarg($file . '.lock');
     shell_exec('nohup bash -c ' . escapeshellarg($group) . ' >/dev/null 2>&1 &');
     return $file;
@@ -742,6 +772,29 @@ cleanupProbe($DSN, $PROBE_KEY); // czysty start klucza probe
 wlog($DIAG, $WAW, sprintf("# START %s WAW | CIAGLY (bez stop) | interval %ds | host %s:%d | digest@ %s | TRASA: serwer->Railway\n",
     $now->format('Y-m-d H:i:s'), $INTERVAL, $RHOST, $RPORT, $mailAt->format('H:i')));
 wlog($DIAG, $WAW, "# metryki: railway_tcp, " . implode(', ', $PG_METRICS) . ", github | alert >= {$ALERT_STREAK} FAIL/rzad na metryce PG\n");
+// CHAT-T-189: dowod w logu, ze limit czasu jest zdjety w TYM procesie (SAPI cgi-fcgi ma domyslnie 30 s).
+// Wartosc czytamy PONOWNIE, juz PO bootstrapie (vendor autoload, Config::load) — gdyby ktoras
+// zaleznosc kiedys przywrocila limit, chcemy to zobaczyc tutaj, a nie dowiedziec sie z fatala.
+$MAX_EXEC_NOW = (string)ini_get('max_execution_time');
+wlog($DIAG, $WAW, sprintf("# CHAT-T-189: SAPI %s | max_execution_time %s -> %s | po bootstrapie: %s | %s\n",
+    PHP_SAPI, $MAX_EXEC_BEFORE === '' ? '?' : $MAX_EXEC_BEFORE,
+    $MAX_EXEC_AFTER === '' ? '?' : $MAX_EXEC_AFTER,
+    $MAX_EXEC_NOW === '' ? '?' : $MAX_EXEC_NOW,
+    ($MAX_EXEC_SET_OK && $MAX_EXEC_NOW === '0') ? 'limit zdjety' : 'UWAGA: LIMIT NADAL DZIALA'));
+// Awaria ma byc GLOSNA, nie zakopana w komentarzu logu: bez zdjetego limitu monitor bedzie dalej
+// padal 2-3 razy na dobe, a pokrycie doby idzie do dostawcy jako material dowodowy.
+if (!$MAX_EXEC_SET_OK || $MAX_EXEC_NOW !== '0') {
+    $msg = "Monitor wystartowal, ale NIE UDALO SIE zdjac limitu czasu wykonania.\n\n"
+         . "SAPI: " . PHP_SAPI . " | binarka: " . PHP_BINARY . "\n"
+         . "max_execution_time: przed {$MAX_EXEC_BEFORE}, po set_time_limit {$MAX_EXEC_AFTER}, po bootstrapie {$MAX_EXEC_NOW}\n"
+         . "set_time_limit zwrocil: " . var_export($MAX_EXEC_CALL, true) . "\n"
+         . "disable_functions: " . ((string)ini_get('disable_functions') ?: '(puste)') . "\n\n"
+         . "Skutek: proces bedzie ginal na 'Maximum execution time' i tracil do 60 s pomiaru\n"
+         . "przy kazdym wskrzeszeniu przez guarda. Rozwiazaniem jest wtedy konfiguracja PHP\n"
+         . "(.user.ini albo php.ini), czyli decyzja architekta — patrz CHAT-T-189.\n";
+    sendAlertMail($MAIL_TO, '[DIVECHAT MONITOR] Nie udalo sie zdjac limitu czasu wykonania', $msg);
+    error_log('[railway_monitor] CHAT-T-189: limit czasu NIE zostal zdjety (max_execution_time=' . $MAX_EXEC_NOW . ')');
+}
 if ($MTR_IP !== MTR_TARGET_IP) {
     wlog($DIAG, $WAW, "# UWAGA CHAT-T-185: {$RHOST} wskazuje dzis na {$MTR_IP}, a stala MTR_TARGET_IP to " . MTR_TARGET_IP
         . " — mtr mierzy ADRES BIEZACY, zaktualizuj stala i dokumenty\n");
