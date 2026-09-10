@@ -1,10 +1,10 @@
-═══ CHAT-T-186 · INTEGRATION · KROK 5 / STOP przed deployem ═══
+═══ CHAT-T-186 · INTEGRATION · DEPLOYED (zadanie OTWARTE do jutrzejszego baseline'u) ═══
 
 # CHAT-T-186 — mtr z T-185 nie startował pod cronowym PATH
 
-**Stan:** poprawka gotowa, **przetestowana w prawdziwym środowisku cronowym**, zacommitowana.
-**Czeka na:** słowo „deployuj" (ADR-089). Na produkcji nic nie zmienione — md5 monitora
-wciąż `0c778965584c0220b070d968414ce613`.
+**Stan:** WDROŻONE na produkcji 2026-09-10 08:15 CEST (autoryzacja Karola, ADR-089).
+Wdrożony commit `2def25a`. Dowody wdrożenia: sekcja 8.
+**ZADANIE POZOSTAJE OTWARTE** do sprawdzenia automatycznego baseline'u z 18:30 UTC — sekcja 9.
 **KROK 0:** `git pull --rebase` odmówił (niezacommitowane zmiany innych sesji: `purge_litespeed.php`,
 `routes.php` — nietknięte); `git fetch` + `git rev-list --left-right --count origin/main...HEAD` = `0 0`.
 
@@ -152,4 +152,62 @@ Jeden plik `/home/divezone/_diag/railway_monitor.php`, backup `.bak_20260910`,
 md5 przed `0c778965584c0220b070d968414ce613`, `ea-php84 -l`, md5 local==prod,
 restart monitora + cztery dowody, plus **PATH nowego procesu z `/proc/<pid>/environ`**.
 
-═══ CHAT-T-186 · INTEGRATION · KROK 5 / STOP przed deployem ═══
+---
+
+## 8. WDROŻENIE — WYKONANE 2026-09-10 (KROK 6-7)
+
+```
+Stan przed (06:14:37 UTC):
+  md5 prod:            0c778965584c0220b070d968414ce613   (zgodne ze zleceniem)
+  PATH starego procesu: PATH=/usr/bin:/bin                 (pid 927399 — zrodlo bledu)
+  BASELINE nohup.out:  766 linii | 139 x Fatal error | 0 x Parse error
+  mtr_baseline_20260910.txt: jeszcze nie istnieje (termin 18:30 UTC)
+
+Backup:  railway_monitor.php.bak_20260910   md5 0c778965584c0220b070d968414ce613 (zgodny)
+Lint:    ea-php84 -l  ->  No syntax errors detected
+md5 PO:  7290b4a0c2bdd924451f7192b7d3f0ec   ==  md5 lokalny   ZGODNE
+Kontrola tresci na produkcji: 2 wystapienia "PATH=/usr/sbin:/usr/bin:/bin" (oba wywolania mtr)
+```
+
+**Cztery dowody restartu:**
+
+```
+(a) guard.log:  [guard] 2026-09-10 08:15:01 proces martwy (log 8s) -> restart pid=1062761
+                monitor wstal po ~10 s
+(b) naglowkow "# metryki:" 1 -> 2; nowy START 2026-09-10 08:15:01 WAW
+    + linia konfiguracji: mail do smarthosta WYLACZONY (brak SMARTHOST_TICKET_MAIL) — .env nietkniety
+(c) log rosnie: 5265 linii (08:15:08) -> 5271 (08:15:43), przyrost 6
+(d) monitor_nohup.out: 766 linii / 139 Fatal / 0 Parse  ==  baseline 766/139/0
+    => ZERO nowych bledow po restarcie
+```
+
+**PATH nowego procesu** (`/proc/1062761/environ`, wymagane w raporcie):
+
+```
+PATH=/usr/bin:/bin
+```
+
+To jest **poprawny i oczekiwany** wynik: srodowisko procesu sie nie zmienilo i nie mialo sie
+zmienic — poprawka siedzi w lancuchu polecen, nie w srodowisku monitora. Gdyby PATH procesu
+byl inny, znaczyloby to, ze ktos ruszyl guard albo crona, czego zlecenie zabrania.
+
+**Dowod na WDROZONYCH bajtach (nie na kopii):** wyciagnalem `mtrCommands()` z pliku
+produkcyjnego i uruchomilem wygenerowana przez niego komende pod `env -i PATH=/usr/bin:/bin`:
+
+```
+=== mtr ICMP 66.33.22.230 ===   11.|-- 66.33.22.230   0.0%   3   32.9 ms
+=== mtr TCP 66.33.22.230:14368 ===  11.|-- 66.33.22.230   0.0%  10   33.3 ms
+```
+
+## 9. ZADANIE OTWARTE — na co czekamy
+
+**Dowód koncowy przychodzi sam: `~/_diag/mtr_baseline_20260910.txt`, generowany automatem
+o 18:30 UTC (20:30 czasu warszawskiego).** Ma zawierac dwa PELNE raporty mtr do hopa 11,
+zamiast dwoch linii `Failure to start mtr-packet`. Sprawdzenie i dopisanie wyniku do tego
+raportu jest ostatnim krokiem — do tego czasu zadania nie zamykam.
+
+Czego nadal nie wiem: jak `mtr` zachowa sie **podczas realnego epizodu**. Od wdrozenia T-185
+zaden epizod nie wystapil, wiec sciezka „alert -> zrzut w tle z mtr" nie przeszla jeszcze
+na zywym ruchu.
+
+═══ CHAT-T-186 · INTEGRATION · DEPLOYED (zadanie OTWARTE do jutrzejszego baseline'u) ═══
