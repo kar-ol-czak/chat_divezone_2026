@@ -21,6 +21,15 @@ Dlatego sonda wypisuje na starcie region i identyfikator wdrożenia (`# srodowis
 — **te linie trzeba zacytować w piśmie do smarthosta razem z wynikiem**, żeby druga strona
 wiedziała, skąd dokładnie mierzyliśmy i nie mogła nam tego zarzucić jako luki.
 
+**Trzecia rzecz, wykryta przy pierwszym uruchomieniu i ważna dla pisma: `chat.divezone.pl`
+nie wskazuje już na nasz serwer.** Nazwa rozwiązuje się dziś na adresy Cloudflare
+(`104.26.8.54`, `104.26.9.54`, `172.67.75.232` — whois: **CLOUDFLARENET**, sprawdzone
+2026-09-10; jeszcze 04.09 ta sama nazwa dawała `193.93.88.95`). Sonda **celowo** łączy się
+z `193.93.88.95` bezpośrednio, a nazwę podaje tylko w SNI — gdyby szła za DNS-em, mierzyłaby
+łącze do Cloudflare zamiast do naszego serwera i cały pomiar trasy powrotnej byłby bezwartościowy.
+Linia `# dns: ... ROZJAZD! sonda i tak uzywa 193.93.88.95` w logu jest więc **oczekiwana
+i poprawna**, a nie usterką.
+
 **Co dokładnie robi.** Co 30 sekund wypisuje jedną linię z czterema pomiarami:
 
 | metryka | co mierzy |
@@ -82,7 +91,12 @@ gdzie te pomiary istnieją, więc buforowanie byłoby ryzykiem bez żadnego zysk
 
 - Ma chodzić **co najmniej trzy wieczory**, żeby trzy razy objąć okno 16:00–21:00 UTC
   (czyli 18:00–23:00 naszego czasu), bo tam wypadają epizody.
-- **Data wyłączenia: 2026-09-08** (po trzech pełnych wieczorach: 04, 05, 06 i 07.09).
+- **Data wyłączenia: 2026-09-14** (po trzech pełnych wieczorach: 10, 11, 12 i 13.09).
+  **Data liczy się od REALNEGO startu sondy, nie od napisania tego dokumentu.** Sonda
+  wystartowała `2026-09-10 08:41 UTC` (pierwszy cykl `#00001`, wdrożenie `005030d0`) —
+  poprzednia wersja README mówiła 08.09, czyli datę z przeszłości, bo pisano ją 04.09
+  przy założeniu, że sonda ruszy tego samego dnia. Gdyby ktoś się nią kierował,
+  wyłączyłby pomiar, zanim ten cokolwiek zmierzył.
 - Serwis **generuje koszt** na koncie Railway (choć groszowy — to jeden mały proces).
   Nie zostawiamy go na stałe. Instrukcja usunięcia jest na końcu.
 
@@ -156,7 +170,7 @@ railway variables --service reverse-probe --set 'RAILWAY_RUN_COMMAND=python -u p
 
 ---
 
-## 🧹 Usunięcie po zakończeniu (do 2026-09-08)
+## 🧹 Usunięcie po zakończeniu (do 2026-09-14)
 
 **Panel:** serwis `reverse-probe` → **Settings** → na samym dole **Delete Service** →
 potwierdź nazwą serwisu.
