@@ -362,8 +362,10 @@ function smarthostReserve(string $diag, DateTimeZone $waw, string $episodeKey, i
 }
 
 /** Zwrot rezerwacji, gdy mail() zawiodl — inaczej nieudana proba zjadalaby limit dobowy. */
-function smarthostRelease(string $diag, DateTimeZone $waw, string $episodeKey): void {
-    $day   = (new DateTime('now', $waw))->format('Ymd');
+function smarthostRelease(string $diag, DateTimeZone $waw, string $episodeKey, ?string $day = null): void {
+    // Dzien rezerwacji podajemy jawnie: rezerwacja przed polnoca + nieudany mail po polnocy
+    // zdejmowalyby licznik z NIEWLASCIWEJ doby (recenzja codex 2026-09-10).
+    $day   = $day ?? (new DateTime('now', $waw))->format('Ymd');
     $cntF  = $diag . '/smarthost_mail_' . $day . '.count';
     $sentF = $diag . '/smarthost_sent_' . $day . '.list';
     $fh = @fopen($cntF, 'c+');
@@ -403,12 +405,14 @@ function smarthostLoadPending(string $diag): array {
     if (!is_array($d)) { return []; }
     $out = [];
     foreach ($d as $row) {
-        if (is_array($row) && isset($row['file'], $row['windowUtc'], $row['windowWaw'])) {
-            // Po restarcie nie czekamy juz drugi raz pelnego okna — zrzut i tak dawno leci.
-            $row['notBefore'] = microtime(true) + 30;
-            $row['deadline']  = microtime(true) + 300;
-            $out[] = $row;
-        }
+        if (!is_array($row) || !isset($row['file'], $row['windowUtc'], $row['windowWaw'])) { continue; }
+        // Po restarcie nie czekamy drugi raz pelnego okna — zrzut i tak dawno leci.
+        $row['notBefore'] = microtime(true) + 30;
+        // TWARDY termin jest ABSOLUTNY i przezywa restarty (recenzja codex 2026-09-10): bez tego
+        // seria restartow przesuwalaby porzucenie w nieskonczonosc i ostrzezenie nigdy by nie poszlo.
+        $row['deadlineAbs'] = $row['deadlineAbs'] ?? (time() + 600);
+        $row['deadline']    = microtime(true) + 300;
+        $out[] = $row;
     }
     return $out;
 }
@@ -457,6 +461,115 @@ function parseIncidentForTicket(string $incidentFile): array {
     return ['blocks' => $blocks, 'window' => $window, 'doneMarkers' => $done];
 }
 
+/**
+ * CHAT-T-188 — czy SEKCJE MTR zawieraja realny pomiar, a nie sam komunikat bledu.
+ *
+ * Kryterium wyprowadzone z REALNYCH plikow (2026-09-10), nie z pamieci:
+ *   KOMPLETNY   (zrzut z T-186, sciezka produkcyjna):
+ *      === mtr ICMP 66.33.22.230 (strata per hop) ===
+ *      HOST: divezonededyk.smarthost.pl Loss%   Snt   Last   Avg  Best  Wrst StDev
+ *        1.|-- 193.93.88.254               0.0%    20    0.1 ...
+ *   PUSTY       (~/_diag/mtr_baseline_20260909.txt, linie 7-11 — to przeszlo STARA bramke):
+ *      === mtr ICMP 66.33.22.230 (strata per hop) ===
+ *      /usr/sbin/mtr: Failure to start mtr-packet: Invalid argument
+ *
+ * Roznica jest jednoznaczna: wiersz naglowkowy `HOST:` i przynajmniej jeden wiersz hopa.
+ * Marker `=== DIAG koniec` NIE odroznia tych dwoch przypadkow, bo pisze sie bezwarunkowo.
+ *
+ * ROZSTRZYGA WIERSZ `HOST:`, A NIE LICZBA HOPOW — i to jest swiadoma decyzja po pomiarze
+ * z 2026-09-10, ktory pokazal falszywy negatyw pierwotnego kryterium:
+ *     mtr --report do celu CALKOWICIE nieosiagalnego (198.51.100.1) drukuje
+ *         Start: 2026-09-10T09:53:19+0200
+ *         HOST: divezonededyk.smarthost.pl Loss%   Snt   Last   Avg ...
+ *     i NIC WIECEJ — zero wierszy hopow.
+ * Taki zrzut powstalby przy najciezszej awarii (nic nie odpowiada) i wymaganie hopa
+ * BLOKOWALOBY dowod dokladnie wtedy, kiedy jest najbardziej potrzebny. Falszywy negatyw
+ * cicho gubi material do zgloszenia i jest grozniejszy niz falszywy pozytyw.
+ * Wiersz `HOST:` pojawia sie wylacznie wtedy, gdy mtr RUSZYL i wypisal raport — a tego
+ * wlasnie brakuje w zrzucie z 09.09, gdzie jest sam komunikat bledu. To wystarcza do rozroznienia.
+ *
+ * Nie wymagamy tez kompletu hopow ani pelnej liczby sond: zrzut szczatkowy z realnego
+ * incydentu (T-185, "Address in use": HOST + 5 hopow, ostatni "???") NIESIE dowod i ma przejsc.
+ *
+ * WYSTARCZY JEDNA sekcja z pomiarem, nie obie (recenzja codex 2026-09-10, dwa realne powody):
+ *  - tryb TCP potrafi paść sam z siebie ("Address in use", zaobserwowane w T-185), a wtedy
+ *    sekcja ICMP z pelna sciezka do hopa 11 dalej jest mocnym dowodem — blokowanie jej to
+ *    czysta strata materialu,
+ *  - plik baseline jest DOPISYWANY (`>>`), wiec po nieudanej probie i udanym ponowieniu
+ *    zawiera sekcje zepsute I dobre; wymaganie "wszystkie sekcje dobre" kazaloby uznac
+ *    udane ponowienie za nieudane i to jest blad krytyczny tej konstrukcji.
+ *
+ * @return array{ok:bool,reason:string}
+ */
+function mtrSectionsEvidence(string $text, int $expectedSections = 1): array {
+    $parts = preg_split('/^=== mtr /m', $text);
+    array_shift($parts);                     // to, co przed pierwsza sekcja
+    if (!$parts) {
+        return ['ok' => false, 'reason' => 'brak sekcji mtr w zrzucie'];
+    }
+    $withHost = 0; $withHops = 0;
+    foreach ($parts as $sec) {
+        if (preg_match('/^HOST:/m', $sec)) {
+            $withHost++;
+            if (preg_match('/^\s*\d+\.\|--/m', $sec)) { $withHops++; }
+        }
+    }
+    if ($withHost < $expectedSections) {
+        return ['ok' => false, 'reason' => 'sekcji mtr z wierszem HOST: ' . $withHost . ' z ' . count($parts)
+                                           . ' (zadne mtr nie ruszylo)'];
+    }
+    return ['ok' => true, 'reason' => 'sekcje mtr: ' . count($parts) . ', z pomiarem: ' . $withHost
+                                      . ', w tym z hopami: ' . $withHops];
+}
+
+/**
+ * CHAT-T-188 — BRAMKA WYSYLKI. Sprawdza TRESC bloku dowodowego, nie marker konca.
+ *
+ * Dziala na TYM SAMYM bloku, z ktorego sendSmarthostTicket() buduje maila — inaczej
+ * sprawdzalibysmy co innego, niz wysylamy (blok epizod-start pusty, blok epizod-koniec pelny
+ * przeszedlby bramke, a w mailu tabela strat bylaby pusta).
+ *
+ * Wymagamy: strat pingu do Railway ORAZ do co najmniej jednej kontroli (to jest cala teza maila:
+ * "tracimy do Railway, kontrole czyste" — bez obu liczb nie ma czego twierdzic), plus obu sekcji
+ * mtr z danymi.
+ *
+ * @return array{ok:bool,reason:string}
+ */
+function ticketEvidenceGate(?array $block): array {
+    if ($block === null) {
+        return ['ok' => false, 'reason' => 'brak bloku diagnostycznego w zrzucie'];
+    }
+    if (($block['loss']['66.33.22.230'] ?? null) === null) {
+        return ['ok' => false, 'reason' => 'brak pomiaru strat pingu do Railway'];
+    }
+    $ctrl = 0;
+    foreach (['5.79.108.33', '1.1.1.1', '8.8.8.8'] as $ip) {
+        if (($block['loss'][$ip] ?? null) !== null) { $ctrl++; }
+    }
+    if ($ctrl === 0) {
+        return ['ok' => false, 'reason' => 'brak pomiaru zadnej kontroli pingowej'];
+    }
+    $m = mtrSectionsEvidence((string)($block['mtr'] ?? ''), 1);
+    if (!$m['ok']) {
+        return ['ok' => false, 'reason' => $m['reason']];
+    }
+    return ['ok' => true, 'reason' => 'ping Railway + ' . $ctrl . ' kontrol(e), ' . $m['reason']];
+}
+
+/**
+ * CHAT-T-188 — czy plik baseline zawiera realny pomiar. Ten SAM test tresci co bramka maila,
+ * tylko bez czesci pingowej (baseline z zalozenia ma same sekcje mtr).
+ * Zastepuje file_exists(): 09.09 plik ISTNIAL i mial 555 bajtow samych komunikatow bledu,
+ * wiec nadrabianie po restarcie uznawalo dobe za obsluzona.
+ */
+function mtrBaselineHasData(string $file): bool {
+    if (!file_exists($file)) { return false; }
+    $txt = (string)@file_get_contents($file);
+    // Plik dobowy jest DOPISYWANY, wiec moze zawierac nieudana probe i udane ponowienie.
+    // Wystarczy jedna sekcja z realnym pomiarem, zeby uznac dobe za obsluzona.
+    return mtrSectionsEvidence($txt, 1)['ok'];
+}
+
 function sendAlertMail(string $to, string $subject, string $body): bool {
     $headers = "From: noreply@divezone.pl\r\nContent-Type: text/plain; charset=UTF-8\r\n";
     return @mail($to, $subject, $body, $headers);
@@ -473,7 +586,10 @@ function sendAlertMail(string $to, string $subject, string $body): bool {
  *     po calym pliku — inaczej zestawialibysmy Railway z jednej minuty z kontrolami z innej,
  *   - "kontrole czyste" piszemy tylko wtedy, gdy WSZYSTKIE trzy kontrole sa zmierzone i maja 0%,
  *   - temat mowi o utracie pakietow tylko wtedy, gdy pomiar te utrate pokazuje,
- *   - brakujace dowody nazywamy po imieniu zamiast je przemilczec.
+ *   - brakujace dowody nazywamy po imieniu zamiast je przemilczec,
+ *   - CHAT-T-188: bez realnych danych w zrzucie mail w ogole NIE WYCHODZI (bramka po tresci).
+ *
+ * @return array{0:string,1:string} status: sent|mail-failed|gate-failed|refused, plus linia do logu
  */
 function sendSmarthostTicket(array $pending, string $to, string $cc, string $ticket,
                              DateTimeZone $waw, DateTimeZone $utc, string $diag, int $maxPerDay,
@@ -482,11 +598,8 @@ function sendSmarthostTicket(array $pending, string $to, string $cc, string $tic
     $tsW = (new DateTime('now', $waw))->format('H:i:s');
     $key = basename($pending['file']);
 
-    $res = smarthostReserve($diag, $waw, $key, $maxPerDay);
-    if (!$res['ok']) {
-        return [false, "### MAIL-SMARTHOST {$tsU} UTC / {$tsW} WAW | okno {$pending['windowUtc']} | NIE wyslano: {$res['reason']}\n"];
-    }
-
+    // CHAT-T-188: NAJPIERW sprawdzamy tresc, POTEM rezerwujemy slot — inaczej niekompletny
+    // zrzut zjadalby jeden z trzech dobowych maili, nic nie wysylajac.
     $d = parseIncidentForTicket($pending['file']);
     $names = ['66.33.22.230' => 'Railway (66.33.22.230, cel)',
               '5.79.108.33'  => 'Leaseweb Amsterdam (5.79.108.33, kontrola)',
@@ -500,6 +613,30 @@ function sendSmarthostTicket(array $pending, string $to, string $cc, string $tic
         elseif (stripos($b['label'], 'epizod-koniec') !== false) { $rec = $b; }
     }
     if ($fail === null && $d['blocks']) { $fail = $d['blocks'][0]; }
+
+    // CHAT-T-188 — BRAMKA PO TRESCI, na TYM SAMYM bloku, z ktorego powstanie mail.
+    // 09.09 zrzut mial sam komunikat bledu, a marker konca i tak byl — bez tej bramki
+    // do dostawcy poszlaby wiadomosc z pustymi sekcjami i zdaniem, ze zalaczamy pomiar.
+    //
+    // Gdy blok z chwili awarii jest niekompletny, a blok z powrotu ma dane — bierzemy ten drugi
+    // (recenzja codex 2026-09-10). Lepiej wyslac slabszy dowod NAZWANY PO IMIENIU niz nie wyslac nic.
+    $gate = ticketEvidenceGate($fail);
+    if (!$gate['ok'] && $rec !== null && $rec !== $fail) {
+        $gateRec = ticketEvidenceGate($rec);
+        if ($gateRec['ok']) { $fail = $rec; $rec = null; $gate = $gateRec; }
+    }
+    // Etykieta musi mowic, z czego naprawde jest tabela: blok powrotu NIE jest "chwila awarii".
+    $failIsStart = ($fail !== null) && (stripos($fail['label'], 'epizod-start') !== false);
+    if (!$gate['ok']) {
+        return ['gate-failed', "### MAIL-SMARTHOST pominiety | powod=niekompletny zrzut ({$gate['reason']})"
+                               . " | plik=" . basename($pending['file']) . "\n"];
+    }
+
+    $resDay = (new DateTime('now', $waw))->format('Ymd');   // doba, z ktorej pochodzi slot
+    $res = smarthostReserve($diag, $waw, $key, $maxPerDay);
+    if (!$res['ok']) {
+        return ['refused', "### MAIL-SMARTHOST {$tsU} UTC / {$tsW} WAW | okno {$pending['windowUtc']} | NIE wyslano: {$res['reason']}\n"];
+    }
 
     $rows = ''; $rwLoss = null; $ctrlVals = [];
     if ($fail !== null) {
@@ -528,7 +665,8 @@ function sendSmarthostTicket(array $pending, string $to, string $cc, string $tic
     }
 
     $mtrTxt = '';
-    foreach ([[$fail, 'Z CHWILI AWARII'], [$rec, 'Z CHWILI POWROTU (dla porownania)']] as [$b, $tag]) {
+    foreach ([[$fail, $failIsStart ? 'Z CHWILI AWARII' : 'Z BLOKU ' . ($fail['label'] ?? '?')],
+              [$rec, 'Z CHWILI POWROTU (dla porownania)']] as [$b, $tag]) {
         if ($b !== null && $b['mtr'] !== '') {
             $mtrTxt .= "\nMTR {$tag} — {$b['label']}, {$b['ts']}\n" . $b['mtr'] . "\n";
         }
@@ -547,7 +685,10 @@ function sendSmarthostTicket(array $pending, string $to, string $cc, string $tic
           . "OKNO NIEDOSTEPNOSCI\n"
           . "  {$pending['windowUtc']} UTC  ({$pending['windowWaw']} czasu warszawskiego)\n"
           . ($d['window'] !== '' ? '  ' . $d['window'] . "\n" : '')
-          . ($fail !== null ? "\nSTRATY PAKIETOW Z CHWILI AWARII (ping -c 15, jeden pomiar, {$fail['ts']})\n" . $rows : "\n")
+          . ($fail !== null
+                ? "\nSTRATY PAKIETOW " . ($failIsStart ? 'Z CHWILI AWARII' : 'Z BLOKU: ' . $fail['label'])
+                  . " (ping -c 15, jeden pomiar, {$fail['ts']})\n" . $rows
+                : "\n")
           . "\n{$sense}\n"
           . $kompl
           . $mtrTxt
@@ -559,10 +700,11 @@ function sendSmarthostTicket(array $pending, string $to, string $cc, string $tic
         : "[DIVEZONE #{$ticket}] Epizod niedostepnosci bazy (ping bez strat), okno {$pending['windowUtc']} UTC";
     $headers = "From: noreply@divezone.pl\r\nCc: {$cc}\r\nContent-Type: text/plain; charset=UTF-8\r\n";
     $ok = @mail($to, $subject, $body, $headers);
-    if (!$ok) { smarthostRelease($diag, $waw, $key); }   // nieudana proba nie zjada limitu
+    if (!$ok) { smarthostRelease($diag, $waw, $key, $resDay); }   // nieudana proba nie zjada limitu
     // Temat w logu: po nim widac, KTORY blok dowodowy zdecydowal o tresci (i co poszlo do obcej firmy).
-    return [true, "### MAIL-SMARTHOST {$tsU} UTC / {$tsW} WAW | okno {$pending['windowUtc']} | do {$to} | {$res['reason']}"
-                  . " | temat: {$subject} | mail=" . ($ok ? 'sent' : 'FAILED') . "\n"];
+    return [($ok ? 'sent' : 'mail-failed'),
+            "### MAIL-SMARTHOST {$tsU} UTC / {$tsW} WAW | okno {$pending['windowUtc']} | do {$to} | {$res['reason']}"
+            . " | dowod: {$gate['reason']} | temat: {$subject} | mail=" . ($ok ? 'sent' : 'FAILED') . "\n"];
 }
 
 $now = new DateTime('now', $WAW);
@@ -578,10 +720,20 @@ $mtrAt = (new DateTime('now', $UTC))->setTime($mbH, $mbM, 0);
 $MTR_IP = gethostbyname($RHOST);
 if (!filter_var($MTR_IP, FILTER_VALIDATE_IP)) { $MTR_IP = MTR_TARGET_IP; }
 $mtrCatchUp = false;
+// CHAT-T-188 — jedno ponowienie baseline'u na dobe (bez petli): po zleceniu sprawdzamy tresc
+// po $MTR_RECHECK_S i, jesli pusto, powtarzamy DOKLADNIE raz.
+$MTR_RECHECK_S = 300;
+$mtrCheckAt = 0.0;       // 0 = nie ma czego sprawdzac
+$mtrCheckFile = '';      // KTORY plik sprawdzamy — zapamietany, nie odtwarzany z dzisiejszej daty
+                         // (proba zlecona tuz przed polnoca UTC sprawdzalaby plik nastepnej doby)
+// Znacznik "ponowienie tej doby juz bylo" NA DYSKU: monitor restartuje sie kilka razy dziennie,
+// wiec zmienna w pamieci nie jest zadnym limitem (recenzja codex 2026-09-10).
+$mtrRetryFlag = fn(DateTimeZone $u): string => $DIAG . '/mtr_retry_' . (new DateTime('now', $u))->format('Ymd') . '.done';
 if ($mtrAt <= new DateTime('now', $UTC)) {
     // Monitor restartuje sie kilka razy na dobe. Jezeli okno 18:30 minelo, a pliku baseline
     // na dzis NIE MA, to znaczy, ze restart zjadl termin — nadrabiamy raz, po starcie.
-    $mtrCatchUp = !file_exists($DIAG . '/mtr_baseline_' . (new DateTime('now', $UTC))->format('Ymd') . '.txt');
+    // CHAT-T-188: nie "czy plik jest", tylko "czy ma dane" — pusty plik z bledem tez trzeba nadrobic.
+    $mtrCatchUp = !mtrBaselineHasData($DIAG . '/mtr_baseline_' . (new DateTime('now', $UTC))->format('Ymd') . '.txt');
     $mtrAt->modify('+1 day');
 }
 
@@ -630,11 +782,30 @@ while (true) {
         $bf = captureMtrBaseline($DIAG, $UTC, $MTR_IP, $RPORT, MTR_CYCLES);
         wlog($DIAG, $WAW, "# MTR-BASELINE nadrobiony po restarcie (termin " . $MTR_BASELINE_AT_UTC . " UTC juz minal): " . basename($bf) . "\n", $nowW);
         $mtrCatchUp = false;
+        $mtrCheckAt = microtime(true) + $MTR_RECHECK_S; $mtrCheckFile = $bf;
     }
     if (new DateTime('now', $UTC) >= $mtrAt) {
         $bf = captureMtrBaseline($DIAG, $UTC, $MTR_IP, $RPORT, MTR_CYCLES);
         wlog($DIAG, $WAW, "# MTR-BASELINE zlecony: " . basename($bf) . "\n", $nowW);
         $mtrAt->modify('+1 day');
+        $mtrCheckAt = microtime(true) + $MTR_RECHECK_S; $mtrCheckFile = $bf;
+    }
+    // CHAT-T-188 — kontrola tresci baseline'u po zleceniu i JEDNO ponowienie, gdy pusty.
+    if ($mtrCheckAt > 0.0 && microtime(true) >= $mtrCheckAt) {
+        $bfile = $mtrCheckFile !== '' ? $mtrCheckFile
+               : $DIAG . '/mtr_baseline_' . (new DateTime('now', $UTC))->format('Ymd') . '.txt';
+        $mtrCheckAt = 0.0;
+        $retryFlag = $mtrRetryFlag($UTC);
+        if (mtrBaselineHasData($bfile)) {
+            wlog($DIAG, $WAW, "# MTR-BASELINE ma dane: " . basename($bfile) . "\n", $nowW);
+        } elseif (!file_exists($retryFlag)) {
+            @file_put_contents($retryFlag, (new DateTime('now', $UTC))->format('c') . "\n");
+            $bf = captureMtrBaseline($DIAG, $UTC, $MTR_IP, $RPORT, MTR_CYCLES);
+            $mtrCheckAt = microtime(true) + $MTR_RECHECK_S; $mtrCheckFile = $bf;
+            wlog($DIAG, $WAW, "# MTR-BASELINE bez pomiaru — PONOWIENIE, jedyne w tej dobie: " . basename($bf) . "\n", $nowW);
+        } else {
+            wlog($DIAG, $WAW, "# MTR-BASELINE nadal bez pomiaru po ponowieniu — rezygnuje na dzis: " . basename($bfile) . "\n", $nowW);
+        }
     }
 
     // CHAT-T-185 — zaległy mail do smarthosta: wysylamy dopiero, gdy zrzut w tle przestal rosnac
@@ -651,10 +822,50 @@ while (true) {
         $quiet = ($mtime !== false) && (time() - $mtime >= 60);
         if ($done < 2 && !$quiet && microtime(true) < $pt['deadline']) { continue; }
         // Log PRZED wysylka: mail() nie ma timeoutu, a guard patrzy na swiezosc logu (60 s).
-        wlog($DIAG, $WAW, "### MAIL-SMARTHOST wysylam | okno {$pt['windowUtc']} | blokow domknietych {$done}/2\n", $nowW);
-        [$consumed, $line] = sendSmarthostTicket($pt, $SMARTHOST_MAIL, $MAIL_TO, $SMARTHOST_TICKET,
-                                                 $WAW, $UTC, $DIAG, $SMARTHOST_MAX_PER_DAY, $INTERVAL);
+        // Slowo "probuje", nie "wysylam": w tym momencie bramka jeszcze nie orzekla (codex #8).
+        wlog($DIAG, $WAW, "### MAIL-SMARTHOST probuje | okno {$pt['windowUtc']} | blokow domknietych {$done}/2\n", $nowW);
+        [$status, $line] = sendSmarthostTicket($pt, $SMARTHOST_MAIL, $MAIL_TO, $SMARTHOST_TICKET,
+                                               $WAW, $UTC, $DIAG, $SMARTHOST_MAX_PER_DAY, $INTERVAL);
+
+        // CHAT-T-188 — zrzut bez danych: NIE wysylamy, ale tez nie gubimy epizodu.
+        // Zostaje w kolejce do twardego terminu (moze zrzut sie jeszcze domknie), a linia
+        // do logu idzie RAZ, zeby nie zasypac logu co cykl.
+        if ($status === 'gate-failed') {
+            if (empty($pendingTickets[$k]['gateLogged'])) {
+                wlog($DIAG, $WAW, $line, $nowW);
+                $pendingTickets[$k]['gateLogged'] = true;
+                smarthostSavePending($DIAG, $pendingTickets);
+            }
+            if (time() >= ($pt['deadlineAbs'] ?? 0) || microtime(true) >= $pt['deadline']) {
+                // Koniec czekania. Cicha degradacja jest zakazana: Karol ma wiedziec DZIS,
+                // ze epizod zostal bez materialu dowodowego. Kanal: istniejacy mail alertowy
+                // monitora (ten sam nadawca i adresaci co alerty epizodowe), zeby nie mnozyc kanalow.
+                $subjW = "[DIVECHAT MONITOR] Zrzut nie przeszedl bramki — mail do smarthosta wstrzymany";
+                $bodyW = "Epizod zakonczony, ale zrzut diagnostyczny nie przeszedl bramki dowodowej,\n"
+                       . "wiec mail do dostawcy NIE zostal wyslany (lepiej nic niz pusty dowod).\n\n"
+                       . "Okno epizodu: {$pt['windowUtc']} UTC ({$pt['windowWaw']} WAW)\n"
+                       . "Plik zrzutu:  {$pt['file']}\n"
+                       . "Werdykt bramki: " . trim(str_replace('### MAIL-SMARTHOST pominiety | ', '', $line)) . "\n\n"
+                       . "Bramka wymaga: strat pingu do Railway i do co najmniej jednej kontroli ORAZ\n"
+                       . "co najmniej jednej sekcji mtr z wierszem HOST: (czyli takiej, w ktorej mtr ruszyl).\n"
+                       . "Powodem moze byc padniete narzedzie (tak bylo 2026-09-09, mtr bez PATH do\n"
+                       . "mtr-packet, CHAT-T-186), ale takze urwany albo niekompletny zrzut — plik wyzej\n"
+                       . "pokazuje, ktore z tych rzeczy zabraklo.\n";
+                $okW = sendAlertMail($MAIL_TO, $subjW, $bodyW);
+                wlog($DIAG, $WAW, "### MAIL-SMARTHOST porzucony | okno {$pt['windowUtc']} | zrzut bez danych do terminu"
+                    . " | ostrzezenie do Karola mail=" . ($okW ? 'sent' : 'FAILED') . "\n", $nowW);
+                unset($pendingTickets[$k]);
+                smarthostSavePending($DIAG, $pendingTickets);
+            }
+            break;
+        }
+
         wlog($DIAG, $WAW, $line, $nowW);
+        // CHAT-T-188 (codex #5): nieudany mail albo przejsciowy problem z licznikiem NIE moze
+        // kasowac epizodu z kolejki — slot zostal juz zwrocony, wiec probujemy dalej do terminu.
+        if ($status === 'mail-failed' && time() < ($pt['deadlineAbs'] ?? 0)) {
+            break;
+        }
         unset($pendingTickets[$k]);
         smarthostSavePending($DIAG, $pendingTickets);
         break;   // jeden mail na cykl petli — zeby wysylka nie zatrzymala pomiaru
@@ -748,8 +959,9 @@ while (true) {
                 : $nowW->format('H:i');
             if ($SMARTHOST_MAIL !== '') {
                 $pendingTickets[] = ['file' => $incidentFile, 'windowUtc' => $winU, 'windowWaw' => $winW,
-                                     'notBefore' => microtime(true) + $SMARTHOST_WAIT_S,
-                                     'deadline'  => microtime(true) + $SMARTHOST_DEADLINE_S];
+                                     'notBefore'   => microtime(true) + $SMARTHOST_WAIT_S,
+                                     'deadline'    => microtime(true) + $SMARTHOST_DEADLINE_S,
+                                     'deadlineAbs' => time() + $SMARTHOST_DEADLINE_S];
                 smarthostSavePending($DIAG, $pendingTickets);   // przetrwa restart monitora
                 wlog($DIAG, $WAW, "### MAIL-SMARTHOST zakolejkowany | okno {$winU} UTC | wysylka za {$SMARTHOST_WAIT_S}s (czekam na mtr w zrzucie)\n", $nowW);
             } else {
