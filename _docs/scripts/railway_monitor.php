@@ -37,7 +37,8 @@ declare(strict_types=1);
  * CHAT-T-119 (diagnostyka sieciowa w chwili epizodu — dowod dla Smarthost #167585):
  *   - captureNetworkDiag(): ping x4 (Railway/Leaseweb-AMS/1.1.1.1/8.8.8.8) + traceroute Railway,
  *     kazde owiniete w `timeout`, uruchamiane W TLE (nohup ... &), zeby petla monitora szla dalej
- *     i cron-guard (prog swiezosci 60s) NIE uznal monitora za martwy podczas ~90s zrzutu.
+ *     i cron-guard (prog swiezosci 60s) NIE uznal monitora za martwy podczas zrzutu
+ *     (~100 s po dolozeniu mtr w CHAT-T-185, zmierzone na produkcji 2026-09-09 i 2026-09-10).
  *   - wpiete w START epizodu (>=ALERT_STREAK FAIL) i przy RECOVERY (trasa na starcie i koncu).
  *   - zrzut -> ~/_diag/incident_YYYYMMDD_HHMMSS.txt (jeden plik per epizod, timestamp startu).
  *   - pomiar OKNA niedostepnosci: od 1. FAIL epizodu do powrotu OK (kluczowa liczba dla Smarthost).
@@ -116,7 +117,7 @@ function tcp(string $host, int $port, int $tmo): array {
  * Odpala ping x4 + traceroute do celow diagnostycznych i DOPISUJE surowe wyniki do pliku incydentu.
  *
  * KRYTYCZNE: uruchamiane W TLE (nohup bash -c '...' &). Petla monitora wraca NATYCHMIAST i loguje
- * dalej, wiec cron-guard (CHAT-T-109, prog swiezosci 60s) nie uzna monitora za martwy podczas ~90s
+ * dalej, wiec cron-guard (CHAT-T-109, prog swiezosci 60s) nie uzna monitora za martwy podczas ~100s
  * zrzutu. Diag jako osobny proces przezyje nawet ubicie monitora przez guard.
  *
  * Kazde polecenie owiniete w `timeout` — wiszacy traceroute przy blackhole nie zablokuje nawet
@@ -128,22 +129,37 @@ function tcp(string $host, int $port, int $tmo): array {
  *   1.1.1.1 / 8.8.8.8 — kontrola globalna (oczekiwane CZYSTO)
  */
 /**
- * CHAT-T-185 — polecenia mtr do zrzutu. ZAWSZE pelna sciezka /usr/sbin/mtr.
+ * CHAT-T-185/186 — polecenia mtr do zrzutu.
  *
- * KOREKTA FAKTU: CHAT-T-119 zapisal "mtr BRAK — NIE uzywac". To bylo nieprawda.
- * Pomiar 2026-09-09 na produkcji: /usr/sbin/mtr (0.92) istnieje, a /usr/sbin/mtr-packet ma
- * cap_net_raw=ep, wiec dziala z konta divezone BEZ roota. Zweryfikowane takze przez PHP
- * shell_exec (to samo srodowisko, w ktorym leci ten zrzut).
- * mtr dochodzi do hopa 11, czyli do samego 66.33.22.230, ktorego traceroute nigdy nie
- * pokazywal (Railway filtruje ICMP TTL-exceeded, ale odpowiada na echo i na TCP).
+ * KAZDE wywolanie ma USTAWIONY PATH, a nie tylko pelna sciezke do mtr. Powod (CHAT-T-186,
+ * zmierzony 2026-09-10, bo wersja z samej pelnej sciezki byla MARTWA na produkcji od wdrozenia):
+ * `mtr` uruchamia proces pomocniczy `mtr-packet` PO SAMEJ NAZWIE, przez PATH. Pelna sciezka do
+ * `mtr` nic tu nie daje, bo gubi sie nie `mtr`, tylko jego dziecko. Monitor jest wskrzeszany
+ * przez guard z CRONA i dziedziczy minimalny PATH:
+ *     /proc/<pid>/environ zywego monitora  ->  PATH=/usr/bin:/bin      (2026-09-10)
+ * a `mtr-packet` lezy w /usr/sbin (w /usr/bin go NIE MA). Efekt na produkcji:
+ *     ~/_diag/mtr_baseline_20260909.txt  ->  "Failure to start mtr-packet: Invalid argument"
+ *                                            (oba przebiegi, caly blok 0 s)
+ * Odtworzone para na parze, ta sama komenda, ten sam host:
+ *     env -i PATH=/usr/bin:/bin           ...  -> Failure to start mtr-packet
+ *     env -i PATH=/usr/sbin:/usr/bin:/bin ...  -> pelny raport do hopa 11, 0.0% strat
+ * Kontrola potwierdzajaca mechanizm: env -i PATH=/usr/bin:/bin MTR_PACKET=/usr/sbin/mtr-packet
+ * tez daje pelny raport — czyli decyduje wylacznie odnalezienie procesu pomocniczego.
+ *
+ * KOREKTA FAKTU (CHAT-T-119 zapisal "mtr BRAK — NIE uzywac"): mtr JEST i dziala z konta
+ * divezone bez roota, bo /usr/sbin/mtr-packet ma cap_net_raw=ep. Dochodzi do hopa 11, czyli do
+ * samego 66.33.22.230, ktorego traceroute nigdy nie pokazywal (Railway filtruje ICMP
+ * TTL-exceeded, ale odpowiada na echo i na TCP).
  *
  * Czasy zmierzone 2026-09-09: ICMP 20 cykli = 25 s (tyle samo przy 100% strat, do blackhole
- * 26 s), TCP 20 cykli = 11 s. Dlatego 20 cykli zostaje — patrz komentarz przy MTR_CYCLES.
+ * 26 s), TCP 10 cykli = 11 s.
  */
 function mtrCommands(string $target, int $port, int $cycles): string {
-    $mtr = '/usr/sbin/mtr';   // pelna sciezka: PATH bywa rozny w cronie, nohup i shell_exec
+    $mtr = '/usr/sbin/mtr';
+    // PATH przed KAZDYM wywolaniem — patrz docblock. Pelna sciezka do mtr zostaje: nic nie kosztuje.
+    $env = 'PATH=/usr/sbin:/usr/bin:/bin ';
     return 'echo "=== mtr ICMP ' . $target . ' (strata per hop) ==="; '
-         . 'timeout 90 ' . $mtr . ' --report --report-wide --report-cycles ' . $cycles . ' -n ' . $target . '; echo; '
+         . $env . 'timeout 90 ' . $mtr . ' --report --report-wide --report-cycles ' . $cycles . ' -n ' . $target . '; echo; '
          . 'echo "=== mtr TCP ' . $target . ':' . $port . ' (ta sama sciezka na porcie, ktory realnie pada) ==="; '
          // MTR_CYCLES_TCP=10, bo powyzej tego mtr 0.92 ucina prob: przy 20 cyklach Snt wychodzilo
          // 10/12/15, przy 15 tez 10 (pomiar architekta, 5 przebiegow, 2026-09-09). Przy 10 cyklach
@@ -154,7 +170,7 @@ function mtrCommands(string $target, int $port, int $cycles): string {
          // "Address in use" (Snt=1, sciezka urwana na 5 hopie), niepowtarzalna w 6 pozniejszych
          // przebiegach. Przyczyny nie ustalono; sekcja TCP moze wiec sporadycznie wyjsc szczatkowa,
          // co widac po samym komunikacie w zrzucie. Sekcja ICMP jest tym nietknieta.
-         . 'timeout 90 ' . $mtr . ' --report --report-wide --report-cycles ' . MTR_CYCLES_TCP . ' -n -T -P ' . $port . ' ' . $target . '; echo; ';
+         . $env . 'timeout 90 ' . $mtr . ' --report --report-wide --report-cycles ' . MTR_CYCLES_TCP . ' -n -T -P ' . $port . ' ' . $target . '; echo; ';
 }
 
 /**
@@ -205,7 +221,7 @@ function captureNetworkDiag(string $incidentFile, string $reason, DateTimeZone $
         . mtrCommands($mtrIp, $mtrPort, MTR_CYCLES)
         . 'echo "=== DIAG koniec ($(date -u)) ===";';
     // Grupujemy w { ...; } i przekierowujemy CALOSC do pliku incydentu, potem calosc w tle (nohup &).
-    // flock: gdy epizod-start (~90s w tle) jeszcze pisze, a nastapi recovery, epizod-koniec CZEKA na
+    // flock: gdy epizod-start (~100s w tle) jeszcze pisze, a nastapi recovery, epizod-koniec CZEKA na
     // zwolnienie blokady zamiast przeplatac wyjscie w tym samym pliku (proces w tle => blokowanie OK).
     // CHAT-T-185: flock z limitem czekania. Rozne epizody maja ROZNE pliki (i rozne blokady),
     // wiec czekanie dotyczy tylko pary epizod-start / epizod-koniec tego samego epizodu.
