@@ -11,11 +11,15 @@ zgubiła pakiet. Wartość dowodowa jest w **zestawieniu czasów**: jeśli w tej
 nasz monitor widzi awarię, a sonda z Railway widzi `OK` (albo odwrotnie) — to jest fakt,
 którego z jednej strony nie da się zobaczyć.
 
-**Drugie zastrzeżenie, też do wpisania w pismo:** to jest serwis obliczeniowy Railway.
-Nie ma gwarancji, że wychodzi w świat tym samym łączem co publiczny proxy PostgreSQL
-(`switchback.proxy.rlwy.net`), z którym rozmawia czat. Sonda wypisuje na starcie region
-i identyfikator wdrożenia (`# srodowisko: ...`) — **te linie trzeba dołączyć do wyniku**,
-żeby było wiadomo, skąd dokładnie mierzyliśmy.
+**Drugie zastrzeżenie, też do wpisania w pismo:** to jest **serwis obliczeniowy** Railway.
+Nawet jeśli stoi w tym samym regionie co baza (na zrzucie konfiguracji: **EU West Amsterdam,
+1 replika**), **nie ma gwarancji, że wychodzi w świat tym samym łączem** co publiczny proxy
+PostgreSQL `switchback.proxy.rlwy.net`, z którym realnie rozmawia czat. Ten sam region to nie
+to samo co ten sam egres.
+
+Dlatego sonda wypisuje na starcie region i identyfikator wdrożenia (`# srodowisko: ...`)
+— **te linie trzeba zacytować w piśmie do smarthosta razem z wynikiem**, żeby druga strona
+wiedziała, skąd dokładnie mierzyliśmy i nie mogła nam tego zarzucić jako luki.
 
 **Co dokładnie robi.** Co 30 sekund wypisuje jedną linię z czterema pomiarami:
 
@@ -44,6 +48,33 @@ Przykład linii w logach:
 **Czego NIE robi:** nie odpytuje `/api/health` (bo ten endpoint sam łączy się z Railway PG,
 więc pomiar biegłby tam i z powrotem po podejrzanej trasie i nic by nie znaczył), nie zapisuje
 niczego do bazy, nie instaluje żadnych bibliotek — tylko standardowy Python 3.
+
+---
+
+## Co jest w tym katalogu i po co (nie kasować)
+
+| plik | po co |
+|---|---|
+| `probe.py` | sama sonda |
+| `railpack.json` | mówi builderowi Railway **czym to jest** (`"provider": "python"`) i **jak to uruchomić** (`python -u probe.py`) |
+| `requirements.txt` | celowo pusty — marker projektu Python i miejsce na ewentualne zależności |
+| `README.md` | ten plik |
+
+**Skąd te dwa pliki konfiguracyjne.** Pierwszy deploy (2026-09-10 09:48) padł na etapie builda:
+
+```
+Railpack 0.39.0
+Script start.sh not found
+Railpack could not determine how to build the app.
+```
+
+Builder widział tylko `README.md` i `probe.py`, a sam plik `.py` nie jest dla niego markerem
+języka. `railpack.json` ustawia providera **jawnie**, więc build nie zależy już od zgadywania.
+Komenda startowa siedzi w repo, a nie w polu **Start Command** w panelu, bo pole łatwo zgubić
+przy odtwarzaniu serwisu — plik jedzie razem z kodem.
+
+Flaga `-u` zostaje mimo że sonda robi `flush` po każdej linii: logi Railway to jedyne miejsce,
+gdzie te pomiary istnieją, więc buforowanie byłoby ryzykiem bez żadnego zysku.
 
 ---
 
@@ -78,6 +109,15 @@ niczego do bazy, nie instaluje żadnych bibliotek — tylko standardowy Python 3
    domyślnych (30 sekund, timeout 5 sekund).
 7. Kliknij **Deploy**. Po chwili w zakładce **Deployments → View Logs** powinny lecieć
    linie zaczynające się od `#00001`, `#00002`, …
+
+### ⚠️ Po PIERWSZYM udanym deployu: kliknij **Disconnect**
+
+Gałąź `main` jest podpięta z automatycznym deployem, a do repo wpada po kilka commitów dziennie.
+**Każdy push przeładowałby sondę i zrobił dziurę w pomiarze** — a mierzymy właśnie ciągłość.
+
+Gdy w logach zobaczysz pierwsze linie `#00001`, `#00002`, wejdź w serwis `reverse-probe` →
+**Settings** → sekcja **Source** → przy „Branch connected to production" kliknij **Disconnect**.
+Serwis chodzi dalej na już wdrożonym obrazie, tylko przestaje się przebudowywać po każdym pushu.
 
 **Gdzie czytać wyniki:** serwis `reverse-probe` → zakładka **Deployments** → **View Logs**.
 Linie da się zaznaczyć i skopiować. Przydatne: pole wyszukiwania w logach — wpisz `FAIL`,
