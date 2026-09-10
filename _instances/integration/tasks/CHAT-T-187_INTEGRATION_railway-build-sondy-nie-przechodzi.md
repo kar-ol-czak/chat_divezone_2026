@@ -7,79 +7,102 @@ w zgłoszeniu smarthost #167585.
 
 ---
 
-## OBJAW
-
-Karol podpiął repo, ustawił Root Directory `_diag_local/railway_reverse_probe`, kliknął Deploy.
-Railway odpowiedział: **„There was an error deploying from source."** Serwis `reverse-probe`,
-projekt `pacific-prosperity`, środowisko `production`, region EU West (Amsterdam), 1 replika.
-
-## HIPOTEZA (nie potwierdzona logiem builda, patrz KROK 1)
-
-Zawartość katalogu na `origin/main`, sprawdzona 2026-09-10:
+## PRZYCZYNA — POTWIERDZONA LOGIEM BUILDA (2026-09-10 09:48)
 
 ```
-_diag_local/railway_reverse_probe/README.md
-_diag_local/railway_reverse_probe/probe.py
+using build driver railpack-v0.39.0
+prepare railpack-v0.39.0
+
+  Railpack 0.39.0
+  Script start.sh not found
+  Railpack could not determine how to build the app.
+
+  The following languages are supported:
+  Php, Golang, Java, Rust, Ruby, Elixir, Python, Deno,
+  Dotnet, Node, Gleam, Cpp, Staticfile, Shell
+
+  The app contents that Railpack analyzed contains:
+  ./
+  |- README.md
+  |- probe.py
+
+railpack prepare exited with an error
 ```
 
-To wszystko. Nie ma `requirements.txt`, `main.py`, `pyproject.toml`, `Pipfile`, `poetry.lock`,
-`Procfile`, `nixpacks.toml` ani `Dockerfile`. Nixpacks rozpoznaje projekt Pythona po obecności
-jednego z tych markerów. Sam plik `.py` o dowolnej nazwie markerem nie jest, więc builder
-najpewniej nie potrafi zbudować planu i przerywa **przed** dojściem do Start Command.
+Dwie rzeczy są tu ustalone, nie zgadnięte:
 
-`README.md` w kroku 5 każe ustawić Start Command `python -u probe.py` i to jest poprawne,
-ale niewystarczające: Start Command dotyczy uruchomienia, nie wykrycia języka przy budowaniu.
+1. **Root Directory działa poprawnie.** Builder analizuje dokładnie nasze dwa pliki,
+   nic więcej. Ta część konfiguracji jest dobra i nie wymaga zmian.
+2. **Builder nie rozpoznaje języka.** Python jest na liście wspieranych, ale sam plik `.py`
+   o dowolnej nazwie nie jest markerem. Brakuje pliku, po którym Railpack wybiera providera.
 
-**Nie widziałem logu builda z Railway.** Powyższe to hipoteza z mocną podstawą, nie ustalenie.
+## KOREKTA WOBEC PIERWSZEJ WERSJI TEGO ZLECENIA
+
+Pierwsza wersja kazała dołożyć **`nixpacks.toml`**. To jest błąd i nie wolno tego zrobić.
+Log pokazuje, że Railway używa **Railpack 0.39.0**, nie Nixpacks. Railpack czyta
+**`railpack.json`**, a `nixpacks.toml` zignoruje. Gdyby ktoś wykonał tamtą wersję,
+dołożyłby plik, którego builder nie czyta, i build padłby dalej tak samo.
+
+Pierwsza wersja nazywała też przyczynę hipotezą. Teraz jest to ustalenie z logu.
 
 ---
 
-## KROK 1 — NAJPIERW DOWÓD, POTEM POPRAWKA
+## ZAKRES
 
-Poproś Karola o log nieudanego builda (Railway → serwis `reverse-probe` → **Deployments** →
-kliknięcie w nieudany deploy → **View Logs**, zakładka Build). Ani Ty, ani architekt nie mamy
-dostępu do Railway, więc to jedyne źródło.
+### 1. Marker projektu Python
 
-Jeżeli log potwierdzi brak wykrycia języka — rób KROK 2. Jeżeli powie coś innego — **zatrzymaj
-się i zgłoś**, nie naprawiaj hipotezy wbrew dowodowi.
+W `_diag_local/railway_reverse_probe/` dołóż **`requirements.txt`** — pusty albo z jednym
+komentarzem. Sonda celowo nie ma zależności (wyłącznie biblioteka standardowa), a plik
+istnieje po to, żeby Railpack wybrał providera Python. Napisz to w komentarzu w pliku,
+żeby nikt go później nie „posprzątał" jako zbędnego.
 
-Jeżeli Karol nie dostarczy logu w rozsądnym czasie, KROK 2 i tak jest bezpieczny (dokłada pliki,
-niczego nie psuje), ale w raporcie napisz wprost, że wdrożono bez potwierdzenia przyczyny.
+### 2. Komenda startowa w repo, nie w panelu
 
-## KROK 2 — MINIMALNY MARKER PROJEKTU
+Dołóż **`railpack.json`** z jawną komendą startową `python -u probe.py`.
+Składnię pola sprawdź w dokumentacji Railpack (`https://railpack.com`) — **nie pisz jej
+z pamięci**, to jest dokładnie ta klasa błędu, która zabrała nam poprzednie podejście.
+W raporcie zacytuj fragment dokumentacji, na którym się oparłeś.
 
-W `_diag_local/railway_reverse_probe/` dołóż:
+Powód, żeby to było w repo, a nie w polu Start Command w panelu: pole łatwo zgubić przy
+odtwarzaniu serwisu, a plik jedzie z kodem.
 
-1. **`requirements.txt`** — pusty albo z jednym komentarzem. Sonda celowo nie ma zależności
-   (tylko biblioteka standardowa), a plik istnieje wyłącznie po to, żeby builder rozpoznał
-   Pythona. Napisz to w komentarzu w pliku, żeby nikt go później nie „posprzątał".
-2. **`nixpacks.toml`** z jawną komendą startową, żeby uruchomienie nie zależało od pola
-   w panelu, które łatwo zgubić przy odtwarzaniu serwisu. Komenda: `python -u probe.py`.
-   Flaga `-u` zostaje mimo że sonda robi flush per linia — logi Railway to jedyne miejsce,
-   gdzie te dane istnieją, więc buforowanie jest tu ryzykiem bez zysku.
+Flaga `-u` zostaje mimo że sonda robi flush per linia. Logi Railway to jedyne miejsce,
+gdzie te dane istnieją, więc buforowanie jest tu ryzykiem bez zysku.
+
+### 3. Czego nie robić
 
 Nie zmieniaj `probe.py`. Nie zmieniaj nazwy pliku na `main.py` — README odwołuje się do
 `probe.py` w kilku miejscach, a przemianowanie rozjedzie dokumentację z kodem.
+Nie dokładaj `nixpacks.toml` (patrz KOREKTA). Nie dokładaj `start.sh` — provider Shell
+nie da nam gwarancji, że w obrazie będzie Python.
 
-## KROK 3 — UZUPEŁNIENIE README
+### 4. Uzupełnienie README
 
-Dopisz do `README.md`:
-
-- że katalog musi zawierać `requirements.txt` i `nixpacks.toml`, i po co one są
-- **krok „Disconnect" po pierwszym udanym deployu.** Gałąź `main` jest podpięta z automatycznym
-  deployem, a do repo wpada po kilka commitów dziennie. Każdy push przeładuje sondę i zrobi
-  dziurę w pomiarze. Po pierwszym udanym uruchomieniu Karol ma kliknąć **Disconnect** przy
-  „Branch connected to production" — serwis chodzi dalej na wdrożonym obrazie
-- zastrzeżenie, które musi trafić do pisma do smarthosta razem z wynikiem: serwis obliczeniowy
-  Railway nie musi wychodzić tym samym łączem co proxy PostgreSQL, mimo że oba są w EU West.
-  Sonda wypisuje region i ID wdrożenia — to ma być zacytowane w piśmie
-
-## KROK 4 — WERYFIKACJA, KTÓREJ NIE MOŻESZ ZROBIĆ SAM
-
-Deploy klika Karol. W raporcie podaj, czego od niego potrzebujesz, jednym akapitem:
-czy build przeszedł, czy w logach lecą linie sondy, i pierwsze trzy linie do wklejenia.
+- że katalog musi zawierać `requirements.txt` i `railpack.json`, i po co one są
+- **krok „Disconnect" po pierwszym udanym deployu.** Gałąź `main` jest podpięta
+  z automatycznym deployem, a do repo wpada po kilka commitów dziennie. Każdy push
+  przeładuje sondę i zrobi dziurę w pomiarze. Po pierwszym udanym uruchomieniu Karol ma
+  kliknąć **Disconnect** przy „Branch connected to production" — serwis chodzi dalej
+  na wdrożonym obrazie
+- zastrzeżenie do pisma do smarthosta: serwis obliczeniowy Railway nie musi wychodzić tym
+  samym łączem co proxy PostgreSQL, mimo że oba są w EU West (potwierdzone na zrzucie:
+  region serwisu to EU West Amsterdam, 1 replika). Sonda wypisuje region i ID wdrożenia
+  i to ma być zacytowane w piśmie
 
 ---
+
+## PLAN B, GDYBY DALEJ PADAŁO
+
+Jeżeli po tej zmianie build nadal nie przechodzi, przestajemy zgadywać za builder:
+dołóż **`Dockerfile`** oparty na oficjalnym obrazie `python:3-slim`, kopiujący `probe.py`
+i uruchamiający go. Railway buduje wtedy z Dockerfile i cała heurystyka Railpacka odpada.
+To rozwiązanie deterministyczne i takie jest tu preferowane, jeśli wariant lekki zawiedzie.
+**Nie rób tego od razu** — najpierw wariant z dwoma plikami, bo jest mniejszy.
+
+## TESTY
+Nie ma czego przetestować lokalnie: build wykonuje Railway. Sprawdź wyłącznie,
+że oba pliki są poprawnie sformatowane (`python3 -c "import json; json.load(open(...))"`
+na `railpack.json`) i że nic poza tymi dwoma plikami i README się nie zmieniło.
 
 ## RECENZJA KRZYŻOWA
 Pomijamy. Zmiana to dwa pliki konfiguracyjne bez logiki.
@@ -96,6 +119,6 @@ crontab, logi i zrzuty w `~/_diag/`, produkcyjna baza Railway,
 dotyczy wyłącznie repo.
 
 ## RAPORT KOŃCOWY
-Treść logu builda (jeśli dostarczony) albo jawne „wdrożono bez potwierdzenia przyczyny",
-lista dołożonych plików, fragment README z krokiem Disconnect, i jeden akapit z tym,
-co Karol ma sprawdzić po ponownym Deploy.
+Zawartość obu dołożonych plików, cytat z dokumentacji Railpack dla pola komendy startowej,
+fragment README z krokiem Disconnect, i jeden akapit z tym, co Karol ma zrobić i sprawdzić
+po ponownym Deploy.
