@@ -1,0 +1,14 @@
+# CELOWO PUSTY — nie kasować przy sprzątaniu.
+#
+# Sonda (probe.py) nie ma i nie ma mieć żadnych zależności: korzysta wyłącznie
+# z biblioteki standardowej Pythona, żeby działała na dowolnym obrazie bazowym
+# bez instalowania czegokolwiek.
+#
+# Ten plik istnieje wyłącznie jako MARKER PROJEKTU PYTHON dla buildera Railway
+# (Railpack). Build z 2026-09-10 09:48 padł komunikatem:
+#     "Railpack could not determine how to build the app"
+# bo sam plik .py o dowolnej nazwie nie jest dla Railpacka markerem języka.
+#
+# Dodatkowo w railpack.json stoi jawne "provider": "python", więc wybór providera
+# nie zależy już od wykrywania markerów — ale ten plik zostawiamy jako drugi,
+# niezależny sygnał (i jako miejsce, gdyby kiedyś jakaś zależność jednak doszła).
