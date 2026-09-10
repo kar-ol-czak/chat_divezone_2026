@@ -1,9 +1,9 @@
-═══ CHAT-T-188 · INTEGRATION · KROK 7 / STOP przed deployem ═══
+═══ CHAT-T-188 · INTEGRATION · DEPLOYED (mail do smarthosta WLACZONY) ═══
 
 # CHAT-T-188 — bramka maila do smarthosta po TREŚCI, nie po markerze końca
 
-**Stan:** gotowe, przetestowane, zacommitowane. Na produkcji nic nie zmienione.
-**Czeka na:** „deployuj" (ADR-089). md5 produkcyjne **odczytane z serwera przed deployem**, nie z pamięci.
+**Stan:** WDROŻONE 2026-09-10 10:22 CEST (autoryzacja Karola, ADR-089), commit `a61cb19`.
+**Automatyczna wysyłka do dostawcy WŁĄCZONA** (`hosting@smarthost.pl`). Dowody: sekcja 8.
 **KROK 0:** `git pull --rebase` odmówił (niezacommitowane zmiany innych sesji: `purge_litespeed.php`,
 `routes.php` — nietknięte); `git fetch` + `git rev-list --left-right --count origin/main...HEAD` = `0 0`.
 
@@ -145,4 +145,95 @@ Jeden plik `/home/divezone/_diag/railway_monitor.php`, backup `.bak_YYYYMMDD`,
 Po wdrożeniu Karol może dopisać `SMARTHOST_TICKET_MAIL=hosting@smarthost.pl` do `.env`
 i zrestartować monitor — bramka jest tym, co blokowało tę linijkę.
 
-═══ CHAT-T-188 · INTEGRATION · KROK 7 / STOP przed deployem ═══
+---
+
+## 8. WDROŻENIE — WYKONANE 2026-09-10 (KROK 8)
+
+```
+Stan przed (08:20:10 UTC, odczytany Z PRODUKCJI):
+  md5 monitora:        7290b4a0c2bdd924451f7192b7d3f0ec
+  BASELINE nohup.out:  766 linii | 139 x Fatal error | 0 x Parse error
+  .env:                109 linii, wystapien SMARTHOST: 0
+
+Backup:  railway_monitor.php.bak_20260910b   md5 7290b4a0c2bdd924451f7192b7d3f0ec (zgodny)
+Lint:    ea-php84 -l  ->  No syntax errors detected
+md5 PO:  1215c89d60cf38d734c7caac3b5e63e6  ==  md5 lokalny  ==  wartosc zweryfikowana przez architekta
+Kontrola tresci na produkcji: 3 funkcje bramki obecne w pliku
+```
+
+### Wlaczenie maila do dostawcy (`.env`)
+
+```
+backup:            .env.bak_20260910
+dopisane klucze:   SMARTHOST_TICKET_MAIL, SMARTHOST_TICKET_ID     (wartosci NIE wypisywane)
+linie:             109 -> 111  (dokladnie +2)
+diff backup/nowy:  wylacznie te dwa klucze
+uprawnienia:       644 divezone:divezone — bez zmian
+```
+
+Plik odtworzony deterministycznie z backupu (kopia + dwie linie), nie edytowany blokowo.
+**Uwaga do wlasnej roboty:** pierwsze `printf` zaczynalo sie od `\n` i dalo +3 linie zamiast +2
+(pusta linia separatora). Poprawione od razu — stan koncowy to dokladnie +2, zgodnie z kryterium.
+
+### Cztery dowody restartu + piaty wymagany
+
+```
+(a) guard.log:  [guard] 2026-09-10 10:22:01 proces martwy (log 60s) -> restart pid=1156137
+(b) nowy START 2026-09-10 10:22:01 WAW; naglowkow "# metryki:" 2 -> 3
+(c) log rosnie: 6618 linii (10:22:08) -> 6625 (10:22:43), przyrost 7
+(d) monitor_nohup.out: 766 / 139 Fatal / 0 Parse  ==  baseline  =>  zero nowych bledow
+(e) linia startowa monitora:
+    # CHAT-T-185: mtr 20 cykli do 66.33.22.230:14368 | baseline mtr @ 18:30 UTC
+      | mail do smarthosta: wlaczony (hosting@smarthost.pl), max 3/dobe
+```
+
+Punkt (e) dowodzi, ze monitor odczytal `.env` przy starcie. Zaden testowy mail do dostawcy
+**nie zostal wyslany** — brak plikow `smarthost_mail_*.count` / `smarthost_sent_*.list` to potwierdza.
+
+## 9. ⚠️ KOREKTA MOJEGO WCZESNIEJSZEGO ZDANIA — i dowod bramki Z PRODUKCJI
+
+W raportach T-186 i T-188 pisalem, ze od wdrozenia T-185 nie bylo zadnego epizodu.
+**To nieprawda.** W logu z dzisiaj jest epizod:
+
+```
+### ALERT 22:05:07 UTC / 00:04:57 WAW | pg_select1 FAIL x3
+### RECOVERY 22:10:33 UTC / 00:10:32 WAW
+### OKNO NIEDOSTEPNOSCI: start 00:04:27, koniec 00:10:32, czas trwania 6m 5s
+### MAIL-SMARTHOST pominiety | okno 22:04-22:10 UTC | brak SMARTHOST_TICKET_MAIL (funkcja wylaczona)
+```
+
+Epizod trwal **6m 5s**, Railway **100% strat**, wszystkie trzy kontrole **0%**. Wypadl w nocy
+2026-09-10, czyli PRZED poranna poprawka PATH z CHAT-T-186 — dlatego zrzut
+`incident_20260910_000427.txt` ma komplet pingow, ale obie sekcje mtr zawieraja sam
+`Failure to start mtr-packet`.
+
+**To jest idealny test bramki na realnych danych produkcyjnych.** Puscilem na tym pliku
+**kod juz wdrozony** (funkcje wyciete z `/home/divezone/_diag/railway_monitor.php`):
+
+```
+blok [epizod-start pg_select1] ts=2026-09-09 22:05:07
+   Railway=100.0% Leaseweb=0.0% -> BRAMKA: BLOKUJE (sekcji mtr z wierszem HOST: 0 z 2)
+blok [epizod-koniec]           ts=2026-09-09 22:10:33
+   Railway=0.0%   Leaseweb=0.0% -> BRAMKA: BLOKUJE (sekcji mtr z wierszem HOST: 0 z 2)
+```
+
+Czyli: **gdyby maila wlaczyc bez tej bramki, dostawca dostalby dzis wiadomosc z pustym mtr.**
+Bramka to zatrzymala na realnym, nie spreparowanym materiale.
+
+## 10. CO SIE WYDARZY SAMO
+
+- **Pierwszy prawdziwy mail do smarthosta** pojdzie przy najblizszym epizodzie, po przejsciu
+  bramki (limit 3/dobe, kopia do Karola, temat `[DIVEZONE #167585] ...`).
+- Gdy zrzut bramki nie przejdzie, Karol dostanie **tego samego dnia** ostrzezenie
+  `[DIVECHAT MONITOR] Zrzut nie przeszedl bramki` z werdyktem.
+- **Dobowy mtr odniesienia o 18:30 UTC** — to wciaz otwarty dowod koncowy z CHAT-T-186.
+
+### Rollback
+
+```
+cp ~/_diag/railway_monitor.php.bak_20260910b ~/_diag/railway_monitor.php
+cp ~/public_html/chat.divezone.pl/.env.bak_20260910 ~/public_html/chat.divezone.pl/.env   # wylacza maila
+pkill -9 -f "railway_monitor[.]php"
+```
+
+═══ CHAT-T-188 · INTEGRATION · DEPLOYED (mail do smarthosta WLACZONY) ═══
