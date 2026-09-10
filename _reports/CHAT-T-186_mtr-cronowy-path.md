@@ -146,7 +146,7 @@ uruchomienia w cronowym środowisku — mocny, ale nie tożsamy ze ścieżką pr
 Nie wiem też, czy `mtr` w zrzucie zachowa się tak samo **podczas realnego epizodu** — kod
 nie chodził jeszcze na żadnej prawdziwej awarii, bo od wdrożenia T-185 epizodu nie było.
 
-## 7. WDROŻENIE — CZEKA NA AUTORYZACJĘ (KROK 6, ADR-089)
+## 7. PLAN WDROŻENIA (spisany przed autoryzacją — wykonany, wynik w sekcji 8)
 
 Jeden plik `/home/divezone/_diag/railway_monitor.php`, backup `.bak_20260910`,
 md5 przed `0c778965584c0220b070d968414ce613`, `ea-php84 -l`, md5 local==prod,
