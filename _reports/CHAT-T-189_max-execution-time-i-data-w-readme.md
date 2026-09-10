@@ -1,9 +1,9 @@
-═══ CHAT-T-189 · INTEGRATION · KROK 7 / STOP przed deployem ═══
+═══ CHAT-T-189 · INTEGRATION · DEPLOYED (zadanie OTWARTE do dowodu po dobie) ═══
 
 # CHAT-T-189 — monitor padał 2-3× dziennie na `max_execution_time` + zła data w README sondy
 
-**Stan:** gotowe, zweryfikowane pomiarem na produkcji, zacommitowane. Na serwer nic nie poszło.
-**Czeka na:** „deployuj" (ADR-089). md5 przed wdrożeniem **odczytam z produkcji** w chwili deployu.
+**Stan:** WDROŻONE 2026-09-10 15:33 CEST (autoryzacja Karola, ADR-089), commit `ff75071`.
+**ZADANIE OTWARTE** do sprawdzenia po dobie — sekcja 9.
 **KROK 0:** `git pull --rebase` odmówił (cudze niezacommitowane zmiany: `purge_litespeed.php`,
 `routes.php` — nietknięte); `git fetch` + `git rev-list --left-right --count origin/main...HEAD` = `0 0`.
 
@@ -170,4 +170,66 @@ nowego procesu jako dowód zdjętego limitu**. **README nie idzie na serwer.**
 w `guard.log` **poza restartem deployowym**. Wpisy `ZAMARCIE` mogą się pojawić przy epizodzie
 i nie są regresją.
 
-═══ CHAT-T-189 · INTEGRATION · KROK 7 / STOP przed deployem ═══
+---
+
+## 8. WDROŻENIE — WYKONANE 2026-09-10 15:33 CEST
+
+```
+Stan przed (13:32:31 UTC, odczyt Z PRODUKCJI):
+  md5 monitora:  1215c89d60cf38d734c7caac3b5e63e6
+  nohup.out:     766 linii | 139 Fatal | 139 Maximum execution time | 0 Parse
+  stary proces:  pid 1156137, /proc/exe -> php-cgi, uptime 5h 10m
+
+Backup:  railway_monitor.php.bak_20260910c   md5 1215c89d... (zgodny)
+Lint:    ea-php84 -l  ->  No syntax errors detected
+md5 PO:  a2f7347b046cc1710dabd9b6903341cb  ==  md5 lokalny  ==  commit ff75071
+Kontrola tresci: set_time_limit(0) obecny w pliku produkcyjnym
+README na serwer NIE poszedl (zmiana wylacznie w repo)
+```
+
+**Cztery dowody restartu + dowod zdjetego limitu:**
+
+```
+(a) guard.log:  [guard] 2026-09-10 15:33:01 proces martwy (log 11s) -> restart pid=1363578
+(b) nowy START 2026-09-10 15:33:01 WAW; naglowkow "# metryki:" 3 -> 4
+(c) log rosnie: 9949 linii (15:33:05) -> 9955 (15:33:40), przyrost 6
+(d) monitor_nohup.out: 766 / 139 Fatal / 0 Parse  ==  baseline  =>  zero nowych bledow
+
+(e) DOWOD Z ZYWEGO PROCESU:
+    # CHAT-T-189: SAPI cgi-fcgi | max_execution_time 30 -> 0 | po bootstrapie: 0 | limit zdjety
+```
+
+Punkt (e) jest pomiarem, nie deklaracja: wartosc `po bootstrapie` czytana jest PONOWNIE,
+juz po `require` i `Config::load()`. Sciezka awaryjna (mail o niezdjetym limicie) NIE odpalila.
+
+**Nowy proces:** `pid 1363578`, `/proc/1363578/exe -> /opt/cpanel/ea-php84/root/usr/bin/php-cgi`
+— **nadal CGI i tak ma byc**, bo guarda nie ruszamy; poprawka leczy skutek, nie wybor binarki.
+
+**Baza do obserwacji dlugiego uptime'u** (dotad proces odswiezal sie sam, bo padal 2-3x dziennie,
+wiec stabilnosc przy tygodniach pracy jest zalozeniem, nie zmierzonym faktem):
+
+```
+tuz po starcie:  RSS 34 644 kB | 5 deskryptorow
+```
+
+## 9. ZADANIE OTWARTE — dowod koncowy po dobie
+
+Od **2026-09-10 15:33 WAW** przez 24 h:
+
+- `monitor_nohup.out`: **zero nowych** wpisow `Maximum execution time` (baza **139**),
+- `guard.log`: **zero** `proces martwy` **poza restartem deployowym z 15:33**,
+- wpisy `ZAMARCIE` moga sie pojawic przy epizodzie i **nie sa regresja**.
+
+Komenda do sprawdzenia:
+
+```
+ssh -p 5739 divezone@divezonededyk.smarthost.pl \
+  'grep -c "Maximum execution time" ~/_diag/monitor_nohup.out; grep "2026-09-11.*proces martwy" ~/_diag/guard.log'
+```
+
+**Uwaga do liczenia:** dzisiejsze wpisy `proces martwy` sprzed 15:33 to w wiekszosci **moje
+wlasne restarty** przy wdrozeniach T-186, T-188 i T-189 — nie mylic ich z fatalem.
+
+Warto tez porownac wtedy RSS i liczbe deskryptorow z liczbami z sekcji 8.
+
+═══ CHAT-T-189 · INTEGRATION · DEPLOYED (zadanie OTWARTE do dowodu po dobie) ═══
