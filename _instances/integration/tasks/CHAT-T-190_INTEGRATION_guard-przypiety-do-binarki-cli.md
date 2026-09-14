@@ -152,4 +152,60 @@ cPanel podmienił binarkę PHP. Działający wtedy proces monitora trzymał star
 usunięty i-node (`readlink /proc/1449046/exe` → `php-cgi (deleted)`).
 Po każdej aktualizacji PHP monitor warto przeładować.
 
+## 9. KOREKTA ARCHITEKTA — po raporcie KROK 1-5 (2026-09-14)
+
+CC miał rację w uwadze 1. **Umieściłem asercję w złym miejscu.**
+
+W §4 kazałem postawić `PHP_SAPI_SEEN=$("$PHP" -r 'echo PHP_SAPI;')` na górze
+skryptu, obok wyboru binarki. Guard chodzi co minutę i w zdecydowanej większości
+tików kończy się jako „zdrowy" (`exit 0` w linii 42 oryginału). Przy mojej wersji
+każdy taki tik startuje proces PHP bez powodu: pomiar CC 44 ms na tik,
+około 1440 startów PHP na dobę. Wartość `PHP_SAPI_SEEN` jest potrzebna wyłącznie
+w linii logującej restart, czyli na ścieżce niezdrowej.
+
+### Zmiana do wprowadzenia PRZED deployem
+
+Wybór binarki (`PHP=/usr/local/bin/ea-php84` + pętla fallbacku) **zostaje na górze**
+— to same testy `[ -x ]`, koszt zerowy.
+
+Przenieś JEDNĄ linię:
+
+```bash
+PHP_SAPI_SEEN=$("$PHP" -r 'echo PHP_SAPI;' 2>/dev/null || echo "nieznany")
+```
+
+z bloku pod `DIAG=` do ścieżki restartu — bezpośrednio po `rm -f "$PIDFILE"`,
+przed komentarzem `# wskrzeszenie`. Linia logująca na końcu skryptu zostaje
+bez zmian; `set -u` jej nie wywróci, bo na tej ścieżce zmienna jest zawsze
+ustawiona kilka linii wyżej.
+
+W komentarzu przy przeniesionej linii dopisz, dlaczego stoi właśnie tam:
+
+```bash
+# CHAT-T-190: SAPI czytamy DOPIERO tu, na sciezce restartu. Na gorze skryptu
+# kosztowaloby ~1440 uruchomien PHP na dobe na sciezce zdrowej, ktora konczy
+# sie exit 0 kilka linii wyzej.
+```
+
+### Reszta uwag CC
+
+Uwaga 2 (guard.log nie jest nigdzie parsowany, więc sufiks `sapi=… php=…`
+nie psuje licznika) — sprawdzone przed zmianą formatu, dobrze.
+
+Uwaga 3 (restart zgasi passę 3 dni 18:13 bez `proces martwy` i bez `ZAMARCIE`,
+RSS 26 012 kB wobec 34 644 kB po starcie) — liczba odnotowana na karcie Chat - 88
+jako dowód trwałości CHAT-T-189. Po deployu licznik rusza od zera, to akceptowalne.
+
+Recenzji `/codex` w tym zleceniu nie było i to moje przeoczenie wobec reguły
+projektu. Nie dopinam jej teraz: diff ma dziesięć linii w powłoce, a CC wykonał
+próbę kontrolną dodatnią (stara logika pod tym samym cronowym PATH nadal wybiera
+CGI), co daje mocniejszy dowód niż opinia drugiego modelu o dziesięciu liniach.
+
+### Kroki po korekcie
+
+1. Wprowadź przeniesienie, `bash -n`.
+2. Osobny commit, ta sama konwencja, tylko `_docs/scripts/railway_monitor_guard.sh`.
+3. Zaktualizuj md5 lokalne w raporcie.
+4. **STOP.** Deploy dalej czeka na „deployuj". Reszta §5 i całe §6 bez zmian.
+
 ═══ CHAT-T-190 · INTEGRATION · przypięcie guarda do binarki CLI ═══
