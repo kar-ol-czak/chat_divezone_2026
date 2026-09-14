@@ -3,15 +3,18 @@
 declare(strict_types=1);
 
 /**
- * Test odpornosci na zrywanie Railway (CHAT-T-107, P36c/P37c).
+ * Test odpornosci na zrywanie Railway (CHAT-T-107, P36c/P37c; CHAT-T-191).
  *
  * NIE zalezy od zywego Railway. Pokrycie:
  *  - FileCache: set/getFresh(TTL)/getAny/forget, null-wartosc vs brak.
- *  - classifyError: HARD (could not connect/refused/timeout) vs SOFT (server
- *    closed/57P01) vs null (skladnia) — sterownik 1-vs-3 prob.
- *  - executeWithRetry (reflection, liczenie wywolan): SOFT → 3 proby; HARD → 1
- *    proba; skladnia → 1 proba + rethrow PDOException; SOFT-then-ok → wasDelayed.
- *  - DbUnavailableException::HARD/SOFT flaga + breaker (fail-fast 2. zapytania).
+ *  - classifyError: TRZY kategorie WEWNETRZNE (CHAT-T-191) — hard_final (refused/
+ *    DNS/08004), hard_retry (timeout/no route/unreachable/08001), soft (server
+ *    closed/57P01) — oraz null (skladnia). One steruja liczba prob i backoffem.
+ *  - executeWithRetry (reflection, liczenie wywolan + czas): SOFT → 3 proby,
+ *    backoff 100/300; HARD_RETRY → 3 proby, backoff 1000/3000; HARD_FINAL → 1
+ *    proba; skladnia → 1 proba + rethrow PDOException; *-then-ok → wasDelayed.
+ *  - Budzet: 10 operacji przy niedostepnej bazie kosztuje JEDEN budzet, nie 10.
+ *  - DbUnavailableException::HARD/SOFT flaga (publiczna, BEZ zmian) + breaker.
  *  - SettingsStore/ChipTreeService degraduja (cache→default/[]) bez wyjatku.
  *  - ChatController: komunikat per flaga (HARD ma kontakt, SOFT "za moment").
  *
@@ -26,6 +29,16 @@ use DiveChat\Controller\ChatController;
 use DiveChat\Database\PostgresConnection;
 use DiveChat\Exception\DbUnavailableException;
 use DiveChat\Support\FileCache;
+
+/** PDOException ze sterowalnym SQLSTATE — pole code jest protected w Exception. */
+final class SqlstatePdoException extends PDOException
+{
+    public function __construct(string $msg, string $sqlstate)
+    {
+        parent::__construct($msg);
+        $this->code = $sqlstate;
+    }
+}
 
 $passed = 0; $failed = 0;
 function assertT(string $n, bool $c, string $d = ''): void {
@@ -56,15 +69,42 @@ $cache->forget('k1');
 [$ff] = $cache->getAny('k1');
 assertT('FileCache forget usuwa', $ff === false);
 
-// === classifyError: HARD vs SOFT vs null ===
+// === classifyError: hard_final vs hard_retry vs soft vs null (CHAT-T-191) ===
+$CAT = (new ReflectionClass(PostgresConnection::class))->getConstants();
+assertT(
+    'kategorie wewnetrzne: soft / hard_retry / hard_final',
+    ($CAT['CAT_SOFT'] ?? null) === 'soft'
+        && ($CAT['CAT_HARD_RETRY'] ?? null) === 'hard_retry'
+        && ($CAT['CAT_HARD_FINAL'] ?? null) === 'hard_final'
+);
+[$RETRY, $FINAL, $SOFT] = [$CAT['CAT_HARD_RETRY'], $CAT['CAT_HARD_FINAL'], $CAT['CAT_SOFT']];
+
 $ce = new ReflectionMethod(PostgresConnection::class, 'classifyError');
 $ce->setAccessible(true);
 $cls = fn(string $msg, int $code = 0): ?string => $ce->invoke(null, new PDOException($msg, $code));
-assertT('classify HARD: could not connect', $cls('SQLSTATE[08006] could not connect to server') === DbUnavailableException::HARD);
-assertT('classify HARD: connection refused', $cls('connection to server at "127.0.0.1" failed: Connection refused') === DbUnavailableException::HARD);
-assertT('classify HARD: timed out', $cls('could not connect ... Connection timed out') === DbUnavailableException::HARD);
-assertT('classify SOFT: server closed', $cls('server closed the connection unexpectedly') === DbUnavailableException::SOFT);
-assertT('classify SOFT: no connection to the server', $cls('no connection to the server') === DbUnavailableException::SOFT);
+// HARD_RETRY — trasa chwilowo nie przepuszcza, host zyje.
+assertT('classify hard_retry: could not connect', $cls('SQLSTATE[08006] could not connect to server') === $RETRY);
+assertT('classify hard_retry: timed out', $cls('could not connect ... Connection timed out') === $RETRY);
+assertT('classify hard_retry: timeout expired', $cls('connection to server at "x" failed: timeout expired') === $RETRY);
+assertT('classify hard_retry: no route to host', $cls('could not connect to server: No route to host') === $RETRY);
+assertT('classify hard_retry: network is unreachable', $cls('could not connect to server: Network is unreachable') === $RETRY);
+// HARD_FINAL — stan trwaly.
+assertT('classify hard_final: connection refused', $cls('connection to server at "127.0.0.1" failed: Connection refused') === $FINAL);
+// Pulapka kolejnosci: libpq 13 zagniezdza przyczyne w komunikacie ogolnym. Gdyby
+// needle "could not connect" byl sprawdzany PRZED "connection refused", kazdy
+// zamkniety port kosztowalby klienta pelne 10 s budzetu.
+assertT('classify hard_final: refused zagniezdzony w "could not connect"', $cls('could not connect to server: Connection refused') === $FINAL);
+assertT('classify hard_final: DNS nie rozwiazuje', $cls('could not translate host name "x" to address: Name or service not known') === $FINAL);
+// SOFT — polaczenie zylo i padlo.
+assertT('classify soft: server closed', $cls('server closed the connection unexpectedly') === $SOFT);
+assertT('classify soft: no connection to the server', $cls('no connection to the server') === $SOFT);
+// Dopelnienie po SQLSTATE (gdy komunikatu nie rozpoznano).
+$clsCode = fn(string $sqlstate): ?string
+    => $ce->invoke(null, new SqlstatePdoException('komunikat, ktorego nie ma na zadnej liscie', $sqlstate));
+assertT('classify 57P01 → soft (admin_shutdown)', $clsCode('57P01') === $SOFT);
+assertT('classify 08004 → hard_final (serwer odrzucil)', $clsCode('08004') === $FINAL);
+assertT('classify 08001 → hard_retry (nierozpoznany connect)', $clsCode('08001') === $RETRY);
+assertT('classify 08006 → soft (domyslnie zerwanie)', $clsCode('08006') === $SOFT);
 assertT('classify null: syntax error (nie retry)', $cls('SQLSTATE[42601]: syntax error at or near') === null);
 assertT('classify null: unique violation', $cls('duplicate key value violates unique constraint') === null);
 
@@ -84,12 +124,38 @@ catch (DbUnavailableException $e) { $kind = $e->kind(); }
 assertT('SOFT (zerwanie) → 3 proby', $calls === 3, "calls={$calls}");
 assertT('SOFT → DbUnavailableException::SOFT', $kind === DbUnavailableException::SOFT);
 
-// HARD → 1 proba, kind HARD
+// HARD_FINAL → 1 proba, kind HARD (publicznie bez zmian)
 $conn = $freshConn(); $calls = 0; $kind = '-';
+$t0 = microtime(true);
 try { $ewr->invoke($conn, function () use (&$calls) { $calls++; throw new PDOException('could not connect to server: Connection refused'); }); }
 catch (DbUnavailableException $e) { $kind = $e->kind(); }
-assertT('HARD (nieosiagalne) → TYLKO 1 proba (nie 3)', $calls === 1, "calls={$calls}");
-assertT('HARD → DbUnavailableException::HARD', $kind === DbUnavailableException::HARD);
+$dFinal = microtime(true) - $t0;
+assertT('HARD_FINAL (refused) → TYLKO 1 proba (nie 3)', $calls === 1, "calls={$calls}");
+assertT('HARD_FINAL → DbUnavailableException::HARD', $kind === DbUnavailableException::HARD);
+assertT('HARD_FINAL → bez backoffu (<50 ms)', $dFinal < 0.05, sprintf('%.3fs', $dFinal));
+
+// HARD_RETRY → 3 proby, backoff 1000+3000 ms, kind HARD (CHAT-T-191)
+$conn = $freshConn(); $calls = 0; $kind = '-';
+$t0 = microtime(true);
+try { $ewr->invoke($conn, function () use (&$calls) { $calls++; throw new PDOException('connection to server at "x" failed: timeout expired'); }); }
+catch (DbUnavailableException $e) { $kind = $e->kind(); }
+$dRetry = microtime(true) - $t0;
+assertT('HARD_RETRY (timeout) → 3 proby (nie 1)', $calls === 3, "calls={$calls}");
+assertT('HARD_RETRY → DbUnavailableException::HARD (flaga publiczna bez zmian)', $kind === DbUnavailableException::HARD);
+assertT('HARD_RETRY → backoff 1000+3000 ms', $dRetry >= 3.9 && $dRetry < 4.5, sprintf('%.3fs', $dRetry));
+
+// HARD_RETRY raz potem sukces → wasDelayed true (mierzalnosc §4.5)
+$conn = $freshConn(); $calls = 0;
+$t0 = microtime(true);
+$res = $ewr->invoke($conn, function () use (&$calls) {
+    $calls++;
+    if ($calls === 1) { throw new PDOException('connection to server at "x" failed: timeout expired'); }
+    return 'OK';
+});
+$dRecover = microtime(true) - $t0;
+assertT('HARD_RETRY-then-ok → zwraca wynik po ponowieniu', $res === 'OK' && $calls === 2);
+assertT('HARD_RETRY-then-ok → wasDelayed() === true', $conn->wasDelayed() === true);
+assertT('HARD_RETRY-then-ok → jeden backoff 1000 ms', $dRecover >= 0.99 && $dRecover < 1.3, sprintf('%.3fs', $dRecover));
 
 // Blad skladni → 1 proba, rethrow PDOException (NIE DbUnavailable)
 $conn = $freshConn(); $calls = 0; $caught = '-';
@@ -108,6 +174,21 @@ $res = $ewr->invoke($conn, function () use (&$calls) {
 });
 assertT('SOFT-then-ok → zwraca wynik po reconnect', $res === 'OK' && $calls === 2);
 assertT('SOFT-then-ok → wasDelayed() === true (P37c)', $conn->wasDelayed() === true);
+
+// === Budzet: 10 operacji DB w jednym zadaniu = JEDEN budzet (CHAT-T-191 §4.4) ===
+// Jedno zadanie czatu robi kilkanascie zapytan. Bez bezpiecznika $this->unavailable
+// budzet HARD_RETRY mnozylby sie przez ich liczbe (10 × 10 s na produkcji).
+$conn = $freshConn(); $calls = 0; $kinds = [];
+$t0 = microtime(true);
+for ($i = 0; $i < 10; $i++) {
+    try {
+        $ewr->invoke($conn, function () use (&$calls) { $calls++; throw new PDOException('connection to server at "x" failed: timeout expired'); });
+    } catch (DbUnavailableException $e) { $kinds[] = $e->kind(); }
+}
+$dBudget = microtime(true) - $t0;
+assertT('budzet: 10 operacji → tylko 3 proby laczne (breaker)', $calls === 3, "calls={$calls}");
+assertT('budzet: 10 operacji → jeden backoff, nie dziesiec', $dBudget < 4.5, sprintf('%.3fs', $dBudget));
+assertT('budzet: kazda z 10 operacji zwraca flage HARD', count($kinds) === 10 && array_unique($kinds) === [DbUnavailableException::HARD]);
 
 // === Symulacja niedostepnosci realnym query (zly host, refused = HARD szybko) ===
 PostgresConnection::reset();
