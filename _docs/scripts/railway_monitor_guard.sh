@@ -9,7 +9,16 @@
 #   * * * * * /home/divezone/_diag/railway_monitor_guard.sh >> /home/divezone/_diag/guard.log 2>&1
 set -u
 DIAG=/home/divezone/_diag
-PHP=$(command -v ea-php84 || command -v php)
+# CHAT-T-190: binarka przypieta na sztywno. NIE wracac do `command -v ea-php84`:
+# pod cronem PATH rozstrzyga na /usr/bin/ea-php84 = php-cgi (SAPI cgi-fcgi,
+# max_execution_time 30, nie zna nawet -r). Patrz _docs/44, sekcja PULAPKI.
+PHP=/usr/local/bin/ea-php84
+if [ ! -x "$PHP" ]; then
+    for cand in /opt/cpanel/ea-php84/root/usr/bin/php /usr/local/bin/php /usr/bin/php; do
+        if [ -x "$cand" ]; then PHP="$cand"; break; fi
+    done
+fi
+PHP_SAPI_SEEN=$("$PHP" -r 'echo PHP_SAPI;' 2>/dev/null || echo "nieznany")
 SCRIPT="$DIAG/railway_monitor.php"
 PIDFILE="$DIAG/railway_monitor.pid"
 OUT="$DIAG/monitor_nohup.out"
@@ -56,4 +65,4 @@ rm -f "$PIDFILE"
 # wskrzeszenie. nohup w kontekscie cron daje $!=pid php (nohup exec'uje komende), pidfile spojny.
 nohup "$PHP" "$SCRIPT" >> "$OUT" 2>&1 &
 echo $! > "$PIDFILE"
-echo "[guard] $(date '+%Y-%m-%d %H:%M:%S') $reason pid=$(cat "$PIDFILE")"
+echo "[guard] $(date '+%Y-%m-%d %H:%M:%S') $reason pid=$(cat "$PIDFILE") sapi=$PHP_SAPI_SEEN php=$PHP"
