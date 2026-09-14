@@ -18,7 +18,6 @@ if [ ! -x "$PHP" ]; then
         if [ -x "$cand" ]; then PHP="$cand"; break; fi
     done
 fi
-PHP_SAPI_SEEN=$("$PHP" -r 'echo PHP_SAPI;' 2>/dev/null || echo "nieznany")
 SCRIPT="$DIAG/railway_monitor.php"
 PIDFILE="$DIAG/railway_monitor.pid"
 OUT="$DIAG/monitor_nohup.out"
@@ -61,6 +60,11 @@ else
     reason="proces martwy (log ${age}s) -> restart"
 fi
 rm -f "$PIDFILE"
+
+# CHAT-T-190: SAPI czytamy DOPIERO tu, na sciezce restartu. Na gorze skryptu
+# kosztowaloby ~1440 uruchomien PHP na dobe na sciezce zdrowej, ktora konczy
+# sie exit 0 kilka linii wyzej.
+PHP_SAPI_SEEN=$("$PHP" -r 'echo PHP_SAPI;' 2>/dev/null || echo "nieznany")
 
 # wskrzeszenie. nohup w kontekscie cron daje $!=pid php (nohup exec'uje komende), pidfile spojny.
 nohup "$PHP" "$SCRIPT" >> "$OUT" 2>&1 &
