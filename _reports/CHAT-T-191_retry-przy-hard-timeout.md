@@ -1,21 +1,25 @@
-═══ CHAT-T-191 · BACKEND · KROK 5 (zacommitowane, STOP przed deployem) ═══
+═══ CHAT-T-191 · BACKEND · KOREKTA §10, KROK 6 (zacommitowane, STOP przed deployem) ═══
 
 # CHAT-T-191 — retry przy nieosiągalnej trasie. Raport z implementacji i dowodów
 
-Data: 2026-09-14. Instancja: BACKEND. Świat wdrożeniowy: **chat.divezone.pl** (ŚWIAT 1).
+Iteracja 1: 2026-09-14 (commit `8fc73b6`). **Korekta wg §10 zlecenia: 2026-09-15.**
+Instancja: BACKEND. Świat wdrożeniowy: **chat.divezone.pl** (ŚWIAT 1).
 Do `newtmp2` nie idzie nic.
 
 ---
 
-## 0. Streszczenie w trzech zdaniach
+## 0. Streszczenie
 
 Rozdzieliłem klasyfikację błędów połączenia na trzy kategorie wewnętrzne (SOFT,
 HARD_RETRY, HARD_FINAL), flaga publiczna SOFT/HARD bez zmian, wszystkie ścieżki
-zmierzone. **Przy okazji obaliłem premisę §4.3 zlecenia**: `connect_timeout=2`
-w DSN był martwy od CHAT-T-107 — pdo_pgsql dokleja własny `connect_timeout` na
-końcu conninfo i to on wygrywa, więc bez dodatkowej poprawki budżet retry
-wyniósłby nie 10 s, tylko **94 s**. Naprawa mieści się w tym samym pliku
-(`PDO::ATTR_TIMEOUT => 2`), po niej zmierzony budżet na produkcji to **10 006 ms**.
+zmierzone. **Obaliłem premisę §4.3 zlecenia**: `connect_timeout=2` w DSN był
+martwy od CHAT-T-107, naprawa przez `PDO::ATTR_TIMEOUT` (architekt potwierdził
+własnym pomiarem w §10.1). **Korekta §10:** ustalenie nr 1 recenzji krzyżowej było
+blokadą wdrożenia — breaker nie obejmował operacji, które udawały się po
+ponowieniu. Wprowadziłem skumulowany budżet ponowień **na żądanie**
+(`RETRY_BUDGET_MS = 10000`, licznik `$retrySpentMs`). Scenariusz z §10.4
+(15 operacji, każda odzyskana w 2. próbie) na produkcji: **10 002 ms** wobec
+**15 064 ms** na wersji sprzed korekty, próba kontrolna dodatnia wykonana.
 
 ---
 
@@ -23,9 +27,11 @@ wyniósłby nie 10 s, tylko **94 s**. Naprawa mieści się w tym samym pliku
 
 | plik | charakter |
 |---|---|
-| `standalone/src/Database/PostgresConnection.php` | implementacja §4 zlecenia + naprawa martwego `connect_timeout` |
-| `standalone/tests/Database/DbResilienceTest.php` | test kodował STARY kontrakt (3 asercje czerwone po zmianie); zaktualizowany i rozszerzony |
-| `_docs/reviews/CODEX_REVIEW_20260914_CHAT-T-191_retry-hard-timeout.md` | recenzja krzyżowa |
+| `standalone/src/Database/PostgresConnection.php` | implementacja §4 + naprawa martwego `connect_timeout` + **budżet ponowień na żądanie (§10.3)** |
+| `standalone/tests/Database/DbResilienceTest.php` | test kodował STARY kontrakt (3 asercje czerwone po zmianie); zaktualizowany, rozszerzony, **+ 4 asercje budżetu na żądanie** |
+| `_docs/44_slownik_pol_i_metryk.md` | **dwie nowe pułapki z dowodem (§10.5, KROK 3)** |
+| `_docs/reviews/CODEX_REVIEW_20260914_CHAT-T-191_retry-hard-timeout.md` | recenzja krzyżowa, iteracja 1 |
+| `_docs/reviews/CODEX_REVIEW_20260915_CHAT-T-191_budzet-retry-na-zadanie.md` | **recenzja krzyżowa, iteracja 2 (budżet)** |
 | `_reports/CHAT-T-191_retry-przy-hard-timeout.md` | ten raport |
 
 Nie tknięte, zgodnie z §7 zlecenia: `ChatController.php`, `ConversationStore.php`,
@@ -206,6 +212,85 @@ której ten test nie pokrywał, i ja ją odtworzyłem pomiarem: operacja, która
 UDA SIĘ po ponowieniu, breakera nie zatrzaskuje, więc kolejne dostają świeży
 budżet. Szczegóły i liczby: §7 ustalenie 1. Odpowiedź na pytanie z §5.4 zlecenia
 („czy pętla ma ścieżkę wydającą budżet wielokrotnie") brzmi zatem: **TAK, ma**.
+**Zamknięte w korekcie — patrz §5A.**
+
+---
+
+## 5A. KOREKTA §10 — skumulowany budżet ponowień NA ŻĄDANIE
+
+To była blokada wdrożenia z §10.2. Poniżej co zrobiłem i czym to dowodzę.
+
+### 5A.1 Implementacja (§10.3)
+
+- `RETRY_BUDGET_MS = 10000` — stała prywatna, równa kosztowi jednej pełnej
+  ścieżki HARD_RETRY, więc najgorszy przypadek żądania = najgorszy przypadek
+  pojedynczej operacji.
+- `private int $retrySpentMs = 0` — pole instancji. **Nie zeruje się po udanej
+  operacji, i to jest cała istota poprawki.**
+- Naliczanie w dwóch miejscach: (1) czas trwania **każdej nieudanej próby**,
+  doliczany zaraz po klasyfikacji błędu, **przed** rozgałęzieniem na HARD_FINAL;
+  (2) **każdy backoff**, doliczany zaraz po `usleep`. Obie ścieżki działają tak
+  samo w operacjach, które ostatecznie się powiodły.
+- Po przekroczeniu budżetu: `break` po pierwszej nieudanej próbie, czyli jedna
+  próba i porażka — dokładnie jak przed CHAT-T-191. Bez wyjątków.
+- Singletona nie resetuję. PHP burzy statyki na koniec żądania, więc pole
+  instancji jest z natury per żądanie; `reset()` zostaje wyłącznie dla testów.
+- Do obu linii `error_log` doszło `budzet=<wydano>/<limit> ms`, a do linii
+  porażki dodatkowo znacznik `(budzet wyczerpany)` — bez tego nie da się
+  po miesiącu odróżnić „wyczerpane 3 próby" od „wyczerpany budżet żądania".
+
+### 5A.2 Sufit liczony uczciwie: 10 s to nie jest cała prawda
+
+Budżet sprawdzam **po** obciążeniu za nieudaną próbę, ale **przed** backoffem.
+Operacja, która wejdzie tuż pod limitem, zdąży więc jeszcze odczekać backoff
+(do 3 s) i wykonać ostatnią próbę (do 2 s). Rzeczywisty sufit narzutu ponowień
+na żądanie to:
+
+> `RETRY_BUDGET_MS + najdłuższy backoff + jedna próba = 10 + 3 + 2 = **15 s**`
+
+§10.4 dopuszcza tolerancję „jednego backoffu"; dokładam do tego jeszcze jedną
+próbę, bo tak wychodzi z kodu. Napisałem to wprost w docblocku zamiast zostawić
+wygodniejsze „najwyżej 10 s". Domknięcie do twardych 10 s wymagałoby sprawdzania
+budżetu **przed** backoffem z wyprzedzeniem na przewidywany czas próby — to już
+inna polityka i nie zakładałem jej samowolnie.
+
+### 5A.3 Dowód z §10.4: 15 operacji, każda udana dopiero w drugiej próbie
+
+Czas mierzony to sam narzut pętli (operacja podstawiona jest natychmiastowa),
+więc liczba nie jest zanieczyszczona czasem sieci.
+
+| wersja | środowisko | 15 operacji | odzyskane | przegrane | werdykt |
+|---|---|---|---|---|---|
+| **po korekcie** | **produkcja, PHP 8.4.24** | **10 002,57 ms** | 10 | 5 | PASS (limit 13 000 ms) |
+| po korekcie | lokalnie, PHP 8.5.7 | 10 042,33 ms | 10 | 5 | PASS |
+| **przed korektą (kontrola)** | lokalnie, PHP 8.5.7 | **15 064,07 ms** | 15 | 0 | rośnie liniowo |
+
+Kontrola dodatnia jest na wersji wyciągniętej z gita (`git show 8fc73b6:…`),
+md5 `c7354ec21b97cc7eb41a86c7a5687e96` — czyli dokładnie plik sprzed korekty.
+Przebieg po korekcie: operacje 1-10 odzyskują się (każda 1 backoff = 1000 ms),
+operacja 11 trafia na wyczerpany budżet, robi jedną próbę i przegrywa,
+co zatrzaskuje breaker, więc 12-15 kończą się w 0,00 ms.
+
+Ślad z `error_log` (produkcja, ta sama seria):
+```
+[PostgresConnection] OK po retry (hard_retry): proby=2, czas=1005 ms, budzet=10000/10000 ms
+[PostgresConnection] Railway niedostepne (hard_retry → hard): proby=1, czas=0 ms, budzet=10000/10000 ms (budzet wyczerpany): ... failed: timeout expired
+```
+
+**Uwaga o skali przy realnej sieci (arytmetyka, nie pomiar):** przy prawdziwych
+connectach nieudana próba kosztuje zmierzone 2002 ms, a nie ~0 ms jak w teście
+syntetycznym, więc budżet wyczerpie się już po około trzech odzyskanych
+operacjach. Wersja sprzed korekty w tym samym scenariuszu dawałaby
+15 × (2002 + 1000) ≈ 45 s. Tego nie mierzyłem — nie da się zmusić realnego
+connectu do „porażki w pierwszej próbie, sukcesu w drugiej" na żądanie.
+
+### 5A.4 Świadoma zmiana zachowania dla SOFT
+
+Po wyczerpaniu budżetu także SOFT dostaje jedną próbę zamiast trzech. Żeby do
+tego doszło, jedno żądanie musiałoby wcześniej spalić 10 s na ponowieniach
+(przy koszcie SOFT 0,4 s na operację to ponad 25 operacji odzyskanych po
+retry). W takiej sytuacji szybka porażka jest tym, czego chcemy. Odnotowuję
+jako zamierzone, nie jako efekt uboczny.
 
 ---
 
@@ -343,6 +428,73 @@ i potwierdziła mechanizm doklejania `connect_timeout` na końcu conninfo.
 
 ---
 
+## 7A. Recenzja krzyżowa iteracji 2 — budżet (KROK 4 korekty). NIEROZSTRZYGNIĘTA
+
+Pełny tekst: `_docs/reviews/CODEX_REVIEW_20260915_CHAT-T-191_budzet-retry-na-zadanie.md`
+Model `gpt-5.6-sol`, `xhigh`, read-only, ~20 min. Sześć ustaleń: 3 × HIGH,
+2 × MEDIUM, 1 × INFO. Recenzent napisał własną sondę refleksyjną i zmierzył
+zachowanie licznika.
+
+**1. HIGH — licznik jest budżetem KSIĘGOWYM, nie deadline'em czasu ściennego.
+PRZYJĘTE, poprawiłem opis.** Czas próby zakończonej SUKCESEM nie jest naliczany
+(powrót przez `return` omija `catch`), a wejście do metody sprawdza tylko breaker,
+nie budżet. Pomiar recenzenta: 3 operacje = 3629 ms czasu ściennego przy liczniku
+3000 ms; ze stanu 8990 ms operacja wróciła sukcesem z licznikiem 12990/10000.
+To jest ten sam overshoot, który sam opisałem w §5A.2, plus składnik, którego
+nie uwzględniłem: czas udanych prób. **Zmiana: docblock mówi teraz wprost, że
+to budżet księgowy na nieudane próby i backoffy, i wylicza, co z niego wypada**
+(próby udane, czas wykonania zapytań, błędy nierozpoznane). Zachowania nie ruszałem.
+
+**2. HIGH — „jedna próba" nie ma ogólnego limitu 2 s. ZGODA CO DO FAKTU.**
+Dwie sekundy ogranicza `PDO::ATTR_TIMEOUT`, czyli wyłącznie zestawienie
+połączenia; `execute()` nie ma limitu, a `timeout expired` może wystąpić także
+w fazie zapytania. Brak `statement_timeout` architekt uznał za dług poza zakresem
+(§10.5), więc tego nie dotykam — ale składnik „2 s" w mojej arytmetyce sufitu
+obowiązuje tylko dla awarii connectu i tak jest teraz napisane w docblocku.
+Druga część ustalenia: licznik dopisuje backoff **nominalny**, nie zmierzony
+czas `usleep()`. Prawda. Zostawiłem zgodnie z brzmieniem §10.3 („naliczaj przy
+każdym backoffie") i odnotowałem w docblocku; różnica to rząd pojedynczych
+milisekund poza ekstremalnym obciążeniem.
+
+**3. HIGH — regres SOFT jest realny. ZGODA, to zamierzone.** Po wyczerpaniu
+wspólnego budżetu także SOFT dostaje jedną próbę zamiast trzech. Opisałem to
+w §5A.4 zanim recenzja to podniosła, ale recenzent ma rację, że w samym pliku
+stało zdanie „SOFT bez zmian", nieprawdziwe po wyczerpaniu budżetu.
+**Zmiana: docblock poprawiony, zachowanie przypięte asercją** (SOFT po budżecie
+= 1 próba, flaga nadal SOFT).
+
+**4. MEDIUM — gwarancja obejmuje wyłącznie rozpoznane `PDOException`.
+POTWIERDZONE.** Błąd kategorii `null` leci wyżej przed naliczeniem, wyjątek spoza
+`PDOException` omija `catch` w całości. Recenzent potwierdził przy okazji, że
+**HARD_FINAL naliczenia NIE omija** (czas jest dodawany przed `break`) — to było
+moje pytanie kontrolne. Skutek jest ograniczony: nierozpoznany błąd nie wchodzi
+w pętlę, więc nie mnoży budżetu; realne ryzyko to znana z iteracji 1 luka, że
+taki błąd w ogóle nie zamienia się w `DbUnavailableException`.
+
+**5. MEDIUM — nowy test pokrywał tylko najłatwiejszy wariant. PRZYJĘTE
+I WYKONANE.** Dołożyłem pięć asercji granicznych: SOFT po wyczerpanym budżecie
+(1 próba, flaga SOFT), wejście tuż pod limitem (2 próby + jeden backoff, licznik
+przekracza limit — overshoot przypięty asercją), oraz błąd składni nieobciążający
+budżetu. Nie dołożyłem wariantu „wolny sukces retry" ani przeplatania kategorii
+w jednym żądaniu — to zostaje jako niepokryte.
+
+**6. INFO — zakres singletona poprawny dla PHP-FPM. Potwierdza §10.3.3
+architekta.** Licznik to zwykły stan userland, `ATTR_PERSISTENT` dotyczy wyłącznie
+uchwytu połączenia, więc `retrySpentMs` nie przecieka między żądaniami.
+Zastrzeżenie recenzenta: założenie przestanie obowiązywać przy migracji do
+długowiecznego runtime'u, a publiczny `reset()` jest techniczną drogą wyzerowania
+budżetu w trakcie żądania (dziś używany tylko w testach).
+
+**Rekomendacja recenzenta, której NIE wykonuję i która wraca do decyzji:**
+utrzymać blokadę wdrożenia, jeśli kryterium akceptacji ma być twardy czas ścienny.
+Kryterium z §10.4 brzmi „łączny narzut nie przekracza `RETRY_BUDGET_MS`
+z tolerancją na jeden backoff" i jest **spełnione** (10 002 ms wobec limitu
+13 000 ms). Twardy deadline czasu ściennego wymagałby wspólnego monotonicznego
+terminu sprawdzanego przed każdą próbą **oraz** limitu wykonania zapytania —
+to inna polityka i nowa decyzja, nie domknięcie tej.
+
+---
+
 ## 8. Czego NIE sprawdziłem
 
 - **Nie wdrożyłem** — STOP z ADR-089, czekam na „deployuj".
@@ -366,6 +518,20 @@ i potwierdziła mechanizm doklejania `connect_timeout` na końcu conninfo.
 - **Nie weryfikowałem prognozy 20 %** — to pomiar na miesiąc do przodu, z logów,
   które to zadanie dopiero wprowadza.
 
+Dołożone po korekcie:
+
+- **Nie zmierzyłem budżetu na realnych connectach**, tylko na operacjach
+  podstawionych. Nie da się zmusić prawdziwego connectu do „porażki w pierwszej
+  próbie, sukcesu w drugiej" na żądanie. Liczba 45 s dla wersji sprzed korekty
+  przy realnej sieci to **arytmetyka ze zmierzonych składników**, nie pomiar.
+- **Nie sprawdziłem dwóch kolejnych żądań na tym samym workerze FPM**
+  (rekomendacja recenzenta: licznik ma startować od zera, a połączenie trwałe
+  może zostać odzyskane). Wymaga ruchu na produkcji, czyli już po deployu.
+- **Nie pokryłem testem wariantu „wolny sukces retry"** ani przeplatania SOFT
+  i HARD_RETRY w jednym żądaniu.
+- **Nie mierzyłem czasu ściennego całego żądania HTTP** — budżet jest księgowy,
+  patrz §7A ustalenie 1.
+
 ---
 
 ## 9. Znaleziska poboczne (do osobnych zadań, NIE realizowane tutaj)
@@ -385,9 +551,13 @@ i potwierdziła mechanizm doklejania `connect_timeout` na końcu conninfo.
 
 ## 10. Deploy (KROK 7) — przygotowane, czeka na autoryzację
 
-- md5 lokalnie przed zmianą (= HEAD): `481f67be9f76889823b11fcec6a7785a`
-- md5 na produkcji przed deployem: `481f67be9f76889823b11fcec6a7785a` — **zero dryfu**
-- md5 lokalnie po zmianie: `c7354ec21b97cc7eb41a86c7a5687e96`
+| stan | md5 `PostgresConnection.php` | commit |
+|---|---|---|
+| produkcja dziś (= repo sprzed zadania) | `481f67be9f76889823b11fcec6a7785a` | — |
+| iteracja 1 (NIE wdrażamy) | `c7354ec21b97cc7eb41a86c7a5687e96` | `8fc73b6` |
+| **po korekcie, do wdrożenia** | **`d65843f3cc788ba48d023ea5c94a6d99`** | patrz linia niżej |
+
+Produkcja nie ma dryfu na tym pliku: md5 na serwerze zgadza się z repo sprzed zadania.
 
 Jeden plik: `standalone/src/Database/PostgresConnection.php` →
 `~/public_html/chat.divezone.pl/src/Database/PostgresConnection.php`
@@ -398,4 +568,12 @@ endpoincie czatu, status na górze `_docs/21_STATUS_PROJEKTU.md`, osobny commit 
 Po deployu blok deklaracji Sentinela do wklejenia przez operatora (jedno drzewo,
 `chat.divezone.pl`) — bez nowych klas, więc bez plików vendora.
 
-═══ CHAT-T-191 · BACKEND · KROK 5 (zacommitowane, STOP przed deployem) ═══
+**ZNANE RYZYKO PIERWSZEGO ŻĄDANIA PO DEPLOYU (§10.5 zlecenia).** Klucz puli
+połączeń trwałych nie zawiera `PDO::ATTR_TIMEOUT`, a martwy uchwyt z puli jest
+wskrzeszany przez `PQreset()` z **pierwotnymi** parametrami. W workerze FPM
+sprzed deployu pierwsza nieudana operacja może więc raz kosztować do 30 s, zanim
+PDO uzna uchwyt za martwy i pójdzie przez fabrykę z nowym limitem 2 s. Efekt
+jednorazowy per worker, wygasa po recyklingu. **Nikt tego nie zmierzył** — ani
+recenzent, ani ja. Po deployu warto pierwsze żądanie obserwować pod tym kątem.
+
+═══ CHAT-T-191 · BACKEND · KOREKTA §10, KROK 6 (zacommitowane, STOP przed deployem) ═══

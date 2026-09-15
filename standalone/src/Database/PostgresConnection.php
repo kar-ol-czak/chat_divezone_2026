@@ -29,28 +29,51 @@ use PDOStatement;
  *    (connection refused = host zyje, port zamkniety; DNS nie rozwiazuje).
  *    → 1 proba, od razu breaker.
  *
- * Budzet najgorszego przypadku HARD_RETRY, przy limicie connectu 2 s
- * (PDO::ATTR_TIMEOUT w getPdo() — patrz tam, DSN sam nie wystarcza):
+ * GWARANCJA CZASU: ponowienia w calym ZADANIU (nie w pojedynczej operacji)
+ * dziela jeden licznik $retrySpentMs, ktory rosnie przy KAZDEJ nieudanej probie
+ * i KAZDYM backoffie — takze w operacjach, ktore ostatecznie sie powiodly.
+ * Po przekroczeniu RETRY_BUDGET_MS kazda kolejna operacja robi JEDNA probe
+ * i przegrywa, czyli wraca do zachowania sprzed CHAT-T-191.
+ * ZASIEG GWARANCJI, opisany uczciwie (CHAT-T-191, recenzja iteracji 2):
+ * to budzet KSIEGOWY na nieudane proby i backoffy, NIE deadline czasu sciennego
+ * zadania HTTP. Poza licznikiem zostaja: czas prob ZAKONCZONYCH SUKCESEM, czas
+ * wykonania zapytan (brak statement_timeout, dlug sprzed zadania) oraz bledy
+ * NIEROZPOZNANE jako polaczeniowe (kategoria null i wyjatki spoza PDOException
+ * lece wyzej przed naliczeniem). Budzet sprawdzamy PO obciazeniu za nieudana
+ * probe, ale PRZED backoffem, wiec operacja wchodzaca tuz pod limitem zdazy
+ * jeszcze odczekac backoff (do 3 s) i zrobic ostatnia probe (do 2 s przy awarii
+ * connectu; awaria w fazie zapytania nie ma limitu). Sufit NALICZONEGO narzutu:
+ *   RETRY_BUDGET_MS + najdluzszy backoff + jedna proba = 10 + 3 + 2 = 15 s.
+ * Naliczany jest backoff NOMINALNY, nie zmierzony czas usleep().
+ * W scenariuszu z korekty (15 operacji, kazda odzyskana w 2. probie) zmierzono
+ * 10 002 ms na produkcji; przed poprawka ta sama sciezka dawala 15 064 ms
+ * i rosla liniowo z liczba zapytan.
+ * SOFT dzieli ten sam budzet co HARD_RETRY: po jego wyczerpaniu takze SOFT
+ * dostaje jedna probe zamiast trzech. Zamierzone, ale to ZMIANA POLITYKI wobec
+ * CHAT-T-107 — zeby do niej doszlo, zadanie musi wczesniej spalic 10 s na
+ * ponowieniach, a wtedy szybka porazka jest tym, czego chcemy.
+ * Pojedyncza operacja HARD_RETRY przy limicie connectu 2 s (PDO::ATTR_TIMEOUT
+ * w getPdo() — patrz tam, DSN sam nie wystarcza) kosztuje najwyzej
  *   2 s (proba 1) + 1 s (backoff) + 2 s (proba 2) + 3 s (backoff) + 2 s (proba 3)
- *   = 10 s. SOFT bez zmian: 0,1 + 0,3 = 0,4 s narzutu backoffu.
+ *   = 10 s. SOFT: 0,1 + 0,3 = 0,4 s narzutu backoffu, czyli jak w CHAT-T-107 —
+ *   dopoki wspolny budzet zadania nie jest wyczerpany (patrz nizej).
+ * Dlaczego licznik NA ZADANIE, a nie sam breaker: epizody maja 85-95 % straty
+ * pakietow, nie 100 %, wiec czesc operacji odzyskuje sie w 2. probie. Taka
+ * operacja NIE zatrzaskuje breakera (i slusznie, baza odpowiedziala), wiec bez
+ * licznika koszt ponowien sumowalby sie liniowo przez kilkanascie zapytan
+ * jednego zadania czatu. Zmierzone przed poprawka: 5 operacji = 8037 ms
+ * (CHAT-T-191, recenzja /codex ustalenie 1, korekta architekta §10.2).
+ * Pole instancji wystarcza: PHP burzy statyki na koniec zadania (shared-nothing),
+ * wiec licznik jest z natury per zadanie. reset() sluzy wylacznie testom.
  *
  * Na zewnatrz kategorie mapuja sie na dotychczasowa flage DbUnavailableException
  * (toPublicKind): SOFT→SOFT, HARD_RETRY i HARD_FINAL→HARD. Komunikaty klienta
  * (DB_SOFT_MESSAGE / DB_HARD_MESSAGE w ChatController) bez zmian.
  * Po wyczerpaniu prob rzuca DbUnavailableException, NIE goly PDOException.
- * Circuit-breaker per-request: operacja, ktora WYCZERPIE proby, zatrzaskuje
+ * Circuit-breaker per-request: operacja, ktora PRZEGRA, zatrzaskuje
  * $this->unavailable i kolejne w TYM zadaniu robia fail-fast (z zapamietana
- * flaga) — jedno zadanie czatu robi kilkanascie zapytan do PG, wiec bez breakera
- * budzet mnozylby sie przez ich liczbe. Zmierzone: 10 operacji przy niedostepnej
- * bazie = 10 006 ms, nie 100 s (produkcja, 2026-09-14).
- *
- * OGRANICZENIE, zmierzone i NIEROZSTRZYGNIETE (CHAT-T-191, recenzja ustalenie 1):
- * operacja, ktora UDA SIE po ponowieniu, breakera NIE zatrzaskuje — i slusznie,
- * baza przeciez odpowiedziala. Ale w zadaniu, w ktorym kilka operacji odzyskuje
- * sie dopiero za drugim razem, koszt ponowien sumuje sie liniowo (pomiar
- * syntetyczny: 5 operacji = 8,0 s). Gwarancja "budzet raz na zadanie" obowiazuje
- * wiec dla operacji PRZEGRANYCH, nie dla calego zadania. Domkniecie wymaga
- * skumulowanego budzetu czasu na zadanie — decyzja architekta, nie wprowadzona.
+ * flaga). Zmierzone: 10 przegranych operacji przy niedostepnej bazie
+ * = 10 006 ms, nie 100 s (produkcja, 2026-09-14).
  *
  * Bledy nie-polaczeniowe (skladnia/constraint) → rzucane od razu.
  */
@@ -76,6 +99,13 @@ final class PostgresConnection
     /** Backoff przed kolejna proba [ms] — HARD_RETRY (czekamy az trasa wroci). */
     private const HARD_RETRY_BACKOFF_MS = [1000, 3000];
 
+    /**
+     * Skumulowany budzet ponowien NA ZADANIE [ms] (CHAT-T-191 §10.3, korekta
+     * architekta). Rowny kosztowi jednej pelnej sciezki HARD_RETRY, wiec
+     * najgorszy przypadek zadania = najgorszy przypadek pojedynczej operacji.
+     */
+    private const RETRY_BUDGET_MS = 10000;
+
     private static ?self $instance = null;
     private ?PDO $pdo = null;
 
@@ -85,6 +115,13 @@ final class PostgresConnection
 
     /** true gdy ktoras operacja w tym zadaniu udala sie DOPIERO po retry (lag). */
     private bool $delayed = false;
+
+    /**
+     * Ile z RETRY_BUDGET_MS wydano juz w TYM zadaniu [ms]: nieudane proby plus
+     * backoffy, takze te z operacji zakonczonych sukcesem. Nie zeruje sie po
+     * udanej operacji — to jest cala istota poprawki.
+     */
+    private int $retrySpentMs = 0;
 
     private function __construct(
         private readonly string $dsn,
@@ -162,9 +199,10 @@ final class PostgresConnection
      * Wykonuje operacje DB z retry+reconnect (CHAT-T-107, P36c; CHAT-T-191).
      *
      * Budzet czasu przy niedostepnej bazie: SOFT 0,4 s backoffu, HARD_RETRY do
-     * 10 s (2+1+2+3+2, patrz docblock klasy), HARD_FINAL jedna proba. Operacja
-     * przegrana wydaje go RAZ na zadanie ($this->unavailable). Operacje odzyskane
-     * po ponowieniu sumuja sie — patrz OGRANICZENIE w docblocku klasy.
+     * 10 s (2+1+2+3+2, patrz docblock klasy), HARD_FINAL jedna proba. Ponowienia
+     * wszystkich operacji w zadaniu dzielia JEDEN budzet RETRY_BUDGET_MS —
+     * naliczany takze za operacje, ktore ostatecznie sie powiodly. Po jego
+     * wyczerpaniu kazda kolejna operacja robi jedna probe i przegrywa.
      *
      * @template T
      * @param callable(): T $op
@@ -174,7 +212,8 @@ final class PostgresConnection
     {
         if ($this->unavailable) {
             // Juz w tym zadaniu uznano baze za niedostepna — fail-fast z zapamietana
-            // flaga. To ten bezpiecznik trzyma budzet na poziomie zadania, nie zapytania.
+            // flaga. To ten bezpiecznik odcina koszt operacji PRZEGRANYCH; za operacje
+            // odzyskane po ponowieniu odpowiada licznik $this->retrySpentMs nizej.
             throw $this->makeUnavailable($this->breakerKind, null);
         }
 
@@ -182,21 +221,25 @@ final class PostgresConnection
         $category = self::CAT_HARD_FINAL;
         $startedAt = hrtime(true);
         $attempts = 0;
+        $budgetExhausted = false;
 
         for ($attempt = 0; $attempt < self::MAX_ATTEMPTS; $attempt++) {
             $attempts++;
+            $attemptStartedAt = hrtime(true);
             try {
                 $result = $op();
                 if ($attempt > 0) {
                     // Udalo sie dopiero po reconnect — sygnal "lag" (P37c) oraz slad
                     // do zmierzenia po miesiacu, czy prognoza 20 % sie potwierdzila
-                    // (CHAT-T-191 §4.5).
+                    // (CHAT-T-191 §4.5). Budzet zostaje naliczony, mimo sukcesu.
                     $this->delayed = true;
                     error_log(sprintf(
-                        '[PostgresConnection] OK po retry (%s): proby=%d, czas=%d ms',
+                        '[PostgresConnection] OK po retry (%s): proby=%d, czas=%d ms, budzet=%d/%d ms',
                         $category,
                         $attempts,
                         self::elapsedMs($startedAt),
+                        $this->retrySpentMs,
+                        self::RETRY_BUDGET_MS,
                     ));
                 }
                 return $result;
@@ -205,6 +248,9 @@ final class PostgresConnection
                 if ($category === null) {
                     throw $e; // blad logiczny (skladnia/constraint) — nie ponawiamy
                 }
+                // Nieudana proba kosztuje tyle, ile trwala — obciazamy budzet zadania
+                // NIEZALEZNIE od tego, czy operacja skonczy sie sukcesem (CHAT-T-191 §10.3).
+                $this->retrySpentMs += self::elapsedMs($attemptStartedAt);
                 $lastError = $e;
                 $this->pdo = null; // reconnect przy nastepnej probie
 
@@ -212,9 +258,17 @@ final class PostgresConnection
                 if ($category === self::CAT_HARD_FINAL) {
                     break;
                 }
+                // Budzet ponowien zadania wyczerpany → jedna proba i porazka, jak przed
+                // CHAT-T-191. Bez wyjatkow i bez "jeszcze tylko raz".
+                if ($this->retrySpentMs >= self::RETRY_BUDGET_MS) {
+                    $budgetExhausted = true;
+                    break;
+                }
                 // SOFT i HARD_RETRY → backoff i ponow (o ile zostaly proby).
                 if ($attempt < self::MAX_ATTEMPTS - 1) {
-                    usleep(self::backoffMs($category, $attempt) * 1000);
+                    $backoffMs = self::backoffMs($category, $attempt);
+                    usleep($backoffMs * 1000);
+                    $this->retrySpentMs += $backoffMs;
                 }
             }
         }
@@ -223,11 +277,14 @@ final class PostgresConnection
         $this->unavailable = true;
         $this->breakerKind = $kind;
         error_log(sprintf(
-            '[PostgresConnection] Railway niedostepne (%s → %s): proby=%d, czas=%d ms: %s',
+            '[PostgresConnection] Railway niedostepne (%s → %s): proby=%d, czas=%d ms, budzet=%d/%d ms%s: %s',
             $category,
             $kind,
             $attempts,
             self::elapsedMs($startedAt),
+            $this->retrySpentMs,
+            self::RETRY_BUDGET_MS,
+            $budgetExhausted ? ' (budzet wyczerpany)' : '',
             $lastError?->getMessage() ?? '?',
         ));
         throw $this->makeUnavailable($kind, $lastError);

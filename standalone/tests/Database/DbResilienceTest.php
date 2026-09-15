@@ -190,6 +190,73 @@ assertT('budzet: 10 operacji → tylko 3 proby laczne (breaker)', $calls === 3, 
 assertT('budzet: 10 operacji → jeden backoff, nie dziesiec', $dBudget < 4.5, sprintf('%.3fs', $dBudget));
 assertT('budzet: kazda z 10 operacji zwraca flage HARD', count($kinds) === 10 && array_unique($kinds) === [DbUnavailableException::HARD]);
 
+// === Skumulowany budzet ponowien NA ZADANIE (CHAT-T-191 §10.3/§10.4, korekta) ===
+// Scenariusz, ktorego test wyzej NIE lapal: operacje, ktore SIE UDAJA w 2. probie,
+// nie zatrzaskuja breakera, wiec bez licznika koszt ponowien sumuje sie liniowo.
+// Zmierzone na wersji sprzed poprawki: 15 operacji = 15 064 ms.
+$CONST = (new ReflectionClass(PostgresConnection::class))->getConstants();
+$BUDGET_MS = $CONST['RETRY_BUDGET_MS'] ?? null;
+assertT('istnieje stala RETRY_BUDGET_MS = 10000', $BUDGET_MS === 10000, var_export($BUDGET_MS, true));
+
+$conn = $freshConn(); $odzyskane = 0; $przegrane = 0;
+$t0 = microtime(true);
+for ($i = 0; $i < 15; $i++) {
+    $calls = 0;
+    try {
+        $ewr->invoke($conn, function () use (&$calls) {
+            $calls++;
+            if ($calls === 1) { throw new PDOException('connection to server at "x" failed: timeout expired'); }
+            return 'OK';
+        });
+        $odzyskane++;
+    } catch (DbUnavailableException $e) { $przegrane++; }
+}
+$d15 = microtime(true) - $t0;
+$limit15 = ($BUDGET_MS + max($CONST['HARD_RETRY_BACKOFF_MS'])) / 1000; // budzet + jeden backoff
+assertT('budzet/zadanie: 15 operacji odzyskanych w 2. probie miesci sie w budzecie',
+    $d15 <= $limit15, sprintf('%.3fs > %.3fs', $d15, $limit15));
+assertT('budzet/zadanie: po wyczerpaniu budzetu operacje przegrywaja (nie ponawiaja)',
+    $przegrane > 0 && $odzyskane > 0, "odzyskane={$odzyskane} przegrane={$przegrane}");
+// Licznik NIE zeruje sie po udanej operacji: kazda odzyskana kosztuje jeden backoff
+// 1000 ms, wiec budzet 10 000 ms starcza na DOKLADNIE 10 odzyskanych, reszta przegrywa.
+assertT('budzet/zadanie: licznik NIE zeruje sie po udanej operacji (10 odzyskanych, 5 przegranych)',
+    $odzyskane === 10 && $przegrane === 5, "odzyskane={$odzyskane} przegrane={$przegrane}");
+
+// === Przypadki graniczne budzetu (recenzja iteracji 2, ustalenie 5) ===
+$spent = new ReflectionProperty(PostgresConnection::class, 'retrySpentMs');
+
+// (a) SOFT po budzecie wydanym przez HARD_RETRY: JEDNA proba, nie trzy.
+//     To zamierzona zmiana polityki wobec CHAT-T-107 — asercja ma ja przypiac.
+$conn = $freshConn(); $spent->setValue($conn, 10000); $calls = 0; $kind = '-';
+$t0 = microtime(true);
+try { $ewr->invoke($conn, function () use (&$calls) { $calls++; throw new PDOException('server closed the connection unexpectedly'); }); }
+catch (DbUnavailableException $e) { $kind = $e->kind(); }
+$dSoftPo = microtime(true) - $t0;
+assertT('budzet/granica: SOFT po wyczerpanym budzecie → 1 proba, bez backoffu',
+    $calls === 1 && $dSoftPo < 0.05, "calls={$calls} czas=" . sprintf('%.3fs', $dSoftPo));
+assertT('budzet/granica: SOFT po wyczerpanym budzecie → flaga nadal SOFT',
+    $kind === DbUnavailableException::SOFT);
+
+// (b) Wejscie TUZ pod limitem: operacja zdazy jeszcze odczekac backoff i zrobic
+//     ostatnia probe, wiec licznik przekracza limit. To jest udokumentowany
+//     overshoot z docblocku (budzet + jeden backoff + jedna proba).
+$conn = $freshConn(); $spent->setValue($conn, 9999); $calls = 0;
+$t0 = microtime(true);
+try { $ewr->invoke($conn, function () use (&$calls) { $calls++; throw new PDOException('connection to server at "x" failed: timeout expired'); }); }
+catch (DbUnavailableException $e) {}
+$dGranica = microtime(true) - $t0;
+assertT('budzet/granica: wejscie tuz pod limitem → 2 proby i jeden backoff, nie trzy proby',
+    $calls === 2 && $dGranica >= 0.99 && $dGranica < 1.3, "calls={$calls} czas=" . sprintf('%.3fs', $dGranica));
+assertT('budzet/granica: licznik przekracza limit o backoff (overshoot udokumentowany)',
+    $spent->getValue($conn) >= 10999, 'spent=' . $spent->getValue($conn));
+
+// (c) Blad nie-polaczeniowy NIE obciaza budzetu i NIE zatrzaskuje breakera.
+$conn = $freshConn(); $calls = 0;
+try { $ewr->invoke($conn, function () use (&$calls) { $calls++; throw new PDOException('SQLSTATE[42601]: syntax error at or near "x"'); }); }
+catch (PDOException $e) {}
+assertT('budzet/granica: blad skladni nie obciaza budzetu ponowien',
+    $spent->getValue($conn) === 0, 'spent=' . $spent->getValue($conn));
+
 // === Symulacja niedostepnosci realnym query (zly host, refused = HARD szybko) ===
 PostgresConnection::reset();
 $_ENV['DATABASE_URL'] = 'postgresql://u:p@127.0.0.1:1/db?sslmode=disable';
