@@ -555,7 +555,7 @@ Dołożone po korekcie:
 |---|---|---|
 | produkcja dziś (= repo sprzed zadania) | `481f67be9f76889823b11fcec6a7785a` | — |
 | iteracja 1 (NIE wdrażamy) | `c7354ec21b97cc7eb41a86c7a5687e96` | `8fc73b6` |
-| **po korekcie, do wdrożenia** | **`d65843f3cc788ba48d023ea5c94a6d99`** | patrz linia niżej |
+| **po korekcie, do wdrożenia** | **`d65843f3cc788ba48d023ea5c94a6d99`** | **`3efba5c`** |
 
 Produkcja nie ma dryfu na tym pliku: md5 na serwerze zgadza się z repo sprzed zadania.
 
