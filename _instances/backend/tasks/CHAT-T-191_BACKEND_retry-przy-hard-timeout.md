@@ -148,4 +148,97 @@ Wniosek: pierwszym blokerem jest tożsamość i historia rozmowy, nie wyszukiwan
 semantyczne. Lokalna kopia wektorów nie pomogłaby, bo żądanie umiera zanim
 do niej dojdzie. To materiał na osobne zadanie, nie na to.
 
+## 10. KOREKTA ARCHITEKTA — po raporcie KROK 5 (2026-09-15)
+
+### 10.1. Premisa §4.3 była fałszywa. Moja wina
+
+Napisałem: „`connect_timeout=2` w `buildDsn()` zostaje. Budżet najgorszego
+przypadku: 2 + 1 + 2 + 3 + 2 = 10 s." Odczytałem tę wartość z pliku i uznałem
+za obowiązującą. Jest w pliku i nie działa.
+
+Sprawdziłem sam na produkcji, cel `192.0.2.1` (TEST-NET-1, czarna dziura,
+Railway nietknięte):
+
+```
+A) sam DSN connect_timeout=2             ->  7088 ms
+B) DSN + PDO::ATTR_TIMEOUT=2             ->  2002 ms
+C) kontrola pg_connect connect_timeout=2 ->  2002 ms
+```
+
+Para B i C pokazuje, że dwa sekundy są osiągalne. A pokazuje, że wartość z DSN
+nie jest honorowana. CC ma rację i naprawa przez `PDO::ATTR_TIMEOUT` jest
+właściwa. Zastrzeżenie do raportu CC: liczba 94 s pochodzi z innego trybu awarii
+niż mój pomiar (7 s to wyczerpanie retransmisji TCP wobec TEST-NET-1, nie limit
+libpq) i jej nie odtwarzałem. Kierunek wniosku bez zmian.
+
+Skutek uboczny, który trzeba odnotować w `_docs/44`: deklarowana od CHAT-T-107
+„szybka degradacja w ~2 s" nigdy nie działała. Realna degradacja przy awarii
+Railway trwała tyle, ile zajął timeout TCP.
+
+### 10.2. Blokada wdrożenia: budżet wydaje się wielokrotnie
+
+`/codex` ma rację i to jest powód, dla którego **nie wdrażamy tej wersji**.
+
+Breaker `$this->unavailable` zatrzaskuje się dopiero po wyczerpaniu prób.
+Operacja, która uda się w drugiej próbie, zostawia go otwartym, więc następna
+operacja dostaje pełny budżet od nowa. Repro CC: 5 operacji = 8037 ms.
+
+To nie jest przypadek brzegowy, tylko dokładnie nasz scenariusz. Epizody mają
+85-95 % straty, nie 100 %, więc część połączeń udaje się w drugiej lub trzeciej
+próbie. Żądanie czatu robi kilkanaście zapytań do PG. Przy 3,2 s na odzyskaną
+operację daje to kilkadziesiąt sekund oczekiwania klienta, czyli stan **gorszy
+niż dzisiejszy**, gdzie żądanie szybko kończy się komunikatem degradacji.
+Wdrożenie łaty, która w scenariuszu docelowym pogarsza doświadczenie klienta,
+nie ma sensu.
+
+### 10.3. Do zrobienia przed wdrożeniem
+
+1. Skumulowany budżet retry **na żądanie**, nie na operację. Stała rzędu
+   `RETRY_BUDGET_MS = 10000`, pole instancji, naliczane przy KAŻDEJ nieudanej
+   próbie i KAŻDYM backoffie, niezależnie od tego, czy operacja ostatecznie
+   się powiodła. To ostatnie jest sednem: dziura, którą znalazł `/codex`,
+   polega właśnie na tym, że odzyskane operacje nic nie kosztują licznika.
+2. Gdy budżet wyczerpany: zachowuj się jak dziś, czyli jedna próba i porażka.
+   Bez wyjątków i bez „jeszcze tylko raz".
+3. Singleton nie wymaga dodatkowego resetu. PHP burzy statyki na koniec żądania
+   (model shared-nothing), więc pole instancji jest z natury per żądanie;
+   `reset()` z linii 404 jest używane wyłącznie w testach i tak ma zostać.
+   Trwałe jest tylko uchwyt PDO przy `ATTR_PERSISTENT`, nie statyka PHP.
+4. Docblock ma opisywać gwarancję, która realnie obowiązuje: „budżet N ms
+   na żądanie", a nie „na operację przegraną".
+
+### 10.4. Dowód wymagany dodatkowo
+
+Test: **15 operacji, każda udana dopiero w drugiej próbie**, przy sztucznie
+niedostępnej bazie w pierwszej próbie. Łączny narzut ma nie przekroczyć
+`RETRY_BUDGET_MS` z tolerancją na jeden backoff. Dotychczasowy test budżetu
+z §5.3 tego nie łapał, bo używał operacji przegranych.
+
+### 10.5. Pozostałe ustalenia `/codex` — moje rozstrzygnięcie
+
+- **Błędy uwierzytelnienia w SOFT** — stan sprzed zadania, nie regres. Zostaje,
+  ale dopisz jedną linijkę do `_docs/44`, bo to pułapka: `getCode()` przy
+  błędzie connectu zwraca `int 7`, nie SQLSTATE, więc gałęzie `08001/08004`
+  nie strzelają nigdy.
+- **SSL clean-close** — zgadzam się z CC, że u nas nieistotny, ale z powodu,
+  który jest osobnym problemem: produkcja łączy się `sslmode=disable`.
+  Patrz §10.6.
+- **Brak limitu na czas zapytania** — dług sprzed zadania, poza zakresem.
+- **Ryzyko duplikatu zapisu** — istniało dla SOFT od CHAT-T-107, poza zakresem.
+- **Stare workery FPM i `PQreset` do 30 s** — uwaga realna, nikt jej nie
+  zmierzył. Nie blokuje wdrożenia, ale wpisz ją do raportu jako znane ryzyko
+  pierwszego żądania po deployu.
+- **Wiele adresów IP** — obalone pomiarem CC, jeden rekord A, zero AAAA.
+
+### 10.6. Znalezisko poboczne, poza zakresem tego zadania
+
+`sslmode=disable` w produkcyjnym `DATABASE_URL`. Zweryfikowane niezależnie:
+`grep -oh "sslmode=[A-Za-z-]*"` na `~/public_html/chat.divezone.pl/.env`
+zwraca jedno trafienie, `sslmode=disable`. Domyślna wartość w kodzie
+(`PostgresConnection.php:390`) to `require`, więc to świadome ustawienie
+w konfiguracji, nie przeoczenie w kodzie.
+
+Skutek: hasło do bazy i pełna treść rozmów klientów przechodzą przez Orange
+Polska i Arelion bez szyfrowania. Osobna karta, nie ruszaj tego w T-191.
+
 ═══ CHAT-T-191 · BACKEND · retry przy HARD-timeout ═══
