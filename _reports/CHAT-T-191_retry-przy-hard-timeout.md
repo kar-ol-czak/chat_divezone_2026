@@ -1,10 +1,11 @@
-═══ CHAT-T-191 · BACKEND · KOREKTA §10, KROK 6 (zacommitowane, STOP przed deployem) ═══
+═══ CHAT-T-191 · BACKEND · DEPLOYED ═══
 
 # CHAT-T-191 — retry przy nieosiągalnej trasie. Raport z implementacji i dowodów
 
-Iteracja 1: 2026-09-14 (commit `8fc73b6`). **Korekta wg §10 zlecenia: 2026-09-15.**
+Iteracja 1: 2026-09-14 (commit `8fc73b6`, NIE wdrażana). Korekta wg §10 zlecenia:
+2026-09-15 (commit `3efba5c`). **Wdrożenie na produkcję: 2026-09-15 12:41 CEST.**
 Instancja: BACKEND. Świat wdrożeniowy: **chat.divezone.pl** (ŚWIAT 1).
-Do `newtmp2` nie idzie nic.
+Do `newtmp2` nie poszło nic. Dowody z wdrożenia: §11.
 
 ---
 
@@ -574,6 +575,122 @@ wskrzeszany przez `PQreset()` z **pierwotnymi** parametrami. W workerze FPM
 sprzed deployu pierwsza nieudana operacja może więc raz kosztować do 30 s, zanim
 PDO uzna uchwyt za martwy i pójdzie przez fabrykę z nowym limitem 2 s. Efekt
 jednorazowy per worker, wygasa po recyklingu. **Nikt tego nie zmierzył** — ani
-recenzent, ani ja. Po deployu warto pierwsze żądanie obserwować pod tym kątem.
+recenzent, ani ja. Stan po wdrożeniu: §11.6.
 
-═══ CHAT-T-191 · BACKEND · KOREKTA §10, KROK 6 (zacommitowane, STOP przed deployem) ═══
+---
+
+## 11. WDROŻENIE, 2026-09-15 (autoryzacja Karola)
+
+### 11.1 Stan zastany, potwierdzony przed dotknięciem czegokolwiek
+
+`origin/main` = `8cfb36f`. Produkcja: md5 `481f67be9f76889823b11fcec6a7785a`,
+`grep -c RETRY_BUDGET_MS` = **0**, brak pliku `.bak_20260915`, mtime `07-14 21:12`.
+Zgadza się co do joty z pomiarem architekta z 11:29:05 CEST — **wcześniejszego
+deployu faktycznie nie było** (zatrzymałem się na bramce ADR-089, zgodnie ze zleceniem).
+
+### 11.2 Backup i transfer
+
+Backup `PostgresConnection.php.bak_20260915` z `cp -p`, md5 backupu
+`481f67be9f76889823b11fcec6a7785a` — zgodny ze stanem produkcyjnym sprzed deployu.
+Skrypt przerywał, gdyby backup już istniał (`exit 9`), żeby nie nadpisać cudzego.
+
+`rsync` **jednego pliku**, port 5739, bez `--delete`, bez katalogu, z
+`--no-perms --no-owner --no-group` (lekcja z CHAT-T-190). Transfer: 20 202 B.
+Prawa po transferze sprawdzone `ls -la`: **`-rw-r--r--`**, czyli bez zmian wobec
+stanu sprzed deployu. Plik PHP nie potrzebuje bitu wykonywalności, więc pułapka
+z T-190 tu nie groziła, ale sprawdzenie i tak wykonane.
+
+### 11.3 Bramki na pliku produkcyjnym
+
+| dowód | wynik |
+|---|---|
+| md5 produkcja po deployu | **`d65843f3cc788ba48d023ea5c94a6d99`** |
+| md5 lokalny (commit `3efba5c`) | `d65843f3cc788ba48d023ea5c94a6d99` — **zgodne** |
+| `grep -c RETRY_BUDGET_MS` | **8** (było 0) |
+| `grep -c retrySpentMs` | 8 |
+| `grep -c "PDO::ATTR_TIMEOUT"` | 3 |
+| `ea-php84 -l` na pliku **produkcyjnym** | `No syntax errors detected` |
+
+Sprawdzone też, czy FPM w ogóle podniesie nowy plik: `opcache.enable=On`,
+**`opcache.validate_timestamps=On`, `opcache.revalidate_freq=2`**, brak `.user.ini`
+i brak wpisów opcache w `.htaccess`. Nowy plik ma mtime nowszy od podmienianego,
+więc opcache unieważnia wpis sam, bez reloadu FPM. To była realna pułapka —
+przy `validate_timestamps=0` kod leżałby na dysku i nie działał.
+
+### 11.4 Smoke na realnym endpoincie czatu
+
+Narzędzie: istniejące `_diag_local/chat_verification/replay.py` (HMAC, sekret
+czytany server-side przez `Config::load`, prefiks `[REPLAY]` żeby nie zaśmiecić
+panelu recenzji). **Nie pisałem własnej sondy — narzędzie już było.**
+
+Zapytanie „Czy macie w ofercie maski do nurkowania marki Mares?" → `conv_id 1335`,
+`tools_used: ["search_products"]`, odpowiedź z **pięcioma realnymi produktami**,
+cenami (142,80 zł … 340 zł), statusem „dostępna od ręki" i linkami do sklepu.
+**To jest odpowiedź merytoryczna, nie komunikat degradacji.**
+
+Czysty pomiar HTTP samego `/api/chat` (bez narzutu SSH i diagnostyki), dwa
+żądania pod rząd: **9,68 s** i **9,70 s**, oba HTTP 200, `tools_used`
+odpowiednio `search_products` i `get_shipping_info`, flaga degradacji `False`
+w obu. Czas to koszt tury modelu z wywołaniem narzędzia, nie ponowień DB.
+
+### 11.5 `error_log`: brak linii `budzet=` przy zdrowej bazie (KROK 5)
+
+`grep -c "budzet="` w obu logach aplikacji (`error_log` w katalogu domeny
+i w `public/`): **0**. Zgodnie z założeniem — licznik loguje się wyłącznie przy
+ponowieniu. `/api/health` zwraca `{"status":"ok","postgres":true,"mysql":true}`.
+
+### 11.6 Pierwsze żądanie po deployu wobec kolejnych (KROK 6)
+
+`/api/health`, dziesięć żądań bezpośrednio po transferze: **0,334 s**, potem
+0,165-0,178 s. Baseline zdjęty **przed** deployem: 0,386 s / 0,167 s / 0,173 s.
+Wzorzec identyczny, pierwsze żądanie jest droższe po obu stronach deployu —
+to narzut TLS mojego `curl`, nie efekt kodu. **Żadnego odstępu rzędu 30 s.**
+
+**Uczciwe zastrzeżenie: to nie jest dowód, że ryzyko `PQreset` nie istnieje.**
+Ryzyko dotyczy wskrzeszania **martwego** uchwytu z puli, a do tego potrzebna jest
+niedostępna trasa do Railway. W chwili wdrożenia trasa była zdrowa, więc ten
+scenariusz był nieosiągalny. Pomiar wyklucza regres widoczny na zdrowej bazie
+i tyle. Ryzyko zostaje otwarte do najbliższego epizodu.
+
+### 11.7 Dowód, którego nie planowałem: 5178 realnych awarii przez wdrożony kod
+
+W `public/error_log` leży historia awarii z ostatnich miesięcy. Przepuściłem ją
+przez **wdrożony plik** (`md5 d65843f3…` odczytany w tym samym przebiegu),
+klasyfikując każdy komunikat nową metodą:
+
+| kategoria | wpisów | udział |
+|---|---|---|
+| **`hard_retry`** | **5142** | **99,3 %** |
+| `hard_final` | 26 | 0,5 % |
+| `soft` | 10 | 0,2 % |
+
+Najczęstsze komunikaty: `could not connect to server: Connection timed out`
+(4583), `timeout expired` (558), `Network is unreachable` (1).
+
+Dwa wnioski, oba mierzone, nie deklarowane:
+
+1. **99,3 % historycznych awarii to dokładnie ta klasa, która dotąd przerywała
+   po pierwszej próbie.** Retry realnie ma na czym działać.
+2. **Pułapka kolejności needli zmaterializowała się w produkcji.** Wszystkie 26
+   przypadków `hard_final` mają postać `could not connect to server: Connection
+   refused`, czyli zagnieżdżony format libpq 13, który przewidziałem w iteracji 1.
+   Gdyby HARD_RETRY był sprawdzany przed HARD_FINAL, każdy z tych 26 kosztowałby
+   klienta pełne 10 s budżetu zamiast ułamka sekundy.
+
+Przy okazji widać, że `SQLSTATE[HY000]: General error: 7 server closed the
+connection unexpectedly` **istnieje w produkcji** (4 wystąpienia) — łapie go
+needle komunikatu i klasyfikuje jako `soft`, mimo że `HY000` nie ma na liście
+SQLSTATE. To częściowo domyka ustalenie nr 2 pierwszej recenzji.
+
+### 11.8 Co zostaje otwarte po wdrożeniu
+
+- Ryzyko `PQreset` do 30 s na starym workerze FPM (§11.6) — niezmierzone,
+  weryfikowalne dopiero przy epizodzie.
+- Sześć ustaleń drugiej recenzji (§7A) wraca **nierozstrzygniętych**; żadne nie
+  blokowało wdrożenia po wprowadzeniu budżetu.
+- Prognoza „retry ratuje ~20 % zapytań trafiających w awarię" — do sprawdzenia
+  po miesiącu, z linii `OK po retry (…): proby=…, budzet=…`.
+- Rollback: `cp` z `PostgresConnection.php.bak_20260915` (md5
+  `481f67be9f76889823b11fcec6a7785a`), jeden plik, bez zależności.
+
+═══ CHAT-T-191 · BACKEND · DEPLOYED ═══
