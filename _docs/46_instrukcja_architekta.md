@@ -43,6 +43,8 @@ z `.env`, który jest ignorowany). Uruchamiaj **z tego katalogu**: `python3 <skr
 | `show_conversation.py <conv_id>` | pełny przebieg rozmowy. `--tools` = z `tool_result` |
 | `sql.py` | **SQL na Railway PG** — z pliku, stdin, `-c`, albo `--file`. Omija pułapkę apostrofów (§4) |
 | `mysql.py` | **SQL read-only na MySQL PrestaShop** — `-c`, `--file`, stdin, `--json`. Idzie przez SSH+`ea-php84`+`MysqlConnection` (host=localhost, zdalnie niedostępny). Omija pułapkę hasła/`~/.my.cnf` (§4) |
+| `mysql_dev.py` | **SQL read-only na bazie DEV sklepu (`divezone_dev`)** — `-c`, `--file`, stdin, `--json`. paramiko, poświadczenia z `parameters.php` DEV czytane po stronie serwera, dwie bramki nazwy bazy. Działa na macOS i Windows od CHAT-T-194 |
+| `mysql_pmk.py`, `ssh_pmk.py` | odpowiedniki `mysql.py` i `ssh` przez paramiko (powstały dla VM Windows, gdzie `ssh.exe` spod Desktop Commandera zwraca 255). Od CHAT-T-194 także macOS. Wszystkie trzy wymagają wpisu `[divezonededyk.smarthost.pl]:5739` w `~/.ssh/known_hosts` (`RejectPolicy`) |
 | `check_deploy.py <ścieżka>` | **kontrola wdrożenia**: md5 local↔prod + `php -l` (ea-php84) + smoke `/api/health` |
 | `replay.py` | **odtworzenie rozmowy na PROD** przez `POST /api/chat` (HMAC jak widget). `-m "tresc"` albo `--from-conversation N` (powtarza 1. pytanie usera). `--show-tools` = pełny przebieg. Sekret `DIVECHAT_SECRET` przez `Config::load()` (§3), nie parsuj `.env`. Dokleja prefiks `[REPLAY]`, wyłącznik `--no-marker`. To JEDYNY sposób, by architekt sam zweryfikował fix bez klikania w widget |
 
