@@ -1,0 +1,67 @@
+== T1 krotka awaria (< prog): 2 przebiegi nie-OK, potem OK -> 0 maili
+PASS T1a brak maila w trakcie
+PASS T1b epizod liczony od pierwszego nie-OK (1793890466), bez proby
+PASS T1c powrot bez ALARM -> brak POWROT
+PASS T1d epizod wyzerowany
+== T2 dluga awaria: pierwszy nie-OK 301 s temu -> 1 ALARM
+PASS T2a jeden mail
+PASS T2b temat ALARM z hostem i tagiem
+PASS T2c stan sondy w tresci
+PASS T2d wynik /api/health w tresci
+PASS T2e 10 wpisow straznika
+PASS T2f linia ssh.out
+PASS T2g sendmail -t -oi, adres z .env
+PASS T2h zadna inna wartosc z .env w mailu ani logu
+PASS T2i log bez adresu
+PASS T2j wpis w logu
+PASS T2l legenda: rozstrzyga pole wynik
+PASS T2k stan: wyslany, licznik 1
+== T3 awaria trwa dalej (kolejne przebiegi < ALERT_REPEAT_S) -> brak duplikatu
+PASS T3 nadal 1 mail
+== T4 przypomnienie po ALERT_REPEAT_S
+PASS T4a jedno przypomnienie
+PASS T4b bez drugiego przypomnienia
+== T5 powrot -> 1 POWROT z czasem trwania
+PASS T5a jeden POWROT
+PASS T5b temat z czasem trwania
+PASS T5c czas w tresci
+PASS T5d kolejny OK bez maila
+PASS T5e epizod wyzerowany, licznik dnia zachowany (3)
+== T6 limit dobowy: licznik 6/6 -> ALARM pominiety, wpis w logu, bez spamu co minute
+PASS T6a brak maila
+PASS T6b wpis o limicie
+PASS T6c kolejny przebieg bez wpisu (ponowienie co ALERT_AFTER_S)
+PASS T6d powrot po niewyslanym ALARM -> bez POWROT
+== T7 nowa doba zeruje licznik
+PASS T7 nowa doba, mail wyslany, licznik 1
+== T8 blad wysylki (sendmail rc=75): wpis w logu, rc straznika 0, ponowienie po ALERT_AFTER_S
+PASS T8a wpis bledu, straznik rc=0
+PASS T8b ALARM nieuznany za wyslany
+PASS T8c ponowienie po 300 s doszlo
+== T9 brak adresu w .env -> wpis, bez maila
+PASS T9
+== T10 tryb testowy z domyslnym ALERT_STATE odmawia
+PASS T10
+== T11 stan nieczytelny -> wpis i nowy epizod
+PASS T11
+== T12 ALERT_AFTER_S=0 (jak test realny KROK 5d): pierwszy nie-OK -> ALARM, potem OK -> POWROT
+PASS T12
+== T13 POWROT niedoreczony (sendmail rc=75) -> ponowiony w nastepnym przebiegu -> doreczony
+PASS T13a pierwsza proba POWROT nieudana, wpis w logu
+PASS T13b epizod NIE wyzerowany, POWROT oczekuje (stan 1793889866 1793890468 2 2026-11-05 2)
+PASS T13c POWROT ponowiony i doreczony
+PASS T13d czas powrotu z pierwszego zdrowego przebiegu, adnotacja o ponowieniu
+PASS T13e czas trwania 11 min (602 s, od pierwszego nie-OK do powrotu)
+PASS T13f epizod wyzerowany po doreczeniu
+PASS T13g kolejny OK bez maila
+== T14 POWROT przy wyczerpanym limicie -> oczekuje -> nowa doba -> doreczony
+PASS T14a POWROT pominiety przez limit
+PASS T14b POWROT oczekuje
+PASS T14c nowa doba: POWROT doreczony
+== T15 POWROT oczekuje, a tunel znow pada -> epizod trwa, bez nowego ALARM przed ALERT_REPEAT_S
+PASS T15a stan wraca do ALARM doreczony, bez maila
+PASS T15b kolejny powrot -> POWROT doreczony
+== T16 sendmail ignoruje TERM -> timeout -k 5 30 konczy go KILL-em, straznik rc=0
+PASS T16 rc=137 po 35s, straznik rc=0
+PASS T16b atrapa nie zyje
+== WYNIK: PASS=50 FAIL=0

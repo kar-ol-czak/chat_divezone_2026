@@ -1,0 +1,6 @@
+#!/bin/bash
+# atrapa sendmaila: zapis maila do pliku zamiast wysylki, rc z FAKE_RC
+d=/dev/shm/t196
+n=$(( $(cat $d/mail_count 2>/dev/null || echo 0) + 1 )); echo $n > $d/mail_count
+{ echo "ARGS: $*"; cat; } > $d/mail_$n.txt
+exit "$(cat $d/fake_rc 2>/dev/null || echo 0)"

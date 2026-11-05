@@ -1,0 +1,5 @@
+#!/bin/bash
+# atrapa sendmaila ignorujaca TERM (test timeout -k)
+trap '' TERM
+cat > /dev/null
+sleep 60

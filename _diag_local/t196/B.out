@@ -1,0 +1,21 @@
+diff kopii (oczekiwane 4 linie):
+4
+== W1 sonda OK przez emulator -> cisza, brak maila
+PASS W1 brak wpisu i maila, stan: 0 0 0 2026-11-05 0
+== W2 sonda EOF -> restart (ssh=/bin/false) NIEUDANY -> alert z wynikiem restartu (ALERT_AFTER_S=0)
+[tunnel-guard] 2026-11-05 15:55:11 EOF: kanal do switchback.proxy.rlwy.net:14368 zamkniety bez odpowiedzi, ssh zyl pid=2644486 -> restart probny -> restart NIEUDANY (sonda=SSH_PADL po 1s) pid=brak. ssh: --- 2026-11-05 15:55:10 start
+[tunnel-guard] 2026-11-05 15:55:12 alert: ALARM wyslany do adresu z .env, sendmail rc=0, mail 1/6 dnia 2026-11-05: tunel Railway NIE DZIALA od 0 min [TEST CHAT-T-196]
+PASS W2
+PASS W2b emulator nietkniety przez stop_tunnel
+== W3 powrot: sonda OK -> POWROT
+[tunnel-guard] 2026-11-05 15:55:12 sonda OK pid=2644486 (poprzedni stan START_FAIL)
+[tunnel-guard] 2026-11-05 15:55:12 alert: POWROT wyslany do adresu z .env, sendmail rc=0, mail 2/6 dnia 2026-11-05: tunel Railway WROCIL po 1 min [TEST CHAT-T-196]
+PASS W3
+== W4 brak pid -> restart nieudany -> epizod startuje, przy progu 300 s brak maila
+[tunnel-guard] 2026-11-05 15:55:16 proces ssh martwy (brak pid albo cudzy pid w pidfile) -> restart NIEUDANY (sonda=SSH_PADL po 1s) pid=brak. ssh: --- 2026-11-05 15:55:15 start
+PASS W4
+== W5 CEL MILCZY bez restartu -> wynik BEZ_RESTARTU, po progu ALARM
+[tunnel-guard] 2026-11-05 15:55:21 CEL MILCZY: sonda bez odpowiedzi 5s pid=2644486, swiezy tunel tez milczal 0s temu. Bez restartu (kolejny za 600s).
+[tunnel-guard] 2026-11-05 15:55:21 alert: ALARM wyslany do adresu z .env, sendmail rc=0, mail 3/6 dnia 2026-11-05: tunel Railway NIE DZIALA od 5 min [TEST CHAT-T-196]
+PASS W5
+== WYNIK WIRING: PASS=6 FAIL=0
