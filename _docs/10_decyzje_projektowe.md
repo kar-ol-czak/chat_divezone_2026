@@ -4668,3 +4668,24 @@ zawiera (to jego własne zamówienie, weryfikowany adres).
 **Realizacja:** CHAT-T-180 (część A moduł, część B backend).
 
 **NOTA NR 2 (2026-07-29) — wzorzec generalizowany: KAŻDA wysyłka maila inicjowana przez bota idzie przez moduł, nigdy z backendu.** Zweryfikowane na PROD (2 realne rozmowy, conv 923/924): kanał backend→moduł (HMAC sekretem serwerowym, `DIVECHAT_SERVER_SECRET`, nowy front controller w module wołający `Mail::Send()`) działa niezawodnie i nie wymaga ŻADNEJ nowej konfiguracji SPF/DKIM — moduł żyje w `newtmp2` i wysyła przez już skonfigurowany, działający kanał pocztowy sklepu (`PS_SHOP_EMAIL`). To odpowiada na pytanie, które blokowało kartę Chat-46 od dawna („czy chat.divezone.pl może wysyłać mail niezawodnie" — KROK 0 tamtej karty planował osobny rekonesans SPF/DKIM z backendu). Odpowiedź: nie próbuj wysyłać z backendu w ogóle. Ten sam wzorzec (nowy front controller w module + nowe narzędzie w backendzie wołające go przez HMAC) obowiązuje dla `send_support_email` (Chat-46/CHAT-T-181) i każdej przyszłej wysyłki mailowej z czatu.
+
+---
+
+### ADR-141: Tymczasowy tunel SSH smarthost → mydevil → Railway na czas blokady IP Railway
+
+**Data:** 2026-11-05 | **Autor:** architekt | **Status:** przyjęte (decyzja Karola 2b, 2026-11-05)
+**Kontekst:** karta Chat - 150, realizacja CHAT-T-195. Powiązane: ADR-088 (sekrety w `.env`), ADR-089 (STOP przed produkcją), ADR-117 (połączenia trwałe PDO), Chat - 88 (trasa smarthost → Railway), Chat - 90 (`sslmode=disable`).
+
+**Stan, pomiary 2026-11-05.** Od 2026-11-04, między 07:00 a 08:00 UTC (`divechat_editorial_picks_expire.log`: ostatnie OK 06:00 UTC, od 07:00 UTC „Railway PostgreSQL niedostepne (hard)”), serwer `divezonededyk.smarthost.pl` nie nawiązuje TCP z żadnym adresem Railway: `66.33.22.230:14368`, `66.33.22.230:443`, `69.46.46.46:443` (railway.com). `/api/health` zwraca `postgres:false`. Przyczyna: incydent Railway, w którym podszyty ruch skanujący z adresów Railway wpisał je na publiczne listy reputacji. Smarthost odmówił odblokowania, bo blokada pochodzi z listy publicznej. Z `s81.mydevil.net` połączenie z `66.33.22.230:14368` działa, a smarthost łączy się z `s81.mydevil.net:22`.
+
+**Decyzja.** Backend czatu i embeddingi łączą się z Railway przez tunel SSH utrzymywany na smarthost: `127.0.0.1:14368` → `s81.mydevil.net` → `switchback.proxy.rlwy.net:14368`.
+- `DATABASE_URL` w `.env` czatu wskazuje `127.0.0.1:14368`. Dotychczasowa wartość zostaje w nowej zmiennej `DATABASE_URL_DIRECT`.
+- `railway_monitor.php` czyta `DATABASE_URL_DIRECT` (z fallbackiem na `DATABASE_URL`). Monitor dalej mierzy trasę bezpośrednią, bo to ona jest sygnałem do powrotu. Raport dobowy i powiadomienia do smarthost (`SMARTHOST_TICKET_MAIL`) nie zaczynają opisywać tunelu.
+- Klucz SSH jest dedykowany tunelowi, a wpis w `authorized_keys` na mydevil ograniczony do `permitopen` na jeden cel, bez powłoki, PTY i agenta.
+- Strażnik tunelu działa z crona co minutę, wzorem `railway_monitor_guard.sh`.
+
+**Odrzucone.** Prośba o wyjątek do smarthost: z ich odpowiedzi wynika odmowa. Przeniesienie bazy z Railway: duża migracja, odłożona do czasu przywrócenia czatu. Czekanie: brak ETA.
+
+**Konsekwencje.** W ścieżce pojawia się trzeci host. `sslmode=disable` zostaje bez zmian (Chat - 90): odcinek mydevil → Railway jest nieszyfrowany, tak jak dotąd odcinek smarthost → Railway, a odcinek smarthost → mydevil szyfruje SSH. Narzędzia lokalne na Macu (`sql.py`) dalej nie dochodzą do Railway, bo sieć Karola też blokuje te adresy. To osobna sprawa. Zgoda mydevil na stały tunel (odpowiedź z 2026-09-23, CHAT-T-193 §1) dotyczyła tunelu do ich PostgreSQL. Nie sprawdzono, czy obejmuje przekazanie do hosta zewnętrznego.
+
+**Wyjście.** Powrót na trasę bezpośrednią (`DATABASE_URL` := `DATABASE_URL_DIRECT`, wyłączenie strażnika), gdy `railway_monitor` pokaże `railway_tcp OK` nieprzerwanie przez 24 h. Decyzja Karola.
