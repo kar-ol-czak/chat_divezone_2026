@@ -78,7 +78,7 @@ require $DIAG . '/railway_summary_mail.php'; // definiuje railway_summary_send()
 use DiveChat\Config;
 
 Config::load($BASE);
-$DBURL = $_ENV['DATABASE_URL'] ?? '';
+$DBURL = trim((string)($_ENV['DATABASE_URL_DIRECT'] ?? '')) !== '' ? trim((string)$_ENV['DATABASE_URL_DIRECT']) : ($_ENV['DATABASE_URL'] ?? ''); // CHAT-T-195 (ADR-141): mierzymy trase BEZPOSREDNIA, nie tunel
 $p = parse_url($DBURL);
 parse_str($p['query'] ?? '', $q);
 $ssl   = $q['sslmode'] ?? 'disable';
