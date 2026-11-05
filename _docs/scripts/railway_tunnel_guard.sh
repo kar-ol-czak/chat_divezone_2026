@@ -67,7 +67,7 @@ probe() {
 tunnel_pid() {
     local p
     p=$(cat "$PIDFILE" 2>/dev/null)
-    if [ -n "$p" ] && [ -r "/proc/$p/cmdline" ] && tr '\0' ' ' < "/proc/$p/cmdline" | grep -q -- "$KEY"; then
+    if [ -n "$p" ] && { tr '\0' ' ' < "/proc/$p/cmdline"; } 2>/dev/null | grep -q -- "$KEY"; then
         echo "$p"
     fi
 }
@@ -78,7 +78,8 @@ all_tunnel_pids() {
     for d in /proc/[0-9]*; do
         p=${d#/proc/}
         [ "$p" = "$$" ] && continue
-        tr '\0' ' ' < "$d/cmdline" 2>/dev/null | grep -q -- "^$SSH .*-i $KEY " && echo "$p"
+        # { } 2>/dev/null: proces moze zniknac miedzy globem a odczytem (blad przekierowania idzie do powloki)
+        { tr '\0' ' ' < "$d/cmdline"; } 2>/dev/null | grep -q -- "^$SSH .*-i $KEY " && echo "$p"
     done
 }
 
