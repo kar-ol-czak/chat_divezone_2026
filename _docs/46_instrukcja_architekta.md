@@ -23,6 +23,7 @@ ich treści — kopia rozjeżdża się cicho (to jest zasada projektu, nie styli
 | „dlaczego zdecydowaliśmy X" | **`_docs/10`** | ADR-y. Korekta decyzji = nota w istniejącym ADR, nie nowy |
 | infrastruktura, ścieżki, cache | **`CLAUDE.md`**, „Mapa infrastruktury" | jedno źródło prawdy, nie dubluj |
 | pisanie tasku dla CC | `_instances/{nazwa}/tasks/` | konwencja: `CHAT-T-NNN_INSTANCJA_opis.md` |
+| uruchomić CC, recenzję Codex/AGY z sesji | **§7 tego pliku** | komendy w tle przez DC, odbiór, `--resume` po „deployuj”. Karol nie przekleja promptów |
 | „wczytaj prompt startowy", start sesji | **`_docs/47`** | treść instrukcji projektu (rola, adresy, dyscyplina). Karol wkleja tylko odsyłacz. Aktualizuje **architekt** |
 | dobór rozmiaru skafandra, „bot nie dobiera rozmiaru" | `standalone/src/Tools/SizeRecommender.php` + `_docs/44` PUŁAPKI | dane w **MySQL** `divezone_attr_size_charts` / `_chart_rows` / `_product_chart` (NIE Railway, NIE `divechat_size_*` — te są martwe od CHAT-T-103). Algorytm = **przecięcie wymiarów**, wszystkie równocenne (CHAT-T-161, ADR-032 aneks 1 w projekcie atrybutów). Chart identyfikuje `product_id`, fallback `brand`+`gender`+`chart_type`+`category_hint` |
 
@@ -137,3 +138,35 @@ zamiast z pomiaru (**0,1230**), oraz `mtime` potraktowany jako dowód czasu depl
 „ZEPSUTE" o naprawionym `knowledge_gap`, `CLAUDE.md` reklamował martwą
 `divechat_knowledge`). **Po każdym deployu sprawdź, czy dokumentacja nie stała się
 nieaktualna** — zwłaszcza ta, która opisuje pułapki.
+
+---
+
+## 7. Uruchamianie CC i recenzji z sesji (bez przeklejania przez Karola)
+
+Źródło: warsztat sesji 01NmW2J9 (repo divezone-security, biegi SENT-T-351..357), przekazany przez Karola 2026-11-05. Flagi sprawdzone `--help` 2026-11-05: `claude` (`-p`, `--output-format stream-json`, `--verbose`, `--permission-mode bypassPermissions`, `--model`, `--resume`), `codex exec` (`--skip-git-repo-check`, `-s`, `-m`, `-c`), `agy` (`--mode`, `--sandbox`, `--print-timeout`, `--settings` niesprawdzone). Wywołanie DC trwa najwyżej ok. 60 s, więc wszystko idzie w tle. Odczyty przepuszczaj przez `| tr '<>' '{}'`, bo DC obcina wyjście na `>`.
+
+Katalog biegów: `/Users/karol/Documents/3_DIVEZONE/Aplikacje/_CC_BIEGI_CHAT/` (poza repo, żeby `stream.jsonl` nie trafił do gita). Gdy DC `write_file` nie pisze poza repo, zapisz prompt jako `<repo>/<ZADANIE>_prompt.tmp` i przenieś `mv`.
+
+**Start CC.** Każda linia osobno, każda z `|| exit 1`. Nie łącz `mkdir && mv && cd && nohup … &`, bo `&` puszcza w tło cały łańcuch, a błąd `mv` po cichu nic nie uruchamia.
+
+    B=/Users/karol/Documents/3_DIVEZONE/Aplikacje/_CC_BIEGI_CHAT/<ZADANIE>_$(date +%Y%m%d_%H%M%S)
+    mkdir -p -m 700 "$B" || exit 1
+    mv <repo>/<ZADANIE>_prompt.tmp "$B/prompt.txt" || exit 1
+    cd /Users/karol/Documents/3_DIVEZONE/Aplikacje/Chat_dla_klientow_2026 || exit 1
+    nohup claude -p "$(cat $B/prompt.txt)" --output-format stream-json --verbose --permission-mode bypassPermissions --model claude-opus-5-5 > $B/stream.jsonl 2> $B/stderr.txt < /dev/null &
+    echo $! > $B/pid
+
+**Odbiór.** `ps -p $(cat $B/pid) -o etime= || echo KONIEC`, ostatnia wiadomość: `grep '"type":"result"' $B/stream.jsonl | tail -1`. Na czekanie ustaw przypomnienie w sesji (`send_later`), nie pętlę `sleep`.
+
+**STOP (ADR-089) i „deployuj”.** CC w `-p` kończy bieg na STOP. Gdy Karol napisze „deployuj”, kontynuujesz ten sam bieg: `claude -p "deployuj" --resume <session_id> …`, z tymi samymi flagami. `session_id` bierzesz z linii `result` w `stream.jsonl`. Sam nie wydajesz „deployuj”.
+
+**Recenzja Codex** (z katalogu repo, w tle, około 5-10 min). Pakiet zaczyna się linią „ROLA: RECENZJA, tylko odczyt. Nie uruchamiasz poleceń zmieniających pliki.”, potem pytanie otwarte, format odpowiedzi, na końcu `## SPEC` z treścią.
+
+    R=/Users/karol/Documents/3_DIVEZONE/Aplikacje/_CC_BIEGI_CHAT/REVIEW_<ZADANIE>; mkdir -p -m 700 "$R"
+    nohup codex exec --skip-git-repo-check -s read-only -m gpt-5.6-sol -c model_reasoning_effort=high "$(cat $R/pakiet_N.md)" > $R/codex_N.md 2> $R/codex_N.log < /dev/null &
+
+Pusty `codex_N.md`: sprawdź `tail $R/codex_N.log`, bo Codex potrafi wyczerpać limit („You've hit your usage limit”).
+
+**Recenzja zastępcza AGY** (gdy Codex ma limit). Pakiet zaczyna się linią: „WAŻNE: nie uruchamiasz żadnych poleceń terminala. Używasz wyłącznie narzędzia odczytu plików.” Dopisz limit długości, np. „najwyżej 1200 słów”, bo przy `--print-timeout 900s` odpowiedź bywała ucinana.
+
+    nohup agy -p "$(cat $R/pakiet_N.md)" --model gemini-3.8-flash-high --mode plan --sandbox --settings '{"permissions":{"allow":["read_file(*)"]}}' --print-timeout 1500s > $R/agy_N.md 2> $R/agy_N.log < /dev/null &
